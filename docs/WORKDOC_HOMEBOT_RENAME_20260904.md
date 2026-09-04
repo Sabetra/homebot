@@ -74,6 +74,28 @@
 |---|-------|-----------|---------------|
 | (nach Ausf\u00fchrung erg\u00e4nzen) | | | |
 
+## Befunde & Abschluss (2026-09-04, ~21:30–21:50)
+
+1. **Stray `bot6_dbs` nach Migration:** Der Cline-MCP-Websearch-Server (PID 35828/6788, Start 15:31 —
+   vor der Marker-Umschaltung 20:23) hielt eine stale Resolver-Auflösung und legte gegen 20:33–20:34
+   `~/.local/share/bot6_dbs/` neu an (nur `web_policy.db` 24 KB + leeres `agent/` — regenerierbare
+   Caches, keine User-Daten; die echten DBs waren bereits zu `homebot_dbs` migriert).
+   → Archiviert nach `~/homebot_backups/bot6_dbs_stray_20260904/` (Kopie 1:1 verifiziert), Original entfernt.
+   **Lehre:** Langlebige Prozesse über ein DB-Root-Rename hinweg behalten die stale Auflösung —
+   nach Root-Migrationen alle Prozesse neu starten.
+2. **Tägliche DB-Backups intakt:** Die scheinbare Lücke im Repo-Log `monitoring/db_backup.log`
+   (letzter Eintrag 2026-08-31) ist kein Backup-Ausfall: `db_backup.py` loggt seit dem Rename nach
+   `~/homebot_backups/db_backup.log`; `~/homebot_backups/db/auto/` enthält tägliche Stände bis
+   `2026-09-04` (Manifeste + quick_check ok). Der Stand `2026-09-04` (19:42, Quelle noch `bot6_dbs`,
+   rag_store 518.492.160 B = exakt die später migrierte Datei) belegt: Migration = verlustfreier MOVE.
+3. **pip-audit (strict, 2026-09-04):** 18 Advisories in 3 Paketen — `gitpython 3.1.59` (6, u. a.
+   GHSA-532p-8c9c-7x56: `git commit` argv-injection), `pypdf 6.16.1` (5, u. a. GHSA-8hc3-j246-9j5b:
+   PDF-Parser-DoS), `h2 4.4.1` (1, DoS). Vollreport + Advisory-Details: `monitoring/dependency_audit/`
+   (lokal, gitignored). **Entscheidung ausstehend** (eigener Task): Upgrades gegen venv + Kompat-Tests.
+4. **Watcher:** Die Vor-Instanz (PID 28876) ist beendet; die aktuelle Instanz PID 41240 (Start
+   20:37:53, nach dem Rename) hält den neuen Mutex `Global\homebot-git-autosave-watcher` —
+   kein Doppel-Watcher-Risiko.
+
 ## Rollback-Strategie
 
 | Schritt | Aktion | Befehl / Referenz |
