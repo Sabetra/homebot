@@ -69,7 +69,9 @@ class RAGConfig:
     agentic_rag_enabled: bool = False
     # Cross-Encoder reranking (already available)
     cross_encoder_enabled: bool = True
-    cross_encoder_model: str = "BAAI/bge-reranker-v2-m5"
+    # SSoT for the active model is agent/reranker.py (RERANKER_MODEL_NAME / _CROSS_ENCODER_MODELS).
+    # Must stay in sync with models/manifest.json (enforced by tests/test_model_manifest_consistency.py).
+    cross_encoder_model: str = "BAAI/bge-reranker-v2-m3"
     cross_encoder_gpu: bool = True
     # IRCoT
     ircot_max_steps: int = 3
