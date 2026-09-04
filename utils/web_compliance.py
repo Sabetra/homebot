@@ -50,7 +50,7 @@ DEFAULT_ROBOTS_TTL_SECONDS = 3600.0        # ~1 h pro-Domain-Cache
 NEGATIVE_CACHE_TTL_SECONDS = 60.0          # nach Fetch-Fehler: kürzer neu probieren
 ROBOTS_FETCH_TIMEOUT_SECONDS = 5.0
 ROBOTS_MAX_BYTES = 1024 * 1024             # 1 MB robots.txt reichen völlig
-DEFAULT_USER_AGENT = "bot6-local-rag/1.0 (personal-use; local RAG store)"
+DEFAULT_USER_AGENT = "homebot-local-rag/1.0 (personal-use; local RAG store)"
 
 # Direktiven, die für die Persistierung blockierend sind.
 _BLOCKING_ROBOTS_DIRECTIVES = {

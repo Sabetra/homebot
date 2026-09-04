@@ -639,12 +639,12 @@ def resolve_proposal(
 def overrides_path() -> Path:
     """Persistenzpfad der UI-Overrides (stabil, außerhalb des Repos).
 
-    Für Tests per ``BOT6_TOKEN_SCALING_OVERRIDES`` umleiten.
+    Für Tests per ``HOMEBOT_TOKEN_SCALING_OVERRIDES`` umleiten.
     """
-    env_path = os.environ.get("BOT6_TOKEN_SCALING_OVERRIDES")
+    env_path = os.environ.get("HOMEBOT_TOKEN_SCALING_OVERRIDES")
     if env_path:
         return Path(env_path).expanduser()
-    return Path.home() / ".cache" / "bot6" / "token_scaling_overrides.json"
+    return Path.home() / ".cache" / "homebot" / "token_scaling_overrides.json"
 
 
 def load_overrides(model_name: str) -> TokenScalingOverrides:

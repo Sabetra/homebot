@@ -5,7 +5,7 @@ User-ID-Konfiguration für psychologisches System
 Zentraler Ort für User-ID-Management
 
 Portabilität:
-    - User-ID-Override:  ``BOT6_USER_ID`` (Umgibung, z. B. Tests/CI)
+    - User-ID-Override:  ``HOMEBOT_USER_ID`` (Umgibung, z. B. Tests/CI)
     - Datenbank-Pfad:    ``utils.db_path_resolver.get_wellbeing_path()``
       (IMMER über den Resolver — kein Literal-Pfad, s. AGENTS.md)
 """
@@ -21,14 +21,14 @@ def get_primary_user_id() -> str:
     Ermittelt die primäre User-ID.
 
     Priorität:
-        1. ``BOT6_USER_ID`` (Umgibungs-Override)
+        1. ``HOMEBOT_USER_ID`` (Umgibungs-Override)
         2. User-ID mit den meisten psychologischen Sessions (DB)
         3. ``"default_user"`` (Fallback)
 
     Returns:
         Die aktive User-ID für das psychologische System
     """
-    override = os.environ.get("BOT6_USER_ID", "").strip()
+    override = os.environ.get("HOMEBOT_USER_ID", "").strip()
     if override:
         return override
 

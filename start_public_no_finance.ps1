@@ -2,7 +2,7 @@
 # Usage: .\start_public_no_finance.ps1
 #
 # Portabel: arbeitet aus dem eigenen Verzeichnis (Repo-Root).
-# venv-Auflösung: $env:BOT6_VENV > venv_bot_20260802 (Produktiv) > .venv > venv > venv_mistral_gguf > System-Python
+# venv-Auflösung: $env:HOMEBOT_VENV > venv_bot_20260802 (Produktiv) > .venv > venv > venv_mistral_gguf > System-Python
 
 $RepoRoot = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
 
@@ -30,7 +30,7 @@ $venvCandidates = @(
     "$RepoRoot\venv",
     "$RepoRoot\venv_mistral_gguf"
 )
-$venvDir = $env:BOT6_VENV
+$venvDir = $env:HOMEBOT_VENV
 if (-not $venvDir) {
     $venvDir = $venvCandidates | Where-Object { Test-Path (Join-Path $_ "Scripts\python.exe") } | Select-Object -First 1
 }

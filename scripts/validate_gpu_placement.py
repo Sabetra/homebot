@@ -316,7 +316,7 @@ def main(argv=None) -> int:
         format="%(levelname)s %(name)s: %(message)s",
     )
 
-    print("GPU-Placement-Validierung — bot6 (Single-/Dual-GPU, LLM + AUX-Rollen)")
+    print("GPU-Placement-Validierung — homebot (Single-/Dual-GPU, LLM + AUX-Rollen)")
     print(f"  Python: {sys.executable}")
 
     results = [

@@ -44,12 +44,12 @@ pip install -r requirements-dev.txt   # optional, Dev/Doku-Stack
    ```
 5. **Commit** – der Pre-Commit-Hook (`.githooks/pre-commit`) führt das
    Lizenz-Gate + deterministische Release-Gate (ca. 65 s) aus und blockt bei
-   Rot. Autosave (`BOT6_AUTOSAVE=1`) wird nie blockiert.
+   Rot. Autosave (`HOMEBOT_AUTOSAVE=1`) wird nie blockiert.
 
 ## Dateiintegrität
 - **Niemals** eine Datei > ~300 Zeilen vollständig neu ausgeben (Korruptionsrisiko).
   Stattdessen gezielte Suchen/Ersetzen auf exakt zitiertem Altstand.
-- Backups vor Überarbeitungen nach `~\bot6_backups\` – **nicht** ins Repo.
+- Backups vor Überarbeitungen nach `~\homebot_backups\` – **nicht** ins Repo.
 - Automatischer Snapshot: `scripts/autosave_watcher.ps1` (alle 10 min).
 
 ## Doku-Pflicht

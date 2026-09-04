@@ -46,7 +46,7 @@ function Write-WatcherLog {
 
 # Einmal-Sperre: verhindert, dass sich Watcher stapeln, wenn das Skript
 # zusaetzlich zum Autostart noch von Hand gestartet wird.
-$mutex = New-Object System.Threading.Mutex($false, 'Global\bot6-git-autosave-watcher')
+$mutex = New-Object System.Threading.Mutex($false, 'Global\homebot-git-autosave-watcher')
 if (-not $mutex.WaitOne(0, $false)) {
     Write-WatcherLog "watcher: bereits aktiv, dieser Start (PID $PID) wird beendet"
     exit 0

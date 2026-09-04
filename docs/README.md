@@ -85,7 +85,7 @@ Bei neuen Docs:
 ### 2026-08-10 – Datenbank-Backup aktiviert
 
 - `scripts/db_backup.py`: taegliches Backup aller produktiven DBs nach
-  `~\bot6_backups\db\auto\<datum>\`, 7 Generationen, Rotation automatisch.
+  `~\homebot_backups\db\auto\<datum>\`, 7 Generationen, Rotation automatisch.
 - **`VACUUM INTO` statt Dateikopie** — transaktional konsistent auch bei laufender
   App; Quelle wird read-only geoeffnet (`mode=ro`) und kann nie veraendert werden.
 - Quellpfade kommen ausschliesslich aus `utils/db_path_resolver`, folgen also
@@ -131,11 +131,11 @@ Bei neuen Docs:
   Autouse-Fixture pinnt die Variable jetzt auf den getesteten Modus.
 - **Gate automatisiert:** `.githooks/pre-commit` fuehrt vor jedem bewussten Commit
   `run_release_quality_gate.py --mode deterministic` aus (~65 s). Autosave-Commits sind
-  ueber `BOT6_AUTOSAVE=1` ausgenommen — das Sicherheitsnetz muss auch kaputte Staende sichern.
+  ueber `HOMEBOT_AUTOSAVE=1` ausgenommen — das Sicherheitsnetz muss auch kaputte Staende sichern.
   Aktiviert via `git config core.hooksPath .githooks`.
 - **Sicherheitsnetz:** `scripts/autosave_watcher.ps1` snapshottet den Arbeitsstand alle
   10 Minuten (Autostart bei Anmeldung). Ersetzt die manuelle Backup-Pflicht nicht, sondern
-  ergaenzt sie; Backups liegen jetzt ausserhalb des Repos unter `~\bot6_backups\`.
+  ergaenzt sie; Backups liegen jetzt ausserhalb des Repos unter `~\homebot_backups\`.
 - **Widersprueche aufgeloest:** venv (`venv_bot_20260802` ist produktiv, `venv_mistral_gguf`
   nur Rollback) in AGENTS.md, 00, 06 und PROMPT_STANDARD; Rolle von `ARCHITECTURE.md`
   (Legacy) im Root-README; KG-Bewertung 3/7 vs. 7/7 als Verdrahtung-vs-Implementierung

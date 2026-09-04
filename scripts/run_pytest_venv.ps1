@@ -3,7 +3,7 @@
 #
 # Portabel: venv-Auflösung relativ zum Repo-Root (Elternordner dieses Skripts).
 # Reihenfolge identisch zum Pre-Commit-Hook (.githooks/pre-commit):
-#   $env:BOT6_VENV > venv_bot_20260802 (Produktiv) > .venv > venv > venv_mistral_gguf
+#   $env:HOMEBOT_VENV > venv_bot_20260802 (Produktiv) > .venv > venv > venv_mistral_gguf
 # Pass 1: erste Venv, die pytest importieren kann (Gate-Voraussetzung),
 # Pass 2: erste vorhandene Venv (Fallback).
 # So pickt das Skript keine unausgebaute Venv (z. B. .venv ohne aiosqlite/plotly).
@@ -18,8 +18,8 @@ $venvCandidates = @(
     (Join-Path $RepoRoot 'venv\Scripts\Activate.ps1'),
     (Join-Path $RepoRoot 'venv_mistral_gguf\Scripts\Activate.ps1')
 )
-if ($env:BOT6_VENV) {
-    $venvCandidates = @((Join-Path $env:BOT6_VENV 'Scripts\Activate.ps1')) + $venvCandidates
+if ($env:HOMEBOT_VENV) {
+    $venvCandidates = @((Join-Path $env:HOMEBOT_VENV 'Scripts\Activate.ps1')) + $venvCandidates
 }
 
 # Pass 1: erste Venv, die pytest importieren kann (Gate-Voraussetzung).

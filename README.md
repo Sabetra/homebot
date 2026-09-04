@@ -96,7 +96,7 @@ streamlit run enhanced_streamlit_bot.py
 ```
 
 All databases resolve to a location **outside the repository**
-(`~/.local/share/bot6_dbs`, override `BOT6_DB_ROOT`) through a single path
+(`~/.local/share/homebot_dbs`, override `HOMEBOT_DB_ROOT`) through a single path
 resolver (`utils/db_path_resolver.py`) — the repository itself stays clean
 of user data.
 
@@ -133,9 +133,9 @@ Verified GPU parameters (do not raise blindly): `n_batch=3072`,
 |---------|---------|---------|
 | `APP_LOCAL_ONLY` | `0` | `1` = strict offline (blocks web search, remote OCR, HF hub) |
 | `APP_ENABLE_FINANCE_TAB` | `1` | `0` = hide the Finance tab (public/shared deployments) |
-| `BOT6_DB_ROOT` | `~/.local/share/bot6_dbs` | Database root (env or `.db_root` marker file) |
+| `HOMEBOT_DB_ROOT` | `~/.local/share/homebot_dbs` | Database root (env or `.db_root` marker file) |
 | `BOT_MODELS_DIR` | `~/.cache/lm-studio/models/lmstudio-community` | GGUF model directory |
-| `BOT6_USER_ID` | (auto) | Explicit user ID (tests/CI) |
+| `HOMEBOT_USER_ID` | (auto) | Explicit user ID (tests/CI) |
 | `LLM_N_BATCH` / `LLM_N_UBATCH` | `3072` / `2048` | Benchmark-only llama.cpp overrides |
 
 Main entry points: Streamlit app `enhanced_streamlit_bot.py` ·

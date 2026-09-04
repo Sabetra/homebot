@@ -669,8 +669,8 @@ def create_default_detector() -> ChangeDetector:
     """Create a ChangeDetector with default configuration."""
     # Default watch directories
     watch_dirs = [
-        os.path.join(os.path.expanduser("~"), "bot6", "data"),
-        os.path.join(os.path.expanduser("~"), "bot6", "document_processors"),
+        os.path.join(os.path.expanduser("~"), "homebot", "data"),
+        os.path.join(os.path.expanduser("~"), "homebot", "document_processors"),
     ]
     
     configs = []

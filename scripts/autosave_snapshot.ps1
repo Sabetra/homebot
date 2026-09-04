@@ -73,12 +73,12 @@ try {
     # Signal an .githooks/pre-commit: Das Sicherheitsnetz darf nie durch ein
     # rotes Gate blockiert werden - gerade kaputte Zwischenstaende muessen
     # gesichert werden. Bewusste Commits durchlaufen das Gate weiterhin.
-    $env:BOT6_AUTOSAVE = '1'
+    $env:HOMEBOT_AUTOSAVE = '1'
     try {
         git -C $RepoRoot commit -q -m "autosave $stamp ($changed Dateien)"
     }
     finally {
-        Remove-Item Env:BOT6_AUTOSAVE -ErrorAction SilentlyContinue
+        Remove-Item Env:HOMEBOT_AUTOSAVE -ErrorAction SilentlyContinue
     }
     if ($LASTEXITCODE -ne 0) {
         throw "git commit fehlgeschlagen (Exitcode $LASTEXITCODE)"

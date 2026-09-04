@@ -13,7 +13,7 @@ veröffentlicht werden kann.
 
 | # | Entscheidung | Empfehlung |
 |---|--------------|------------|
-| 1 | Push-Strategie | **Orphan-Branch `release/v1.0.0` + Tag `v1.0.0`** — garantiert, dass kein Commit der lokalen Historie (inkl. sensibler Zwischenstände) öffentlich wird. Vorher: `git bundle create bot6-full-history.bundle --all` als lokale Sicherung. |
+| 1 | Push-Strategie | **Orphan-Branch `release/v1.0.0` + Tag `v1.0.0`** — garantiert, dass kein Commit der lokalen Historie (inkl. sensibler Zwischenstände) öffentlich wird. Vorher: `git bundle create homebot-full-history.bundle --all` als lokale Sicherung. |
 | 2 | README-Sprache | **EN-first** (OSS-Standard), deutsche/englische/bulgarische Doku über Docs-Links. |
 | 3 | Screenshots | **Playwright-Skript für statische UI** (Finance, Psych, RAG, Settings) + optional 1 Live-LLM-GIF (braucht VRAM-Freigabe + LM-Studio-Down). |
 | 4 | CI | **Minimales GitHub-Actions-Workflow** (Python 3.12, pytest, Lizenz-Check). |
@@ -47,7 +47,7 @@ veröffentlicht werden kann.
 - `agent/tool_schemas.py`: Beispielpfad anonymisiert.
 - `.githooks/pre-commit`: Repo-Root relativ, Venv-Autodetection.
 - `start_*.ps1`: `$PSScriptRoot` + Venv-Autodetection.
-- `scripts/db_backup.py`: `BOT6_BACKUP_ROOT`-Env-Override.
+- `scripts/db_backup.py`: `HOMEBOT_BACKUP_ROOT`-Env-Override.
 - `config/user_id_config.py`: Pfad via `utils.db_path_resolver` (AGENTS.md-Konvention).
 - Doku: `AGENTS.md`, `CONTRIBUTING.md`, `DEVELOPER_QUICK_START.md`,
   `docs/00_CONTEXT_MASTER.md`, `docs/05_DEVELOPER_GUIDE.md`, `SECURITY.md`, `SUPPORT.md`.

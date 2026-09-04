@@ -266,8 +266,8 @@ Solange das nicht geschehen ist, gilt: keine neue Arbeit in `refactored_gui/`.
 <!-- Ergaenzt 2026-08-10 nach Behebung des Zwei-Wurzeln-Splits. -->
 
 Alle produktiven Datenbanken liegen unter dem `.db_root`-Ziel
-(z. B. `~\.local\share\bot6_dbs`), aufgeloest ueber
-`utils/db_path_resolver` (Prioritaet: `BOT6_DB_ROOT`-Env → `.db_root`-Datei
+(z. B. `~\.local\share\homebot_dbs`), aufgeloest ueber
+`utils/db_path_resolver` (Prioritaet: `HOMEBOT_DB_ROOT`-Env → `.db_root`-Datei
 → Projekt-Root). Die logische Trennung der DBs bleibt unveraendert —
 Psycho-DB (verschluesselt), RAG-Store, Finance-DB und Chat-History sind
 getrennte Dateien mit getrennten Vertraegen; nur der Ablageort ist einheitlich.
@@ -289,7 +289,7 @@ umgingen `agent/tools.py` (Workspace-Root-Normalisierung von 2025-10-11),
 `agent/web_policy.py` (CWD-relativ) und `agent/strixkat_eval.py`
 (CWD-relative Literale) den Resolver. Folge: dieselbe DB existierte in zwei
 Wurzelverzeichnissen mit divergierendem Inhalt. Die verwaisten Altstaende
-liegen archiviert unter `~\bot6_backups\db\`.
+liegen archiviert unter `~\homebot_backups\db\`.
 
 ---
 

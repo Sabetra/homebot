@@ -40,7 +40,7 @@ def make_checker(robots_body: str = "", fetch_error: Exception | None = None) ->
         if fetch_error is not None:
             raise fetch_error
         return robots_body
-    return RobotsChecker(user_agent="bot6-test", ttl_seconds=3600.0, fetcher=fetcher)
+    return RobotsChecker(user_agent="homebot-test", ttl_seconds=3600.0, fetcher=fetcher)
 
 
 def allowed_url(path: str = "/page") -> str:
@@ -84,12 +84,12 @@ class TestRobotsChecker:
         body = (
             "User-agent: googlebot\n"
             "Disallow: /\n"
-            "User-agent: bot6\n"
+            "User-agent: homebot\n"
             "Disallow: /secret\n"
         )
-        c = RobotsChecker(user_agent="bot6", ttl_seconds=3600.0,
+        c = RobotsChecker(user_agent="homebot", ttl_seconds=3600.0,
                           fetcher=lambda url: body)
-        # Googlebot-Regeln gelten NICHT für uns, nur die bot6-Regeln
+        # Googlebot-Regeln gelten NICHT für uns, nur die homebot-Regeln
         assert c.is_allowed("http://site.example/other")[0] is True
         assert c.is_allowed("http://site.example/secret")[0] is False
 

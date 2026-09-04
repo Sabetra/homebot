@@ -150,14 +150,14 @@ _RG_BIN_CACHE: Optional[str] = None
 def rg_bin() -> Optional[str]:
     """Pfad zur ripgrep-Binary auflösen (gecacht).
 
-    Auflösung: Env-Override ``BOT6_RG_BIN`` (Test-/Deploy-Flexibilität) →
+    Auflösung: Env-Override ``HOMEBOT_RG_BIN`` (Test-/Deploy-Flexibilität) →
     ``shutil.which("rg")``. Returns ``None`` wenn ripgrep nicht installiert
     ist — die Toolkit-Ebene entscheidet dann über den expliziten
     Python-Fallback (keine silent fallbacks).
     """
     global _RG_BIN_CACHE
     if _RG_BIN_CACHE is None:
-        _RG_BIN_CACHE = os.environ.get("BOT6_RG_BIN") or shutil.which("rg")
+        _RG_BIN_CACHE = os.environ.get("HOMEBOT_RG_BIN") or shutil.which("rg")
     return _RG_BIN_CACHE
 
 

@@ -40,7 +40,7 @@ def get_global_rag_store(
     Jede neue Instanz würde Sentence Transformer neu laden → VRAM-Explosion
 
     Root-Cause-Fix 2026-08-10: Pfadauflösung über den zentralen
-    ``utils/db_path_resolver`` (.db_root / BOT6_DB_ROOT). Die frühere
+    ``utils/db_path_resolver`` (.db_root / HOMEBOT_DB_ROOT). Die frühere
     Workspace-Root-Normalisierung (BUGFIX 2025-10-11) war älter als die
     DB-Migration vom 2026-07-29 und hat sie umgangen — Folge war dieselbe
     DB in zwei Wurzelverzeichnissen mit divergierendem Inhalt.

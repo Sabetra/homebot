@@ -175,8 +175,8 @@ initialize_ai()
 
 ## 7. Persistenz (außerhalb des Repos)
 
-- **Pfad:** `~/.cache/bot6/token_scaling_overrides.json`
-  (Tests: per `BOT6_TOKEN_SCALING_OVERRIDES` umleiten).
+- **Pfad:** `~/.cache/homebot/token_scaling_overrides.json`
+  (Tests: per `HOMEBOT_TOKEN_SCALING_OVERRIDES` umleiten).
 - **Format:** flaches JSON `{ "<Modell-Key>": { "<Feld>": "<Wert>" } }` —
   nur gesetzte Felder, normalisierte Raw-Strings (`to_raw()`; KV/Effort
   lowercase). Beispiel:

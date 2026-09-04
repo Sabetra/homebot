@@ -663,7 +663,7 @@ if __name__ == "__main__":
     print(f"Docling Available: {DOCLING_AVAILABLE}")
 
     # Test with a sample directory
-    test_dir = os.path.join(os.path.expanduser("~"), "bot6", "data")
+    test_dir = os.path.join(os.path.expanduser("~"), "homebot", "data")
     if os.path.isdir(test_dir):
         files = processor.scan_directory(test_dir)
         if files:

@@ -76,7 +76,7 @@ def resolve_venv(explicit: Path | None = None) -> Path:
 
     Reihenfolge:
       1. `explicit` (--venv)
-      2. `BOT6_VENV` (Umweltvariable, muss existieren)
+      2. `HOMEBOT_VENV` (Umweltvariable, muss existieren)
       3. Repo-relative Kandidaten: venv_bot_20260802, .venv, venv
          (erster mit vorhandenem site-packages)
       4. laufende Venv (falls ein venv-Interpreter die Skripte ausfuehrt)
@@ -84,7 +84,7 @@ def resolve_venv(explicit: Path | None = None) -> Path:
     """
     if explicit is not None:
         return explicit
-    env = os.environ.get("BOT6_VENV")
+    env = os.environ.get("HOMEBOT_VENV")
     if env:
         env_path = Path(env)
         if env_path.is_dir():

@@ -35,7 +35,7 @@ ENV_KEYS = (
     ts.ENV_MAX_OUTPUT_TOKENS,
     ts.ENV_THINKING_BUDGET,
     ts.ENV_REASONING_EFFORT,
-    "BOT6_TOKEN_SCALING_OVERRIDES",
+    "HOMEBOT_TOKEN_SCALING_OVERRIDES",
 )
 
 
@@ -322,7 +322,7 @@ def test_overrides_from_values_invalid_returns_none() -> None:
 
 def test_persistence_roundtrip(monkeypatch, tmp_path) -> None:
     target = tmp_path / "overrides.json"
-    monkeypatch.setenv("BOT6_TOKEN_SCALING_OVERRIDES", str(target))
+    monkeypatch.setenv("HOMEBOT_TOKEN_SCALING_OVERRIDES", str(target))
     model_a = "C:\\models\\modelA.gguf"
     model_b = "C:\\models\\modelB.gguf"
 
@@ -336,7 +336,7 @@ def test_persistence_roundtrip(monkeypatch, tmp_path) -> None:
 
 def test_persistence_save_empty_removes_entry(monkeypatch, tmp_path) -> None:
     target = tmp_path / "overrides.json"
-    monkeypatch.setenv("BOT6_TOKEN_SCALING_OVERRIDES", str(target))
+    monkeypatch.setenv("HOMEBOT_TOKEN_SCALING_OVERRIDES", str(target))
     model = "C:\\models\\modelA.gguf"
 
     ts.save_overrides(model, TokenScalingOverrides(n_ctx=4096))
@@ -348,7 +348,7 @@ def test_persistence_save_empty_removes_entry(monkeypatch, tmp_path) -> None:
 
 def test_persistence_clear_single(monkeypatch, tmp_path) -> None:
     target = tmp_path / "overrides.json"
-    monkeypatch.setenv("BOT6_TOKEN_SCALING_OVERRIDES", str(target))
+    monkeypatch.setenv("HOMEBOT_TOKEN_SCALING_OVERRIDES", str(target))
     a, b = "modelA.gguf", "modelB.gguf"
     ts.save_overrides(a, TokenScalingOverrides(n_ctx=4096))
     ts.save_overrides(b, TokenScalingOverrides(kv_quant="q8_0"))
@@ -360,7 +360,7 @@ def test_persistence_clear_single(monkeypatch, tmp_path) -> None:
 
 def test_persistence_clear_all_removes_file(monkeypatch, tmp_path) -> None:
     target = tmp_path / "overrides.json"
-    monkeypatch.setenv("BOT6_TOKEN_SCALING_OVERRIDES", str(target))
+    monkeypatch.setenv("HOMEBOT_TOKEN_SCALING_OVERRIDES", str(target))
     ts.save_overrides("modelA.gguf", TokenScalingOverrides(n_ctx=4096))
     assert target.exists()
 
@@ -369,20 +369,20 @@ def test_persistence_clear_all_removes_file(monkeypatch, tmp_path) -> None:
 
 
 def test_persistence_load_missing_file_is_empty(monkeypatch, tmp_path) -> None:
-    monkeypatch.setenv("BOT6_TOKEN_SCALING_OVERRIDES", str(tmp_path / "missing.json"))
+    monkeypatch.setenv("HOMEBOT_TOKEN_SCALING_OVERRIDES", str(tmp_path / "missing.json"))
     assert ts.load_overrides("any.gguf").is_empty
 
 
 def test_persistence_load_corrupt_file_is_empty(monkeypatch, tmp_path) -> None:
     target = tmp_path / "overrides.json"
     target.write_text("{definitely not json", encoding="utf-8")
-    monkeypatch.setenv("BOT6_TOKEN_SCALING_OVERRIDES", str(target))
+    monkeypatch.setenv("HOMEBOT_TOKEN_SCALING_OVERRIDES", str(target))
     assert ts.load_overrides("any.gguf").is_empty  # nie-failing
 
 
 def test_persistence_file_is_valid_json_and_atomic(monkeypatch, tmp_path) -> None:
     target = tmp_path / "overrides.json"
-    monkeypatch.setenv("BOT6_TOKEN_SCALING_OVERRIDES", str(target))
+    monkeypatch.setenv("HOMEBOT_TOKEN_SCALING_OVERRIDES", str(target))
     ts.save_overrides("m1.gguf", TokenScalingOverrides(n_ctx=4096))
     data = json.loads(target.read_text(encoding="utf-8"))
     assert data["m1.gguf"] == {"n_ctx": "4096"}

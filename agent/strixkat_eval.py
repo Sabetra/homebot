@@ -40,7 +40,7 @@ logger = logging.getLogger(__name__)
 
 # Kanonische DB-Pfade aus dem zentralen Resolver (Root-Cause-Fix 2026-08-10).
 # Die früheren Literal-Defaults ("agent/rag_store.db", "agent/eval_results.db")
-# wurden CWD-relativ aufgelöst und umgingen .db_root / BOT6_DB_ROOT.
+# wurden CWD-relativ aufgelöst und umgingen .db_root / HOMEBOT_DB_ROOT.
 from utils.db_path_resolver import get_agent_rag_path as _get_agent_rag_path
 from utils.db_path_resolver import get_db_path as _get_db_path
 

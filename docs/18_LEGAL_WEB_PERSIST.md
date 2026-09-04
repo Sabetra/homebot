@@ -109,7 +109,7 @@ Alle Gates: `if not web_compliance.gate_persistence(context, url): return …`
 Interne Konstanten (`utils/web_compliance.py`): robots-Cache-TTL 1 h pro
 Domain, Negativ-Cache 60 s (verhindert Hammerschlag bei out-of-reach
 Domains), Fetch-Timeout 5 s, max. 1 MB robots.txt,
-User-Agent `bot6-local-rag/1.0 (personal-use; local RAG store)`.
+User-Agent `homebot-local-rag/1.0 (personal-use; local RAG store)`.
 
 ---
 

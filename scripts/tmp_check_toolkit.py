@@ -4,8 +4,8 @@ from pathlib import Path
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 
 # 1) Alle .py-Dateien im Backup-Ordner mit Groessen
-backup_root = Path.home() / "bot6_backups"
-print("== bot6_backups: .py-Dateien > 50 kB ==")
+backup_root = Path.home() / "homebot_backups"
+print("== homebot_backups: .py-Dateien > 50 kB ==")
 found = False
 if backup_root.is_dir():
     for p in sorted(backup_root.rglob("*.py")):
@@ -13,7 +13,7 @@ if backup_root.is_dir():
             found = True
             print(f"  {p}  ({p.stat().st_size:,} B)")
     # Auch explizit alle agent_toolkit.py-Kopien
-    print("== bot6_backups: ALLE agent_toolkit.py-Kopien ==")
+    print("== homebot_backups: ALLE agent_toolkit.py-Kopien ==")
     for p in sorted(backup_root.rglob("agent_toolkit.py")):
         print(f"  {p}  ({p.stat().st_size:,} B)")
         text = p.read_text(encoding="utf-8", errors="replace")

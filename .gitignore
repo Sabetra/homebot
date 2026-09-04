@@ -134,7 +134,7 @@ archive_old_analysis/
 venv_*/
 .venv/
 
-# Backups liegen ausserhalb des Repos unter %USERPROFILE%\bot6_backups\.
+# Backups liegen ausserhalb des Repos unter %USERPROFILE%\homebot_backups\.
 # Eintrag bleibt, falls ein Agent den Ordner erneut im Repo anlegt.
 backups/
 
@@ -154,7 +154,7 @@ _tmp_*
 
 # --- Daten gehoeren nicht ins Repo (2026-08-10) ---
 # Produktive DBs und Caches liegen unter dem .db_root-Ziel
-# (%USERPROFILE%\.local\share\bot6_dbs). Pfade IMMER ueber
+# (%USERPROFILE%\.local\share\homebot_dbs). Pfade IMMER ueber
 # utils/db_path_resolver beziehen. Der KG-Cache folgt automatisch
 # dem Psycho-DB-Pfad und darf nie wieder eingecheckt werden.
 psychological_support_kg_cache/

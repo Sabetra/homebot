@@ -1,8 +1,8 @@
-"""Taegliches Datenbank-Backup fuer die produktiven bot6-Datenbanken.
+"""Taegliches Datenbank-Backup fuer die produktiven homebot-Datenbanken.
 
 Sichert alle produktiven SQLite-Datenbanken (Quelle: utils/db_path_resolver,
-also das .db_root-Ziel) konsistent nach ~/bot6_backups/db/auto/
-(Override: Env BOT6_BACKUP_ROOT) in tagesdatierte Ordner und rotiert alte Staende.
+also das .db_root-Ziel) konsistent nach ~/homebot_backups/db/auto/
+(Override: Env HOMEBOT_BACKUP_ROOT) in tagesdatierte Ordner und rotiert alte Staende.
 
 Warum VACUUM INTO statt Dateikopie:
     Eine Dateikopie einer SQLite-DB, in die gerade geschrieben wird, ist
@@ -20,7 +20,7 @@ Aufrufmodell:
 
 Wiederherstellung (Beispiel):
     1. App stoppen.
-    2. Datei aus ~/bot6_backups/db/auto/<datum>/ an den
+    2. Datei aus ~/homebot_backups/db/auto/<datum>/ an den
        produktiven Ort unter dem .db_root-Ziel kopieren.
     3. Bei der Psycho-DB die zugehoerige .key-Datei mitkopieren.
 """
@@ -50,9 +50,9 @@ from utils.db_path_resolver import (  # noqa: E402
     get_web_policy_path,
 )
 
-# Backup-Ziel (portabel): Env-Override > ~/bot6_backups/db/auto
-BACKUP_ROOT = Path(os.environ.get("BOT6_BACKUP_ROOT") or (Path.home() / "bot6_backups" / "db" / "auto"))
-LOG_FILE = Path(os.environ.get("BOT6_BACKUP_LOG") or (Path.home() / "bot6_backups" / "db_backup.log"))
+# Backup-Ziel (portabel): Env-Override > ~/homebot_backups/db/auto
+BACKUP_ROOT = Path(os.environ.get("HOMEBOT_BACKUP_ROOT") or (Path.home() / "homebot_backups" / "db" / "auto"))
+LOG_FILE = Path(os.environ.get("HOMEBOT_BACKUP_LOG") or (Path.home() / "homebot_backups" / "db_backup.log"))
 KEEP_GENERATIONS = 7
 MIN_FREE_BYTES = 2 * 1024**3  # 2 GB Sicherheitsreserve auf der Zielplatte
 

@@ -98,7 +98,7 @@ python scripts/agent_websearch.py --clear-cache               # Cache leeren
 - **Datenbank-Pfade IMMER über `utils/db_path_resolver` beziehen** (`get_db_path()` bzw.
   die `get_*_path()`-Helfer) — niemals Literal-Pfade wie `"rag_store.db"` oder
   `os.path.join(workspace_root, ...)`. Alle produktiven DBs liegen unter dem
-  `.db_root`-Ziel (z. B. `~\.local\share\bot6_dbs`), nicht im Repo.
+  `.db_root`-Ziel (z. B. `~\.local\share\homebot_dbs`), nicht im Repo.
   Hintergrund: Resolver-Umgehungen haben 2026-07/08 dieselbe DB in zwei
   Wurzelverzeichnissen mit divergierendem Inhalt erzeugt (behoben 2026-08-10).
 - **Lizenz & Compliance:** Projekt ist **AGPL-3.0** (Copyright Michaël Artebas). Neue
@@ -172,7 +172,7 @@ in `gpu_devices.py`; Monitoring muss `llm_nvml`/`aux_nvml` verwenden, nie die Po
 
 - **Standard-Prompt:** Bei jedem neuen Auftrag zuerst `docs/PROMPT_STANDARD.md` lesen — enthält das verbindliche Vorgehen (Schritte 1–15) mit Projektkontext, GPU-Grenzen, Testregeln und Doku-Pflicht.
 - **Keine Halluzinationen:** Immer die tatsächliche Datei lesen (z. B. via `read_file`), bevor Aussagen über Inhalte gemacht werden. Nicht aus Gedächtnis, vorherigen Sessions oder Vermutungen spekulieren. Bei Unsicherheit: Datei lesen, nicht raten.
-- Vor Datei-Überarbeitungen Backup anlegen — **nach `~\bot6_backups\`**, nicht ins Repository.
+- Vor Datei-Überarbeitungen Backup anlegen — **nach `~\homebot_backups\`**, nicht ins Repository.
   Backups innerhalb des Projekts verfälschen Suchergebnisse: Ein Agent findet dann alte
   Dateistände und hält sie für den aktuellen Code.
 - **Workdoc:** Bei komplexen Tasks temporäres Workdoc basierend auf `docs/templates/WORKDOC_TEMPLATE.md` erstellen.
@@ -206,7 +206,7 @@ Läuft der Watcher? `Get-Content <PROJEKT_ROOT>\monitoring\autosave.log -Tail 5`
 Git sichert nur Code; die produktiven DBs sind bewusst gitignoriert (471 MB
 Binärdaten gehören nicht in die Historie). Dafür läuft `scripts/db_backup.py`,
 angebunden an denselben Watcher: **einmal täglich**, `VACUUM INTO` (konsistent
-auch bei laufender App), **7 Tagesstände**, Ziel `~\bot6_backups\db\auto\`.
+auch bei laufender App), **7 Tagesstände**, Ziel `~\homebot_backups\db\auto\`.
 Der Psycho-Schlüssel wird mitgesichert — ohne ihn wäre die verschlüsselte DB
 im Backup wertlos.
 
@@ -215,10 +215,10 @@ Wiederherstellung einer Datenbank:
 ```powershell
 # 1. App stoppen
 # 2. Stand waehlen:
-Get-ChildItem ~\bot6_backups\db\auto
+Get-ChildItem ~\homebot_backups\db\auto
 # 3. Datei zurueckkopieren (Beispiel RAG-Store):
-Copy-Item '~\bot6_backups\db\auto\<datum>\rag_store.db' `
-          '~\.local\share\bot6_dbs\rag_store.db'
+Copy-Item '~\homebot_backups\db\auto\<datum>\rag_store.db' `
+          '~\.local\share\homebot_dbs\rag_store.db'
 # Bei der Psycho-DB die .key-Datei mitkopieren!
 ```
 

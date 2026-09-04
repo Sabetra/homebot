@@ -16,9 +16,9 @@ Usage:
     db_path = get_db_path("data", "models", "embedding.db")
 
 DB-Root-Auflösung (Single Source of Truth):
-    1. Env-Variable ``BOT6_DB_ROOT``
+    1. Env-Variable ``HOMEBOT_DB_ROOT``
     2. Marker-Datei ``.db_root`` im Projekt-Root (Ziel muss existieren)
-    3. Portable Default: ``~/.local/share/bot6_dbs`` (wird angelegt)
+    3. Portable Default: ``~/.local/share/homebot_dbs`` (wird angelegt)
     DBs landen damit NIEMALS im Repository-Verzeichnis.
 """
 
@@ -42,11 +42,11 @@ def _resolve_project_root() -> Path:
 _PROJECT_ROOT: Path = _resolve_project_root()
 
 # Optional override via environment variable or .db_root marker file.
-# Priority: (1) BOT6_DB_ROOT env var, (2) .db_root file content, (3) project root.
+# Priority: (1) HOMEBOT_DB_ROOT env var, (2) .db_root file content, (3) project root.
 _ENV_DB_ROOT: Optional[Path] = None
 
 # Check env var first
-_env_var_path = os.environ.get("BOT6_DB_ROOT", "").strip()
+_env_var_path = os.environ.get("HOMEBOT_DB_ROOT", "").strip()
 if _env_var_path:
     p = Path(_env_var_path)
     if p.exists():
@@ -68,11 +68,11 @@ if _ENV_DB_ROOT is None:
 
 # Portable Default-DB-Root (wird bei Bedarf von get_db_path angelegt).
 # Damit bleiben DBs bei jeder Installation außerhalb des Repositories.
-_DEFAULT_DB_ROOT: Path = Path.home() / ".local" / "share" / "bot6_dbs"
+_DEFAULT_DB_ROOT: Path = Path.home() / ".local" / "share" / "homebot_dbs"
 
 
 def get_project_root() -> Path:
-    """DB-Root: Env-Override > .db_root-Marker > ``~/.local/share/bot6_dbs``."""
+    """DB-Root: Env-Override > .db_root-Marker > ``~/.local/share/homebot_dbs``."""
     return _ENV_DB_ROOT if _ENV_DB_ROOT is not None else _DEFAULT_DB_ROOT
 
 

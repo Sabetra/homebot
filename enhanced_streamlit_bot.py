@@ -225,7 +225,7 @@ def _render_token_scaling_panel() -> None:
     Zeigt den hardware-bewussten Auto-Vorschlag (``utils/token_scaling.py``)
     VOR dem Modell-Load an und erlaubt pro-Feld-Overrides (Präzedenz:
     UI > ENV > Auto). Overrides werden pro Modell außerhalb des Repos
-    persistiert (``~/.cache/bot6/token_scaling_overrides.json``) und beim
+    persistiert (``~/.cache/homebot/token_scaling_overrides.json``) und beim
     Laden an den Loader übergeben.
     """
     info = st.session_state.get("selected_model_info") or {}
