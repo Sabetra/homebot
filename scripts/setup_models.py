@@ -152,7 +152,15 @@ def resolve_candidates(entry: Dict[str, Any], roots: CacheRoots) -> List[Path]:
         if not repo_id:
             return []
         org, name = _split_repo(repo_id)
-        return [roots.st_home / f"{org}_{name}"]
+        # sentence-transformers 5.x stores models in the huggingface_hub layout
+        # (models--<org>--<name>) under the cache_folder / SENTENCE_TRANSFORMERS_HOME;
+        # also accept the legacy <org>_<name> layout and the default HF hub cache,
+        # so presence detection is robust to any of the supported cache configs.
+        return [
+            roots.st_home / f"models--{org}--{name}",
+            roots.st_home / f"{org}_{name}",
+            roots.hf_home / "hub" / f"models--{org}--{name}",
+        ]
 
     if strategy == "easyocr":
         return [
