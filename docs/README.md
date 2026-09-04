@@ -1,4 +1,4 @@
-<!-- last-verified: 2026-08-31 -->
+<!-- last-verified: 2026-09-04 -->
 
 # Dokumentation – Index (Konsolidiert)
 
@@ -25,7 +25,7 @@ Stand: 2026-08-20 (Doku-Audit)
 | [04_I18N_GUIDE.md](04_I18N_GUIDE.md) | Internationalisierung (I18n) |
 | [05_DEVELOPER_GUIDE.md](05_DEVELOPER_GUIDE.md) | Entwickler-Setup, Testing, Debugging |
 | [06_CONTEXT_ENGINEERING_SOTA.md](06_CONTEXT_ENGINEERING_SOTA.md) | Context Engineering SOTA — LLM-Kontext-Optimierung |
-| [08_PSYCH_MODULE_OPTIMIZATION.md](08_PSYCH_MODULE_OPTIMIZATION.md) | Psych-Modul: Safety, Identity, Datenlebenszyklus, Persistenz, i18n und LangGraph |
+| [08_WELLBEING_MODULE_OPTIMIZATION.md](08_WELLBEING_MODULE_OPTIMIZATION.md) | Wellbeing-Modul: Safety, Identity, Datenlebenszyklus, Persistenz, i18n und LangGraph |
 | [14_KG_COMMUNITY_DETECTION_IMPLEMENTATION.md](14_KG_COMMUNITY_DETECTION_IMPLEMENTATION.md) | KG Community Detection: eigenstaendige Implementierung und Tests; produktive Integration noch offen |
 | [15_STREAMING_ARCHITECTURE.md](15_STREAMING_ARCHITECTURE.md) | Normaler Chat: typisierte Events, Token-Streaming, Cancellation und atomare Persistenz |
 | [16_DEPENDENCY_SCANNER.md](16_DEPENDENCY_SCANNER.md) | Dependency Vulnerability Scanner: lokaler, privacy-preserving Security-Scan für Python-Dependencies |

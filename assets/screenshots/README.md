@@ -9,7 +9,7 @@ referenziert werden (Sektion „Screenshots").
 |---|---|
 | `chat.png` | Chat-Tab, 2–3 Beispiel-Nachrichten (DE), Stream-UI sichtbar |
 | `finance.png` | Finance-Tab: Query + Ergebnis-Chart, Disclaimer sichtbar |
-| `psychology.png` | Psych-Tab: Session-View, Disclaimer sichtbar |
+| `wellbeing.png` | Wellbeing-Tab: Session-View, Disclaimer sichtbar |
 | `settings.png` | Settings-Tab: GPU-Platzierung + Modell-Ansicht (ohne lokale Pfade) |
 | `rag.png` *(optional)* | Dokumente-Tab mit 1–2 Dummy-Dokumenten |
 | `chat_live.gif` *(optional, nur mit expliziter Freigabe)* | Live-LLM-Response, ≤ 10 s, ≤ 8 MB |
@@ -18,8 +18,8 @@ referenziert werden (Sektion „Screenshots").
 
 1. **Local-Only-Modus:** App mit `$env:APP_LOCAL_ONLY = "1"` starten.
 2. **Nur Demo-Daten:** fiktive Finanzen (z. B. „1.250 € Gehalt, 320 € Miete"),
-   neutrales Psych-Session-Beispiel. **Keine echten Finanzdaten, keine echten
-   Psych-Daten, keine Namen, keine IDs, keine Kontonummern.**
+   neutrales Wellbeing-Session-Beispiel. **Keine echten Finanzdaten, keine echten
+   Wellbeing-Daten, keine Namen, keine IDs, keine Kontonummern.**
 3. **Auflösung:** 1600×900, Browser-Zoom 100 %, Theme konsistent über alle Bilder.
 4. **PII-Sweep vor dem Commit:** Jedes Bild visuell prüfen (Pfade, User-IDs,
    Beträge, Zeitstempel mit echter Uhrzeit).
@@ -29,7 +29,7 @@ referenziert werden (Sektion „Screenshots").
 
 - [ ] `chat.png`
 - [ ] `finance.png`
-- [ ] `psychology.png`
+- [ ] `wellbeing.png`
 - [ ] `settings.png`
 - [ ] `rag.png` (optional)
 - [ ] `chat_live.gif` (optional, nur mit expliziter Freigabe)

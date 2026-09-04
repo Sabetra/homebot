@@ -15,7 +15,7 @@ veröffentlicht werden kann.
 |---|--------------|------------|
 | 1 | Push-Strategie | **Orphan-Branch `release/v1.0.0` + Tag `v1.0.0`** — garantiert, dass kein Commit der lokalen Historie (inkl. sensibler Zwischenstände) öffentlich wird. Vorher: `git bundle create homebot-full-history.bundle --all` als lokale Sicherung. |
 | 2 | README-Sprache | **EN-first** (OSS-Standard), deutsche/englische/bulgarische Doku über Docs-Links. |
-| 3 | Screenshots | **Playwright-Skript für statische UI** (Finance, Psych, RAG, Settings) + optional 1 Live-LLM-GIF (braucht VRAM-Freigabe + LM-Studio-Down). |
+| 3 | Screenshots | **Playwright-Skript für statische UI** (Finance, Wellbeing, RAG, Settings) + optional 1 Live-LLM-GIF (braucht VRAM-Freigabe + LM-Studio-Down). |
 | 4 | CI | **Minimales GitHub-Actions-Workflow** (Python 3.12, pytest, Lizenz-Check). |
 
 ## Stufen
@@ -59,7 +59,7 @@ veröffentlicht werden kann.
 
 ### Stage 5 — Screenshots (User-Seite, Produktionsmaschine)
 - Playwright-Skript `scripts/capture_screenshots.py` + `assets/screenshots/`.
-- Ziel-Screens: Chat, Finance, Psychologie, RAG/Import, Settings.
+- Ziel-Screens: Chat, Finance, Wellbeing, RAG/Import, Settings.
 - Optional: Live-LLM-GIF (Voraussetzungen: LM-Studio schließen, VRAM frei).
 
 ### Stage 6 — Launch-Vorbereitung

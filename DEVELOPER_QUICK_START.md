@@ -1,11 +1,11 @@
-<!-- last-verified: 2026-08-20 -->
+<!-- last-verified: 2026-09-04 -->
 # Developer Quick Start
 
 This guide reflects the current local-first architecture and active entrypoints.
 
 ## 1) Setup
 
-Use Python 3.12 and install the validated RTX 4090 / CUDA 12.4 wheels first:
+Use Python 3.12 and install the CUDA 12.4 native wheels first (validated on an RTX 4090, sm_89 — for other NVIDIA GPUs set `CMAKE_CUDA_ARCHITECTURES` to your compute capability, e.g. `86` for an RTX 3060 Ti):
 
 ```powershell
 python -m pip install -r requirements-native-cu124.txt

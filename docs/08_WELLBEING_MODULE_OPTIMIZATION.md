@@ -1,6 +1,6 @@
-<!-- last-verified: 2026-08-20 -->
+<!-- last-verified: 2026-09-04 -->
 
-# Psych-Modul: SOTA-Optimierung (Abgeschlossen — 2026-07-26)
+# Wellbeing-Modul: SOTA-Optimierung (Abgeschlossen — 2026-07-26)
 
 ## User-Original-Prompt
 

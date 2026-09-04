@@ -1,4 +1,4 @@
-<!-- last-verified: 2026-07-31 -->
+<!-- last-verified: 2026-09-04 -->
 # Standard-Prompt für Agenten-Aufgaben
 
 > Zuletzt aktualisiert: 2026-07-31
@@ -95,7 +95,7 @@ Vorgehen:
 Subsystem-Navigation (bei Bedarf gezielt lesen):
 - Orchestrator/SOTA-Pipeline: zuerst funktionen.md + docs/01_ARCHITECTURE_DEEP_DIVE.md
 - Finance-Änderungen: zuerst docs/03_FINANCE_MODULE.md
-- Psych-Modul-Änderungen: zuerst docs/08_PSYCH_MODULE_OPTIMIZATION.md
+- Wellbeing-Modul-Änderungen: zuerst docs/08_WELLBEING_MODULE_OPTIMIZATION.md
 - i18n-Änderungen: zuerst docs/04_I18N_GUIDE.md
 - GPU/LLM-Parameter: zuerst docs/RTX4090_RYZEN9_GUIDE.md
 

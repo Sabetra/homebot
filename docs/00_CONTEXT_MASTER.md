@@ -1,4 +1,4 @@
-<!-- last-verified: 2026-08-28 -->
+<!-- last-verified: 2026-09-04 -->
 # CONTEXT MASTER - AI Chatbot Project
 
 > **Zweck:** Master-Context-Dokument fuer LLM-basierte Development-Workflows.
@@ -6,7 +6,7 @@
 > schnell den Projektzustand versteht, ohne alle Einzeldokumente lesen zu muessen.
 >
 > **Stand:** 2026-07-27 | **Consolidation Release 1.2**
-> **System:** Windows 11, 64 GB RAM, Dual-GPU (RTX 4090 24 GB [LLM] + RTX 3060 Ti 8 GB [AUX]) | **LLM:** Gemma4 12B | **Env:** venv_bot_20260802
+> **System (Referenz):** Windows 11, 64 GB RAM, Dual-GPU (RTX 4090 24 GB [LLM] + RTX 3060 Ti 8 GB [AUX]) | **LLM:** Gemma4 12B | **Env:** venv_bot_20260802
 
 ---
 
@@ -16,10 +16,10 @@
 A **Local-First Multimodal AI Chatbot Workspace** with:
 - RAG-based document retrieval (PDFs, images, text)
 - Finance query engine with natural language SQL
-- Psychological session support with multi-phase therapy workflows
+- Wellbeing session support with multi-phase session workflows
 - Knowledge Graph (KG) entity resolution and semantic search
 - Internationalization (i18n) support (DE, EN, BG)
-- GPU-optimized inference (RTX 4090, CUDA-thread-safe)
+- GPU-optimized inference (validated: RTX 4090, CUDA-thread-safe); Single-GPU + CPU-Fallback voll unterstützt
 
 ### 1.2 Tech Stack
 | Component | Technology |
@@ -116,7 +116,7 @@ User Input -> Semantic Router -> [SIMPLE | PLAN_EXECUTE | REACT]
 | `04_I18N_GUIDE.md` | Internationalization | When adding translations |
 | `05_DEVELOPER_GUIDE.md` | Setup, testing, debugging | When starting development |
 | `06_CONTEXT_ENGINEERING_SOTA.md` | Context engineering guide for LLM workflows | When optimizing LLM context usage |
-| `08_PSYCH_MODULE_OPTIMIZATION.md` | Psycho-Modul: Safety, Identity, Datenlebenszyklus, Persistenz und SOTA-Fixes | Bei Änderungen am Psycho-Modul |
+| `08_WELLBEING_MODULE_OPTIMIZATION.md` | Wellbeing-Modul: Safety, Identity, Datenlebenszyklus, Persistenz und SOTA-Fixes | Bei Änderungen am Wellbeing-Modul |
 | `14_KG_COMMUNITY_DETECTION_IMPLEMENTATION.md` | Standalone Community Detection/Subgraph Retrieval; produktive Verdrahtung offen | Bei KG-Community-Arbeit |
 | `15_STREAMING_ARCHITECTURE.md` | Typed chat events, route behavior, cancellation and persistence | When modifying normal chat streaming |
 | `16_DEPENDENCY_SCANNER.md` | Dependency Vulnerability Scanner: lokaler, privacy-preserving Security-Scan | Bei Security-Audits |

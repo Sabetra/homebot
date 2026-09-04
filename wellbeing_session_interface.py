@@ -761,7 +761,7 @@ class WellbeingSessionInterface:
                 st.session_state[key] = default
 
     def render_complete_interface(self):
-        """Rendert die komplette psychologische Benutzeroberfläche"""
+        """Rendert die komplette Wellbeing-Benutzeroberfläche"""
 
         # Streamlit-idiomatic single source of truth for psych_* session state.
         # Must run before any renderer touches these keys -- the renderers use
@@ -770,7 +770,7 @@ class WellbeingSessionInterface:
         self._ensure_session_state_defaults()
 
         # ── Rechtlicher Hinweis (Pflicht für öffentliche Freigabe) ──────────
-        # Das psychologische Modul ist KEIN medizinisches Angebot. Dieser
+        # Das Wellbeing-Modul ist KEIN medizinisches Angebot. Dieser
         # Banner muss in WILLKOMMEN- und AKTIVER-Sichtbarkeit rendern
         # (siehe docs/19_LICENSES_AND_COMPLIANCE.md).
         st.info(
@@ -977,7 +977,7 @@ class WellbeingSessionInterface:
                         st.session_state['_psych_screening_suggestion'] = screening_suggestion
                         logger.info("📊 Screening-Vorschlag für Session gesetzt: %s", screening_suggestion)
 
-            st.success(f"✅ Neue psychologische Session erstellt: {session_id[:8]}...")
+            st.success(f"✅ Neue Wellbeing-Session erstellt: {session_id[:8]}...")
             st.rerun()
         
         except Exception as e:

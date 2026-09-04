@@ -158,7 +158,7 @@ Natural Language Query
 
 ---
 
-## 6. PSYCHOLOGICAL SESSION MODULE
+## 6. WELLBEING SESSION MODULE
 
 ### 6.1 Session Lifecycle
 - Multi-phase therapy workflow support
@@ -212,7 +212,7 @@ aus. Sie sind es ueberwiegend **nicht** — es sind Schichten mit verschiedenen
 Konsumenten. Diese Sektion haelt fest, welcher Pfad kanonisch ist, damit die Frage
 nicht bei jeder Aenderung neu beantwortet werden muss.
 
-### 8a.1 Psycho-Modul: geschichtet, nicht doppelt
+### 8a.1 Wellbeing-Modul: geschichtet, nicht doppelt
 
 `wellbeing_session/` und `wellbeing/` sind **kein** Alt/Neu-Paar.
 `wellbeing_session_interface.py` (Root) ist die Orchestrierungsschicht und

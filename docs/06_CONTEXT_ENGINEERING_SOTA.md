@@ -1,4 +1,4 @@
-<!-- last-verified: 2026-08-20 -->
+<!-- last-verified: 2026-09-04 -->
 # 06 — Context Engineering SOTA Guide
 
 > **Stand:** 1. August 2026  
@@ -46,7 +46,7 @@ docs/
 ├── 04_I18N_GUIDE.md             ← Internationalisierung
 ├── 05_DEVELOPER_GUIDE.md        ← Entwickler-Handbuch
 ├── 06_CONTEXT_ENGINEERING_SOTA.md ← Dieses Dokument
-├── 08_PSYCH_MODULE_OPTIMIZATION.md ← Psycho-Modul-Vertraege
+├── 08_WELLBEING_MODULE_OPTIMIZATION.md ← Wellbeing-Modul-Vertraege
 ├── 14_KG_COMMUNITY_DETECTION_IMPLEMENTATION.md ← Community-Modulstatus
 ├── 15_STREAMING_ARCHITECTURE.md ← Typisierter Chat-Stream
 ├── 16_DEPENDENCY_SCANNER.md     ← Dependency-Vulnerability-Scanner (lokal, privacy-preserving)

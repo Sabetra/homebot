@@ -8,7 +8,7 @@
 
 Local-First Multimodal AI Chatbot (Windows 11, 64 GB RAM, Dual-GPU: RTX 4090 24 GB [LLM] + RTX 3060 Ti 8 GB [AUX]).
 Primäres Runtime-LLM: Gemma4 12B (GGUF via llama-cpp-python). Streamlit-UI, RAG (FAISS + Docling),
-Knowledge Graph (NetworkX), Finance-Query-Engine, psychologisches Session-Modul, i18n (DE/EN/BG).
+Knowledge Graph (NetworkX), Finance-Query-Engine, Wellbeing-Session-Modul, i18n (DE/EN/BG).
 
 ## Setup & Kommandos
 
@@ -80,7 +80,7 @@ python scripts/agent_websearch.py --clear-cache               # Cache leeren
    - Bei Orchestrator/SOTA-Pipeline: zuerst `funktionen.md` + `docs/01_ARCHITECTURE_DEEP_DIVE.md`
    - Bei KG-Änderungen: zuerst `docs/02_SOTA_ROADMAP.md` (§8–10: KG-SOTA) + `docs/14_KG_COMMUNITY_DETECTION_IMPLEMENTATION.md`
    - Bei Finance-Änderungen: zuerst `docs/03_FINANCE_MODULE.md`
-   - Bei Psycho-Modul-Änderungen: zuerst `docs/08_PSYCH_MODULE_OPTIMIZATION.md`
+   - Bei Wellbeing-Modul-Änderungen: zuerst `docs/08_WELLBEING_MODULE_OPTIMIZATION.md`
    - Bei i18n-Änderungen: zuerst `docs/04_I18N_GUIDE.md`
    - Bei GPU/LLM-Parametern: zuerst `docs/RTX4090_RYZEN9_GUIDE.md`
 4. [funktionen.md](funktionen.md) — Kompendium großer/komplexer Funktionen (vor Änderungen an Orchestrator/Pipeline lesen und danach pflegen)

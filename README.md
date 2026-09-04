@@ -1,4 +1,4 @@
-<!-- last-verified: 2026-08-31 -->
+<!-- last-verified: 2026-09-04 -->
 # Homebot — Local-First Multimodal AI Assistant
 
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
@@ -8,9 +8,9 @@
 
 **Homebot is a fully local AI assistant for your desktop.** Chat with a local
 large language model, search your own documents (RAG), ask questions about
-your personal finances, and use a structured psychological support module —
+your personal finances, and use a structured wellbeing support module —
 **everything runs on your hardware**. No cloud LLM calls, no telemetry, no
-account. Your chats, documents, finances, and psychology data never leave
+account. Your chats, documents, finances, and wellbeing data never leave
 your machine.
 
 > **Privacy by design.** All inference, retrieval, and storage happen
@@ -21,13 +21,13 @@ your machine.
 
 > 📸 **Screenshots folgen noch.** Aufnahme-Spezifikation & PII-Regeln:
 > [`assets/screenshots/README.md`](assets/screenshots/README.md).
-> Sobald `chat.png`, `finance.png`, `psychology.png` und `settings.png`
+> Sobald `chat.png`, `finance.png`, `wellbeing.png` und `settings.png`
 > vorhanden sind, wird die Bildtabelle unten aktiviert.
 
 <!--
-| Chat | Finance | Psychology | Settings |
+| Chat | Finance | Wellbeing | Settings |
 |------|---------|------------|----------|
-| ![Chat](assets/screenshots/chat.png) | ![Finance](assets/screenshots/finance.png) | ![Psychology](assets/screenshots/psychology.png) | ![Settings](assets/screenshots/settings.png) |
+| ![Chat](assets/screenshots/chat.png) | ![Finance](assets/screenshots/finance.png) | ![Wellbeing](assets/screenshots/wellbeing.png) | ![Settings](assets/screenshots/settings.png) |
 -->
 
 ## Features
@@ -38,14 +38,14 @@ your machine.
   FAISS retrieval, Knowledge Graph (NetworkX), reranking
 - 💰 **Finance query engine** — natural-language questions over local
   financial data (strictly local; see [disclaimers](#legal--disclaimers))
-- 🧠 **Psychological support module** — structured session framework with
+- 🧠 **Wellbeing module** — structured session framework with
   crisis routing (see [disclaimers](#legal--disclaimers))
 - 🖼️ **Multimodal** — PDF, images, OCR, local document conversion
 - 🌍 **i18n** — German, English, Bulgarian
 - 🔒 **Safety model** — PII protection, strict local-only runtime mode
   (`APP_LOCAL_ONLY=1`), deny-by-default network egress
-- ⚙️ **Dual-GPU placement** — LLM on one GPU, auxiliary models (embeddings,
-  reranker, OCR) on a second; CPU fallback everywhere
+- ⚙️ **Flexible GPU placement** — dual-GPU (LLM + auxiliary models on
+  separate GPUs), single-GPU, or CPU fallback everywhere
 
 ## Quick Start
 
@@ -62,7 +62,7 @@ python -m venv .venv
 # 2. Install dependencies
 pip install -r requirements.txt
 
-# 3. Get a model (GGUF, e.g. Gemma 12B via LM Studio).
+# 3. Get a model (GGUF, e.g. Gemma 12B via LM Studio — smaller models need less VRAM).
 #    Default lookup: ~/.cache/lm-studio/models/  (override: BOT_MODELS_DIR)
 
 # 4. Run the app (finance module enabled)
@@ -82,14 +82,14 @@ streamlit run enhanced_streamlit_bot.py
 ## Architecture at a Glance
 
 ```
- Streamlit UI  (Chat · RAG/Documents · Finance · Psychology · Settings)
+ Streamlit UI  (Chat · RAG/Documents · Finance · Wellbeing · Settings)
         │  Pydantic-validated boundaries (schema-first)
  Orchestrator  (agent/orchestrator.py)
         │  tool routing · session state · runtime policy · PII protection
         │
    ┌────┴────────────────────┬───────────────────┐
    │                         │                   │
-  LLM                      RAG               Finance + Psychology
+  LLM                      RAG               Finance + Wellbeing
  (llama.cpp, GPU)     (FAISS + Docling +    (query engine,
                        Knowledge Graph,      sessions, crisis
                        reranker, GPU/CPU)    routing — local)
@@ -102,13 +102,16 @@ of user data.
 
 ## Hardware Notes
 
-| Use case | Recommendation |
-|----------|----------------|
-| LLM inference | 16–24 GB VRAM GPU (validated: RTX 4090 24 GB with Gemma 12B GGUF) |
-| Auxiliary models (embeddings, reranker, OCR, Docling) | Second GPU with 8 GB+ (validated: RTX 3060 Ti) — or the same GPU |
+The setup below is a **validated reference configuration** — not a
+requirement. Single-GPU and CPU-only systems are fully supported.
+
+| Use case | Minimum | Validated reference |
+|----------|---------|---------------------|
+| LLM inference | 1 NVIDIA GPU (VRAM depends on model size: ~16–24 GB for Gemma 12B GGUF; 3–4B models run on 8 GB) or CPU | RTX 4090 24 GB with Gemma 12B GGUF |
+| Auxiliary models (embeddings, reranker, OCR, Docling) | The same GPU, or a second GPU with 8 GB+ (or CPU) | RTX 3060 Ti 8 GB |
 | CPU-only | Works (CPU fallback is built in), slower |
 
-Verified GPU parameters (do not raise blindly): `n_batch=3072`,
+Verified GPU parameters for the reference setup (do not raise blindly): `n_batch=3072`,
 `n_ubatch=2048`, `n_threads=12`, full layer offload — details in
 [docs/RTX4090_RYZEN9_GUIDE.md](docs/RTX4090_RYZEN9_GUIDE.md).
 
@@ -151,7 +154,7 @@ orchestration `agent/orchestrator.py` · RAG store `agent/unified_rag_store.py`
 | [docs/01_ARCHITECTURE_DEEP_DIVE.md](docs/01_ARCHITECTURE_DEEP_DIVE.md) | Architecture & module entry points |
 | [docs/03_FINANCE_MODULE.md](docs/03_FINANCE_MODULE.md) | Finance module |
 | [docs/04_I18N_GUIDE.md](docs/04_I18N_GUIDE.md) | Internationalization (DE/EN/BG) |
-| [docs/08_PSYCH_MODULE_OPTIMIZATION.md](docs/08_PSYCH_MODULE_OPTIMIZATION.md) | Psychology module |
+| [docs/08_WELLBEING_MODULE_OPTIMIZATION.md](docs/08_WELLBEING_MODULE_OPTIMIZATION.md) | Wellbeing module |
 | [docs/19_LICENSES_AND_COMPLIANCE.md](docs/19_LICENSES_AND_COMPLIANCE.md) | Licensing & compliance |
 | [CONTRIBUTING.md](CONTRIBUTING.md) · [SUPPORT.md](SUPPORT.md) · [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) | Community |
 
@@ -160,7 +163,7 @@ orchestration `agent/orchestrator.py` · RAG store `agent/unified_rag_store.py`
 - **Finance module:** the Finance tab and query engine are for personal
   information management only. They do **not** constitute tax, legal, or
   investment advice. Consult a qualified professional for financial decisions.
-- **Psychology module:** the psychological support module is a structured
+- **Wellbeing module:** the wellbeing support module is a structured
   self-help/session framework, **not** a medical service, diagnosis, or a
   replacement for professional care. If you are in crisis, contact your
   local emergency services immediately (e.g. **112** in Germany/EU).
