@@ -1,5 +1,5 @@
 <!-- last-verified: 2026-08-31 -->
-# Bot6 — Local-First Multimodal AI Assistant
+# Homebot — Local-First Multimodal AI Assistant
 
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 [![Python 3.12](https://img.shields.io/badge/Python-3.12-blue.svg)](https://www.python.org/)
@@ -54,8 +54,8 @@ your machine.
 
 ```powershell
 # 1. Clone and create a virtual environment
-git clone https://github.com/Saberta/bot6.git bot6
-cd bot6
+git clone https://github.com/Sabetra/homebot.git homebot
+cd homebot
 python -m venv .venv
 .venv\Scripts\Activate.ps1
 
