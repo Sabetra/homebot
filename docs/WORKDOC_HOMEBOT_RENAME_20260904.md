@@ -1,7 +1,7 @@
 ﻿# Workdoc: Vollst\u00e4ndiges Bot6\u2192Homebot-Rename (Code, Doku, lokale Pfade)
 
 > **Erstellt:** 2026-09-04
-> **Status:** IN_ARBEIT
+> **Status:** ABGESCHLOSSEN 2026-09-04 (DoD 8/8 ✅)
 > **Autor:** Cline
 
 ## Original-Auftrag
@@ -25,14 +25,14 @@
 
 | # | Kriterium | Pr\u00fcfmethode | Status |
 |---|-----------|---------------|--------|
-| 1 | git grep -i bot6 liefert nur noch Archive/Workdocs + 1 Hygiene-Beispiel | git grep | \u2610 |
-| 2 | Volltestsuite gr\u00fcn (>= 1031 passed) | run_pytest_venv.ps1 | \u2610 |
-| 3 | Release-Gate bei Commit gr\u00fcn (pytest + Lizenz + Hygiene) | pre-commit-Hook | \u2610 |
-| 4 | App-Startpfad intakt: .db_root + DB-Ordner zeigen auf homebot_dbs | Inspektion + Resolver-Smoke | \u2610 |
-| 5 | Backups intakt: homebot_backups vollst\u00e4ndig (2,7 GB / 66 Dateien) | Get-ChildItem | \u2610 |
-| 6 | Watcher l\u00e4uft mit neuem Mutex, Autosave-Log aktuell | autosave.log | \u2610 |
-| 7 | Commit d4e756a sagt "Sabetra", Remote = lokale HEAD | git log + ls-remote | \u2713 |
-| 8 | pip-audit-Scan: Ergebnis dokumentiert (Advisories oder Netzwerk-Fehlschlag) | Scanner-Report | \u2610 |
+| 1 | git grep -i bot6 liefert nur noch Archive/Workdocs + 1 Hygiene-Beispiel | git grep | ✅ 2026-09-04 (11 Treffer, alle historisch/intentional) |
+| 2 | Volltestsuite grün (>= 1031 passed) | run_pytest_venv.ps1 | ✅ 2026-09-04 (1031 passed, 75.6 s) |
+| 3 | Release-Gate bei Commit grün (pytest + Lizenz + Hygiene) | pre-commit-Hook | ✅ c9eb9d2 (2026-09-04) |
+| 4 | App-Startpfad intakt: .db_root + DB-Ordner zeigen auf homebot_dbs | Inspektion + Resolver-Smoke | ✅ 2026-09-04 (Smoke-Test: `C:\Users\PC\.local\share\homebot_dbs`) |
+| 5 | Backups intakt: homebot_backups vollständig (2,7 GB / 66 Dateien) | Get-ChildItem | ✅ 2026-09-04 (66 Dateien; tägliche Stände bis 2026-09-04, quick_check ok) |
+| 6 | Watcher läuft mit neuem Mutex, Autosave-Log aktuell | autosave.log | ✅ PID 41240 (Start 20:37:53, nach Rename), Log aktuell |
+| 7 | Tippfehler-Commit rewordet ("Sabetra"), Remote = lokale HEAD | git log + ls-remote | ✅ `fa15464` auf main; "Saberta" nur lokal auf `backup/pre-reword-20260904` |
+| 8 | pip-audit-Scan: Ergebnis dokumentiert (Advisories oder Netzwerk-Fehlschlag) | Scanner-Report | ✅ `monitoring/dependency_audit/` (18 Advisories, 3 Pkgs) |
 
 ## Alternativen & Entscheidung
 
@@ -72,7 +72,11 @@
 
 | # | Datei | \u00c4nderung | Test-Ergebnis |
 |---|-------|-----------|---------------|
-| (nach Ausf\u00fchrung erg\u00e4nzen) | | | |
+| 1 | 34 aktive Dateien (Code, Tests, Doku, Config, Hooks, PS1) | `BOT6_*`→`HOMEBOT_*` (9 Env-Vars), `bot6_dbs`→`homebot_dbs`, `bot6_backups`→`homebot_backups`, `~/.cache/bot6`→`~/.cache/homebot`, `bot6-local-rag`→`homebot-local-rag`, Watcher-Mutex → `homebot-git-autosave-watcher` | Commit c9eb9d2: 34 files, 90+/90-; py_compile ✅, git-diff-Review ✅, 1031 Tests ✅ |
+| 2 | `.db_root`-Marker (live, außerhalb des Repos) | → `C:\Users\PC\.local\share\homebot_dbs` | Resolver-Smoke ✅ |
+| 3 | Live-Daten (MOVE, keine Kopie) | `~/.local/share/bot6_dbs`→`homebot_dbs` (u. a. rag_store 518 MB), `~/bot6_backups`→`homebot_backups` (2,7 GB / 66 Dateien) | Größen-Check ✅, Backup-Manifest 2026-09-04 ✅ |
+| 4 | README.md (root) | H1 `Homebot`, Clone-URL, `cd homebot`, Intro + EU-AI-Act-Produktname | — |
+| 5 | Watcher | Restart nach Mutex-Rename (PID 28876 → 41240), neuer Mutex aktiv | autosave.log ✅ (Commits 20:26, 21:47) |
 
 ## Befunde & Abschluss (2026-09-04, ~21:30–21:50)
 
@@ -110,4 +114,7 @@
 
 | # | Test / Befehl | Ergebnis | Datum |
 |---|---------------|----------|-------|
-| (nach Ausf\u00fchrung erg\u00e4nzen) | | | |
+| 1 | Volltestsuite (tests/) | 1031 passed in 75.64s | 2026-09-04 |
+| 2 | Resolver-Smoke (Produktiv-venv) | `get_project_root()` → `C:\Users\PC\.local\share\homebot_dbs` (existiert) | 2026-09-04 |
+| 3 | Release-Gate (Pre-Commit bei c9eb9d2) | pytest + Lizenz + Hygiene grün | 2026-09-04 |
+| 4 | pip-audit (strict) + Advisory-Fetch | 18 Advisories (gitpython 3.1.59: 6, pypdf 6.16.1: 5, h2 4.4.1: 1) | 2026-09-04 |
