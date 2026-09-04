@@ -19,9 +19,16 @@ your machine.
 
 ## Screenshots
 
+> 📸 **Screenshots folgen noch.** Aufnahme-Spezifikation & PII-Regeln:
+> [`assets/screenshots/README.md`](assets/screenshots/README.md).
+> Sobald `chat.png`, `finance.png`, `psychology.png` und `settings.png`
+> vorhanden sind, wird die Bildtabelle unten aktiviert.
+
+<!--
 | Chat | Finance | Psychology | Settings |
 |------|---------|------------|----------|
 | ![Chat](assets/screenshots/chat.png) | ![Finance](assets/screenshots/finance.png) | ![Psychology](assets/screenshots/psychology.png) | ![Settings](assets/screenshots/settings.png) |
+-->
 
 ## Features
 
