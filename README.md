@@ -6,7 +6,7 @@
 [![UI: Streamlit](https://img.shields.io/badge/UI-Streamlit-orange.svg)](https://streamlit.io/)
 [![Tests: pytest](https://img.shields.io/badge/tests-pytest-green.svg)](tests/)
 
-**Bot6 is a fully local AI assistant for your desktop.** Chat with a local
+**Homebot is a fully local AI assistant for your desktop.** Chat with a local
 large language model, search your own documents (RAG), ask questions about
 your personal finances, and use a structured psychological support module —
 **everything runs on your hardware**. No cloud LLM calls, no telemetry, no
@@ -164,7 +164,7 @@ orchestration `agent/orchestrator.py` · RAG store `agent/unified_rag_store.py`
   self-help/session framework, **not** a medical service, diagnosis, or a
   replacement for professional care. If you are in crisis, contact your
   local emergency services immediately (e.g. **112** in Germany/EU).
-- **AI system disclosure (EU AI Act Art. 50(1)):** Bot6 is an AI system.
+- **AI system disclosure (EU AI Act Art. 50(1)):** Homebot is an AI system.
   In line with the EU AI Act, the app clearly discloses to the user that
   they are interacting with an AI system — a visible banner is shown in the
   wellbeing/session UI in every supported language (DE/EN/BG).
