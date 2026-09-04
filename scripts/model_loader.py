@@ -701,6 +701,7 @@ def get_model_config(model_id: str) -> Optional[Dict[str, Any]]:
     """Gibt die Konfiguration für ein Modell zurück"""
     return MODEL_CONFIGS.get(model_id)
 
+
 # CUDA Lock für Thread-Sicherheit
 cuda_lock = threading.RLock()
 
@@ -932,12 +933,6 @@ class ModelLoader:
         result = self.llm is not None
         # Explicit bool cast for type safety
         return bool(result)
-    
-    def is_loaded(self) -> bool:
-        """Alias für is_model_loaded (Kompatibilität)"""
-        loaded = self.is_model_loaded()
-        # Explicit bool cast for type safety
-        return bool(loaded)
 
     def _resolve_special_tokens(self) -> None:
         """Liest BOS/EOS/EOT-Token und Stop-Sequenzen dynamisch aus den GGUF-Metadaten.

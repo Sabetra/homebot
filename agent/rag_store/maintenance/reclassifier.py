@@ -372,8 +372,8 @@ def _resolve_llm_client() -> Optional[object]:
     except Exception:
         pass
     try:
-        import model_loader  # type: ignore
-        return model_loader
+        from scripts.model_loader import get_model_loader
+        return get_model_loader()
     except Exception:
         return None
 

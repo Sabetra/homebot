@@ -22,7 +22,7 @@ from typing import Any, Iterator, Optional, Tuple
 import streamlit as st
 
 from wellbeing_session_interface import WellbeingSessionInterface
-from model_loader import (
+from scripts.model_loader import (
     DEFAULT_MODEL as MODEL_LOADER_DEFAULT,
     LLM_CONTEXT_SIZE,
     ModelLoader,
