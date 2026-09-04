@@ -81,7 +81,7 @@ adding tests, without LM Studio API support. Scope: nur Option A implementieren
 
 | Schritt | Aktion |
 |---------|--------|
-| 1 | Backups: `C:\Users\bot6_backups\20260904_single_gpu\` (6 Dateien, vor Edit angelegt) |
+| 1 | Backups: `~\bot6_backups\20260904_single_gpu\` (6 Dateien, vor Edit angelegt) |
 | 2 | `Copy-Item`-Rückkopie je Datei (Pflege: AGENTS.md → AGENTS.md) + `git checkout` als 2. Quelle |
 | 3 | Testsuite neu ausführen |
 
