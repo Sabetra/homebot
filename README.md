@@ -63,7 +63,7 @@ python -m venv .venv
 pip install -r requirements.txt
 
 # 3. Get a model (GGUF, e.g. Gemma 12B via LM Studio — smaller models need less VRAM).
-#    Default lookup: ~/.cache/lm-studio/models/  (override: BOT_MODELS_DIR)
+#    Default lookup: ~/.cache/lm-studio/models/lmstudio-community  (override: BOT_MODELS_DIR)
 
 # 4. Run the app (finance module enabled)
 .\start_private_with_finance.ps1
@@ -115,6 +115,29 @@ Verified GPU parameters for the reference setup (do not raise blindly): `n_batch
 `n_ubatch=2048`, `n_threads=12`, full layer offload — details in
 [docs/RTX4090_RYZEN9_GUIDE.md](docs/RTX4090_RYZEN9_GUIDE.md).
 
+## Models
+
+Homebot uses two families of models, both running **locally**:
+
+| Family | Default location | How to obtain |
+|--------|------------------|---------------|
+| **LLM** (GGUF, e.g. Gemma 12B) | `~/.cache/lm-studio/models/lmstudio-community` (override `BOT_MODELS_DIR`) | LM Studio, or download a GGUF into that folder |
+| **AUX** (reranker, embeddings, NLI, OCR, Docling) | Hugging Face cache `~/.cache/huggingface` · EasyOCR `~/.cache/torch` | `python scripts/setup_models.py --fetch` |
+
+Inspect what is present and what is missing:
+
+```powershell
+python scripts/setup_models.py --status   # human-readable report
+python scripts/setup_models.py --check    # exit 0 = all required models present (CI)
+python scripts/setup_models.py --fetch    # download missing models (online)
+```
+
+The runtime is **local-first**: it does **not** download AUX models implicitly.
+A missing required model surfaces an explicit, operator-actionable error that
+points at `setup_models.py` — it does not fail silently. Full requirements,
+sizes, licenses, and offline behavior:
+[docs/21_MODEL_REQUIREMENTS.md](docs/21_MODEL_REQUIREMENTS.md).
+
 ## Privacy & Security
 
 - **Local-first runtime:** all LLM inference and data storage happen on your
@@ -156,6 +179,7 @@ orchestration `agent/orchestrator.py` · RAG store `agent/unified_rag_store.py`
 | [docs/04_I18N_GUIDE.md](docs/04_I18N_GUIDE.md) | Internationalization (DE/EN/BG) |
 | [docs/08_WELLBEING_MODULE_OPTIMIZATION.md](docs/08_WELLBEING_MODULE_OPTIMIZATION.md) | Wellbeing module |
 | [docs/19_LICENSES_AND_COMPLIANCE.md](docs/19_LICENSES_AND_COMPLIANCE.md) | Licensing & compliance |
+| [docs/21_MODEL_REQUIREMENTS.md](docs/21_MODEL_REQUIREMENTS.md) | Model requirements, sizes, offline setup |
 | [CONTRIBUTING.md](CONTRIBUTING.md) · [SUPPORT.md](SUPPORT.md) · [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) | Community |
 
 ## Legal & Disclaimers
