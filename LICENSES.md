@@ -47,7 +47,7 @@
 | pydantic | 2.13.4 | MIT (PEP 639) | permissiv ✓ |
 | pymupdf | 1.28.0 | Dual Licensed - GNU AFFERO GPL 3.0 or Artifex Commercial License (Metadaten-Feld) | Strong-Copyleft (GPL/AGPL) ✓ |
 | pymupdf4llm | 0.2.9 | Dual Licensed - GNU AFFERO GPL 3.0 or Artifex Commercial License (Metadaten-Feld) | Strong-Copyleft (GPL/AGPL) ✓ |
-| pypdf | 6.14.2 | BSD-3-Clause (PEP 639) | permissiv ✓ |
+| pypdf | 6.17.0 | BSD-3-Clause (PEP 639) | permissiv ✓ |
 | python-dateutil | 2.9.0.post0 | BSD License (OSI-Klassifizierer) | permissiv ✓ |
 | pytz | 2026.3.post1 | MIT License (OSI-Klassifizierer) | permissiv ✓ |
 | PyYAML | 6.0.3 | MIT License (OSI-Klassifizierer) | permissiv ✓ |
@@ -113,9 +113,9 @@
 | frozenlist | 1.8.0 | Apache-2.0 (Metadaten-Feld) | permissiv ✓ |
 | fsspec | 2026.7.0 | BSD-3-Clause (PEP 639) | permissiv ✓ |
 | gitdb | 4.0.12 | BSD License (OSI-Klassifizierer) | permissiv ✓ |
-| GitPython | 3.1.57 | BSD-3-Clause (Metadaten-Feld) | permissiv ✓ |
+| GitPython | 3.1.61 | BSD-3-Clause (Metadaten-Feld) | permissiv ✓ |
 | h11 | 0.16.0 | MIT License (OSI-Klassifizierer) | permissiv ✓ |
-| h2 | 4.4.0 | MIT (PEP 639) | permissiv ✓ |
+| h2 | 4.4.1 | MIT (PEP 639) | permissiv ✓ |
 | hf-xet | 1.5.2 | Apache-2.0 (PEP 639) | permissiv ✓ |
 | hpack | 4.2.0 | MIT (PEP 639) | permissiv ✓ |
 | htmldate | 1.10.0 | Apache-2.0 (PEP 639) | permissiv ✓ |

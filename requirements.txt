@@ -42,7 +42,7 @@ PyMuPDF>=1.26.6,<2
 pymupdf4llm>=0.2.6,<0.3
 pdfminer.six>=20251107
 pdfplumber>=0.11.8,<0.12
-pypdf==6.14.2
+pypdf==6.17.0
 # Local LLM stack
 # 0.3.35: erste Version mit qwen35-Unterstützung (verifiziert 2026-08-27:
 # "qwen35" + "gemma4" in lib/llama.dll, ggml-cuda.dll vorhanden, 2 GPUs erkannt).

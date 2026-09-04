@@ -1,4 +1,4 @@
-<!-- last-verified: 2026-08-31 -->
+<!-- last-verified: 2026-09-04 -->
 
 # Security
 
@@ -24,6 +24,22 @@ keine Telemetrie, PII- und Finance-Daten bleiben lokal.
 | GPU | NVIDIA CUDA (Referenz-Setup: RTX 4090 [LLM] + RTX 3060 Ti [AUX]) |
 
 Entwickler-Maschine und -Venv sind **kein** Teil des Support-Vertrags.
+
+## Dependency-Security & Advisory-Status
+Stand 2026-09-04 (strict `pip-audit`-Scan, PyPA-Advisory-DB + GitHub-Advisories):
+
+| Paket | Befund | Maßnahme |
+|-------|--------|----------|
+| gitpython 3.1.57 | 10 Advisories (1 CRITICAL 9.8, 7 HIGH, 2 MEDIUM) | → **3.1.61** (≥ 3.1.59) |
+| pypdf 6.14.2 | 6 Advisories (MEDIUM, DoS-Klasse) | → **6.17.0** (≥ 6.16.1, requirements-Pin) |
+| h2 4.4.0 | 1 Advisory (MEDIUM, Request-Smuggling) | → **4.4.1** |
+| diskcache 5.6.3 | 1 Advisory (MEDIUM, unsafe pickle-Deserialisierung) | **Risikofreigabe:** kein gepatchtes Release; lokaler Cache nur auf local-only-Maschine; nachführen, sobald ein Fix erscheint |
+
+- **False-Negative-Schutz (2026-09-04):** `scripts/dependency_vulnerability_scanner.py`
+  meldet einen pip-audit-Fallback-Scan nicht mehr als „0 Vulnerabilities"
+  (Exit 2 statt Exit 0). Regressionstest:
+  `tests/test_dependency_vulnerability_scanner.py::test_fallback_marks_scan_as_error`.
+- Detail-Report (lokal, git-ignoriert): `monitoring/dependency_audit/audit_20260904.md`.
 
 ## Schwachstellen melden
 - Melde Sicherheits-Schwachstellen **diskret** über GitHub:
