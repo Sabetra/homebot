@@ -54,7 +54,7 @@ your machine.
 
 ```powershell
 # 1. Clone and create a virtual environment
-git clone https://github.com/<your-org>/bot6.git bot6
+git clone https://github.com/Saberta/bot6.git bot6
 cd bot6
 python -m venv .venv
 .venv\Scripts\Activate.ps1
