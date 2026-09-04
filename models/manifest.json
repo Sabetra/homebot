@@ -84,5 +84,109 @@
         "source": "LM Studio GUI / Hugging Face (Mistral-Small / Magistral)"
       }
     ]
+  },
+  "aux": {
+    "description": "Auxiliary (non-LLM) models for RAG reranking, embeddings, NLI verification, OCR and document conversion. Loaded via huggingface_hub / sentence-transformers under the local-first policy (APP_LOCAL_ONLY, HF_HUB_OFFLINE, TRANSFORMERS_OFFLINE).",
+    "cache_strategies": {
+      "hf_hub": "Hugging Face hub cache under HF_HOME (default ~/.cache/huggingface/hub); repo layout models--<org>--<name>/snapshots/<commit>/",
+      "st_home": "sentence-transformers home under SENTENCE_TRANSFORMERS_HOME (default <repo>/models_cache/sentence_transformers); repo layout <org>_<name>/",
+      "easyocr": "EasyOCR bundled models (CRAFT detection + CRNN recognition) under EASYOCR_MODULE_PATH / ~/.EasyOCR/model, pre-populated under <repo>/models_cache/",
+      "docling": "Docling pipeline models under HF_HOME/hub (docling-project/docling-models)"
+    },
+    "models": [
+      {
+        "id": "bge-reranker-v2-m3",
+        "display_name": "BGE Reranker v2 M3",
+        "required": true,
+        "role": "reranker",
+        "hf_repo": "BAAI/bge-reranker-v2-m3",
+        "cache_strategy": "hf_hub",
+        "size_gb_measured": 2.14,
+        "license": "MIT (per HF model card, BAAI)",
+        "revision": "953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e",
+        "revision_status": "pinned",
+        "source": "Hugging Face (BAAI/bge-reranker-v2-m3)"
+      },
+      {
+        "id": "multilingual-e5-large",
+        "display_name": "Multilingual E5 Large (embeddings)",
+        "required": true,
+        "role": "embeddings",
+        "hf_repo": "intfloat/multilingual-e5-large",
+        "cache_strategy": "st_home",
+        "size_gb_measured": 2.11,
+        "license": "Apache-2.0 (per HF model card, intfloat)",
+        "revision": "3d7cfbdacd47fdda877c5cd8a79fbcc4f2a574f3",
+        "revision_status": "pinned",
+        "source": "Hugging Face (intfloat/multilingual-e5-large)"
+      },
+      {
+        "id": "nli-deberta-v3-base",
+        "display_name": "NLI DeBERTa-v3 base (verification Layer 2.5)",
+        "required": false,
+        "role": "nli",
+        "hf_repo": "cross-encoder/nli-deberta-v3-base",
+        "cache_strategy": "hf_hub",
+        "size_gb_measured": 0.7,
+        "license": "per HF model card (cross-encoder)",
+        "revision": "6c749ce3425cd33b46d187e45b92bbf96ee12ec7",
+        "revision_status": "pinned",
+        "source": "Hugging Face (cross-encoder/nli-deberta-v3-base)"
+      },
+      {
+        "id": "nli-deberta-base",
+        "display_name": "NLI DeBERTa base (verification fallback)",
+        "required": false,
+        "role": "nli",
+        "hf_repo": "cross-encoder/nli-deberta-base",
+        "cache_strategy": "hf_hub",
+        "size_gb_measured": null,
+        "license": "per HF model card (cross-encoder)",
+        "revision": "f375a3f8bdba5a9ea9489179fe2f7b7d69c00b76",
+        "revision_status": "pinned",
+        "fallback_of": "nli-deberta-v3-base",
+        "source": "Hugging Face (cross-encoder/nli-deberta-base)"
+      },
+      {
+        "id": "nli-minilm2-l6-h768",
+        "display_name": "NLI MiniLM2-L6-H768 (verification fast fallback)",
+        "required": false,
+        "role": "nli",
+        "hf_repo": "cross-encoder/nli-MiniLM2-L6-H768",
+        "cache_strategy": "hf_hub",
+        "size_gb_measured": null,
+        "license": "per HF model card (cross-encoder)",
+        "revision": "b95119ce93d3e065de6214e38cd4a97b0f2f2c6d",
+        "revision_status": "pinned",
+        "fallback_of": "nli-deberta-v3-base",
+        "source": "Hugging Face (cross-encoder/nli-MiniLM2-L6-H768)"
+      },
+      {
+        "id": "easyocr-bundled",
+        "display_name": "EasyOCR bundled models (CRAFT + CRNN)",
+        "required": false,
+        "role": "ocr",
+        "hf_repo": null,
+        "cache_strategy": "easyocr",
+        "size_gb_measured": null,
+        "license": "MIT / Apache-2.0 (per EasyOCR docs)",
+        "revision": null,
+        "revision_status": "bundled",
+        "source": "Bundled with easyocr 1.7.2 (pre-populated under models_cache/)"
+      },
+      {
+        "id": "docling-pipeline",
+        "display_name": "Docling pipeline models",
+        "required": false,
+        "role": "docling",
+        "hf_repo": "docling-project/docling-models",
+        "cache_strategy": "docling",
+        "size_gb_measured": null,
+        "license": "Apache-2.0 (docling-project)",
+        "revision": null,
+        "revision_status": "default",
+        "source": "Hugging Face (docling-project/docling-models)"
+      }
+    ]
   }
 }
