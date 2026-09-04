@@ -361,7 +361,23 @@ class CrossEncoderReranker:
                 logger.warning(f"⚠️ Failed to load {model_name}: {e}")
                 continue
 
-        logger.error("❌ All cross-encoder models failed to load. Reranking disabled.")
+        # SOTA (2026-09-05): explizite, i18n-fähige Fehlermeldung statt stiller
+        # Degradation — nennt das fehlende Modell + Handlungsaufforderung.
+        from utils.model_load_errors import build_missing_model_message
+        logger.error(
+            "❌ %s",
+            build_missing_model_message(
+                _CROSS_ENCODER_MODELS[0],
+                "models.reranker_missing",
+                default=(
+                    f"Cross-encoder reranking disabled: required model "
+                    f"{_CROSS_ENCODER_MODELS[0]} is not in the local Hugging Face "
+                    "cache. Check: `python scripts/setup_models.py --status`. "
+                    "Fix: `python scripts/setup_models.py --fetch` (online) or "
+                    "pre-populate the HF cache (offline)."
+                ),
+            ),
+        )
         # SOTA (2026-08-28): Endgültiges Fehlschlagen merken, damit nicht
         # jeder folgende Aufruf erneut (und erneut fehlschlagend) lädt.
         self._load_failed = True

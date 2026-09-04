@@ -672,5 +672,9 @@
             "check_intro": "Before we stay with your current topic, I want to check your immediate safety once.",
             "closing": "You do not have to face this alone. Professional help is available anytime."
         }
+    },
+    "models": {
+        "reranker_missing": "Cross-encoder reranking disabled: the required model {model} is not in the local Hugging Face cache. Check: `python scripts/setup_models.py --status`. Fix: `python scripts/setup_models.py --fetch` (online) or pre-populate the HF cache (offline).",
+        "nli_missing": "NLI entailment verification disabled: the required model {model} is not in the local Hugging Face cache. Check: `python scripts/setup_models.py --status`. Fix: `python scripts/setup_models.py --fetch` (online) or pre-populate the HF cache (offline)."
     }
 }

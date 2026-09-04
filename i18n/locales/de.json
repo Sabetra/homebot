@@ -672,5 +672,9 @@
             "distribution": "**Distribution:**",
             "top10_share": "Top 10 account for {share:.1f}% of all occurrences"
         }
+    },
+    "models": {
+        "reranker_missing": "Cross-Encoder-Reranking deaktiviert: Das benötigte Modell {model} ist nicht im lokalen Hugging-Face-Cache vorhanden. Prüfen: `python scripts/setup_models.py --status`. Beheben: `python scripts/setup_models.py --fetch` (online) oder HF-Cache vorab befüllen (offline).",
+        "nli_missing": "NLI-Belegprüfung deaktiviert: Das benötigte Modell {model} ist nicht im lokalen Hugging-Face-Cache vorhanden. Prüfen: `python scripts/setup_models.py --status`. Beheben: `python scripts/setup_models.py --fetch` (online) oder HF-Cache vorab befüllen (offline)."
     }
 }

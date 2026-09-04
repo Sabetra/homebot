@@ -526,8 +526,14 @@ class NLIEntailmentChecker:
             try:
                 import time as _time
                 start = _time.time()
+                # SOTA (2026-09-05): local-first — kein impliziter Online-Download.
+                # Fehlendes Modell führt zu einer expliziten Fehlermeldung
+                # (statt stiller Degradation): `scripts/setup_models.py --fetch`.
                 NLIEntailmentChecker._model = CrossEncoder(
-                    model_name, max_length=512, device=device
+                    model_name,
+                    max_length=512,
+                    device=device,
+                    local_files_only=True,
                 )
                 elapsed = _time.time() - start
                 NLIEntailmentChecker._available = True
@@ -540,7 +546,23 @@ class NLIEntailmentChecker:
                 continue
 
         NLIEntailmentChecker._available = False
-        logger.warning("[NLI] All NLI models failed to load")
+        # SOTA (2026-09-05): explizite, i18n-fähige Fehlermeldung statt stiller
+        # Degradation (NLI-Verifikation bliebe sonst unauffällig deaktiviert).
+        from utils.model_load_errors import build_missing_model_message
+        logger.error(
+            "❌ [NLI] %s",
+            build_missing_model_message(
+                self._NLI_MODELS[0],
+                "models.nli_missing",
+                default=(
+                    f"NLI entailment verification disabled: required model "
+                    f"{self._NLI_MODELS[0]} is not in the local Hugging Face "
+                    "cache. Check: `python scripts/setup_models.py --status`. "
+                    "Fix: `python scripts/setup_models.py --fetch` (online) or "
+                    "pre-populate the HF cache (offline)."
+                ),
+            ),
+        )
 
     @staticmethod
     def _select_device(_torch: Any, _os: Any) -> str:

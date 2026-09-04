@@ -672,5 +672,9 @@
             "check_intro": "Преди да останем с текущата ви тема, искам веднъж накратко да проверя непосредствената ви безопасност.",
             "closing": "Не е нужно да преминавате през това сами. Професионална помощ е налична по всяко време."
         }
+    },
+    "models": {
+        "reranker_missing": "Cross-encoder reranking е деактивирано: нужният модел {model} не е наличен в локалния Hugging Face кеш. Проверка: `python scripts/setup_models.py --status`. Поправка: `python scripts/setup_models.py --fetch` (онлайн) или предварително попълване на HF кеша (офлайн).",
+        "nli_missing": "NLI проверка за доказаност е деактивирана: нужният модел {model} не е наличен в локалния Hugging Face кеш. Проверка: `python scripts/setup_models.py --status`. Поправка: `python scripts/setup_models.py --fetch` (онлайн) или предварително попълване на HF кеша (офлайн)."
     }
 }
