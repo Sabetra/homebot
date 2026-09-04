@@ -1,0 +1,223 @@
+{
+  "metadata": {
+    "created_at": "2025-08-29T12:33:58.192843",
+    "phase": "Phase 1 - Minimal Viable Feedback",
+    "estimated_duration": "3 Wochen",
+    "estimated_effort": "41 Stunden",
+    "expected_roi": "15-30% Qualitätsverbesserung"
+  },
+  "code_changes": {
+    "database": {
+      "feedback_responses": {
+        "description": "Speichert Benutzer-Feedback zu Bot-Antworten",
+        "columns": [
+          "id INTEGER PRIMARY KEY AUTOINCREMENT",
+          "user_id TEXT",
+          "conversation_id TEXT",
+          "response_id TEXT",
+          "feedback_type TEXT",
+          "feedback_value INTEGER",
+          "feedback_category TEXT",
+          "comment TEXT",
+          "context_metadata TEXT",
+          "created_at TEXT",
+          "ip_hash TEXT"
+        ],
+        "file_to_modify": "agent/rag_store.py",
+        "estimated_time": "2 Stunden"
+      },
+      "source_feedback": {
+        "description": "Speichert Feedback zu spezifischen RAG-Quellen",
+        "columns": [
+          "id INTEGER PRIMARY KEY AUTOINCREMENT",
+          "user_id TEXT",
+          "doc_id TEXT",
+          "chunk_id TEXT",
+          "relevance_rating INTEGER",
+          "helpful BOOLEAN",
+          "created_at TEXT"
+        ],
+        "file_to_modify": "agent/rag_store.py",
+        "estimated_time": "1 Stunde"
+      }
+    },
+    "gui": {
+      "ThumbsWidget": {
+        "description": "Daumen hoch/runter Widget",
+        "location": "gui.py - neue Klasse",
+        "features": [
+          "QPushButton mit Icons (👍/👎)",
+          "Visuelles Feedback bei Klick",
+          "Signal emission für Backend",
+          "Tooltip mit Erklärung"
+        ],
+        "estimated_time": "2 Stunden"
+      },
+      "SourceFeedbackWidget": {
+        "description": "Feedback-Buttons bei RAG-Quellen",
+        "location": "gui.py - integration in chat display",
+        "features": [
+          "Kleine Feedback-Icons neben Quellen",
+          "Hover-Effekte",
+          "Inline-Integration in HTML",
+          "Relevanz-Rating (1-5 Sterne)"
+        ],
+        "estimated_time": "3 Stunden"
+      },
+      "FeedbackDialog": {
+        "description": "Dialog für detailliertes Feedback",
+        "location": "gui.py - neue Dialog-Klasse",
+        "features": [
+          "Multi-Kategorie-Rating",
+          "Freitext-Kommentar",
+          "Opt-out Option",
+          "Danke-Nachricht"
+        ],
+        "estimated_time": "2 Stunden"
+      }
+    },
+    "backend": {
+      "RagStore Erweiterung": {
+        "file": "agent/rag_store.py",
+        "new_methods": [
+          "store_feedback_response()",
+          "store_source_feedback()",
+          "get_feedback_stats()",
+          "get_source_feedback_aggregate()"
+        ],
+        "estimated_time": "3 Stunden"
+      },
+      "AgentChatbotLogic Erweiterung": {
+        "file": "agent_chatbot_logic.py",
+        "new_methods": [
+          "handle_feedback_event()",
+          "generate_response_id()",
+          "collect_context_metadata()"
+        ],
+        "estimated_time": "2 Stunden"
+      },
+      "GUI Integration": {
+        "file": "gui.py",
+        "modifications": [
+          "ThumbsWidget in chat_display integrieren",
+          "SourceFeedbackWidget bei RAG-Quellen hinzufügen",
+          "Feedback-Event-Handler implementieren",
+          "Consent-Dialog für Feedback hinzufügen"
+        ],
+        "estimated_time": "4 Stunden"
+      }
+    },
+    "privacy": {
+      "Erweiterte Einverständniserklärung": {
+        "description": "Explizite Zustimmung für Feedback-Sammlung",
+        "implementation": [
+          "Consent-Dialog beim ersten Feedback",
+          "Opt-out Option jederzeit verfügbar",
+          "Klartext über Datenverwendung",
+          "Separate Zustimmung für Feedback vs. Nutzung"
+        ],
+        "estimated_time": "1 Stunde"
+      },
+      "Datenminimierung": {
+        "description": "Nur notwendige Daten sammeln",
+        "implementation": [
+          "IP-Adressen nur als Hash speichern",
+          "Keine persönlichen Daten in Kommentaren",
+          "Automatische Löschung nach 2 Jahren",
+          "Pseudonymisierung der user_id"
+        ],
+        "estimated_time": "1 Stunde"
+      },
+      "Transparenz": {
+        "description": "Nutzer über Feedback-Verwendung informieren",
+        "implementation": [
+          "Privacy-Info in der GUI",
+          "Anzeige gesammelter Feedback-Daten",
+          "Export-Funktion für eigene Daten",
+          "Lösch-Funktion für eigene Daten"
+        ],
+        "estimated_time": "1 Stunde"
+      }
+    },
+    "testing": {
+      "Unit Tests": {
+        "description": "Tests für neue Funktionen",
+        "test_files": [
+          "test_feedback_database.py",
+          "test_feedback_gui.py",
+          "test_feedback_privacy.py"
+        ],
+        "estimated_time": "3 Stunden"
+      },
+      "Integration Tests": {
+        "description": "End-to-End Tests",
+        "scenarios": [
+          "Feedback-Workflow komplett testen",
+          "RAG-Quellen-Feedback testen",
+          "Privacy-Opt-out testen",
+          "Datenbank-Migration testen"
+        ],
+        "estimated_time": "2 Stunden"
+      },
+      "User Testing": {
+        "description": "Tests mit echten Nutzern",
+        "activities": [
+          "A/B-Test mit/ohne Feedback",
+          "Usability-Test der Feedback-UI",
+          "Performance-Impact messen",
+          "Feedback-Qualität bewerten"
+        ],
+        "estimated_time": "4 Stunden"
+      }
+    }
+  },
+  "timeline": {
+    "Woche 1": {
+      "dates": "29.08 - 04.09",
+      "tasks": [
+        "🗄️ Datenbank-Schema erweitern (3h)",
+        "🎨 GUI-Komponenten entwickeln (7h)",
+        "📝 SQL-Migration schreiben (1h)"
+      ],
+      "total_hours": 11,
+      "deliverables": [
+        "Neue DB-Tabellen",
+        "Basis-GUI-Widgets"
+      ]
+    },
+    "Woche 2": {
+      "dates": "05.09 - 11.09",
+      "tasks": [
+        "⚙️ Backend-Integration (9h)",
+        "🔒 Privacy-Compliance (3h)",
+        "🧪 Unit Tests schreiben (3h)"
+      ],
+      "total_hours": 15,
+      "deliverables": [
+        "Vollständige Backend-Integration",
+        "GDPR-Compliance"
+      ]
+    },
+    "Woche 3": {
+      "dates": "12.09 - 18.09",
+      "tasks": [
+        "🔧 Integration Tests (2h)",
+        "👥 User Testing (4h)",
+        "🐛 Bug-Fixing (6h)",
+        "📚 Dokumentation (3h)"
+      ],
+      "total_hours": 15,
+      "deliverables": [
+        "Produktionsbereites System",
+        "Dokumentation"
+      ]
+    }
+  },
+  "next_steps": [
+    "1. SQL-Schema in rag_store.py implementieren",
+    "2. ThumbsWidget in gui.py entwickeln",
+    "3. Backend-Methoden für Feedback-Speicherung",
+    "4. Privacy-Dialog implementieren",
+    "5. Integration Tests durchführen"
+  ]
+}

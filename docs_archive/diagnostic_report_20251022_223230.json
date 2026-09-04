@@ -1,0 +1,139 @@
+{
+  "hardware": {
+    "ram": {
+      "total_gb": 63.92,
+      "available_gb": 31.42,
+      "used_percent": 50.8,
+      "critical": false
+    },
+    "cpu": {
+      "physical_cores": 16,
+      "logical_cores": 32,
+      "usage_percent": 5.0,
+      "high_load": false
+    },
+    "disk": {
+      "free_gb": 126.34,
+      "used_percent": 86.4,
+      "low_space": false
+    }
+  },
+  "software": {
+    "python_version": "3.12.7",
+    "platform": "win32",
+    "packages": {
+      "torch": {
+        "version": "2.6.0+cu124",
+        "cuda_available": true,
+        "cuda_version": "12.4",
+        "cudnn_version": "90100"
+      },
+      "faiss": {
+        "version": "1.12.0"
+      },
+      "numpy": {
+        "version": "2.2.6"
+      }
+    }
+  },
+  "databases": [
+    {
+      "path": "db1.db",
+      "size_mb": 0.05,
+      "integrity": "ok",
+      "tables": 5,
+      "total_rows": 0,
+      "healthy": true
+    },
+    {
+      "path": "performance_metrics.db",
+      "size_mb": 0.03,
+      "integrity": "ok",
+      "tables": 3,
+      "total_rows": 183,
+      "healthy": true
+    },
+    {
+      "path": "psychological_support.db",
+      "size_mb": 4.05,
+      "integrity": "ok",
+      "tables": 9,
+      "total_rows": 1057,
+      "healthy": true
+    },
+    {
+      "path": "rag_data.db",
+      "size_mb": 0.0,
+      "integrity": "ok",
+      "tables": 0,
+      "total_rows": 0,
+      "healthy": true
+    },
+    {
+      "path": "rag_store.db",
+      "size_mb": 766.29,
+      "integrity": "ok",
+      "tables": 16,
+      "total_rows": 0,
+      "healthy": true
+    },
+    {
+      "path": "test.db",
+      "size_mb": 0.05,
+      "integrity": "ok",
+      "tables": 5,
+      "total_rows": 0,
+      "healthy": true
+    },
+    {
+      "path": "test_psychological_support.db",
+      "size_mb": 0.05,
+      "integrity": "ok",
+      "tables": 5,
+      "total_rows": 4,
+      "healthy": true
+    },
+    {
+      "path": "web_policy.db",
+      "size_mb": 0.15,
+      "integrity": "ok",
+      "tables": 2,
+      "total_rows": 638,
+      "healthy": true
+    },
+    {
+      "path": "agent\\rag_db.db",
+      "size_mb": 0.0,
+      "integrity": "ok",
+      "tables": 0,
+      "total_rows": 0,
+      "healthy": true
+    },
+    {
+      "path": "agent\\rag_store.db",
+      "size_mb": 0.05,
+      "integrity": "ok",
+      "tables": 5,
+      "total_rows": 0,
+      "healthy": true
+    }
+  ],
+  "memory_patterns": {
+    "skipped": "no_database"
+  },
+  "gpu": {
+    "available": true,
+    "count": 1,
+    "devices": [
+      {
+        "id": 0,
+        "name": "NVIDIA GeForce RTX 4090",
+        "memory_total_gb": 23.99,
+        "memory_allocated_gb": 0.0,
+        "memory_reserved_gb": 0.0,
+        "compute_capability": "8.9"
+      }
+    ]
+  },
+  "crash_indicators": []
+}

@@ -1,0 +1,278 @@
+[
+  {
+    "case_id": "valid-baseline-1",
+    "source": "fixture",
+    "expected_valid": true,
+    "payload": {
+      "core_personality": {
+        "traits": ["reflektiert", "zielorientiert"],
+        "communication_style": "klar und offen",
+        "decision_making": "abwaegend",
+        "confidence": 0.78
+      },
+      "current_state": {
+        "emotional_tone": "angespannt aber stabil",
+        "stress_level": "medium",
+        "life_phase": "berufliche Umbruchsphase",
+        "primary_concerns": ["Arbeitsbelastung", "Schlaf"],
+        "confidence": 0.74
+      },
+      "relationships": {
+        "family_dynamics": {
+          "members": ["Partner"],
+          "patterns": ["konstruktiver Austausch"]
+        },
+        "social_style": "selektiv sozial",
+        "attachment_patterns": "tendenziell sicher",
+        "confidence": 0.7
+      },
+      "goals_and_growth": {
+        "current_goals": ["Stressreduktion", "regelmaessige Pausen"],
+        "growth_areas": ["Grenzen setzen"],
+        "progress_indicators": ["bessere Schlafroutine"],
+        "confidence": 0.69
+      },
+      "coping_and_resources": {
+        "strategies": ["Tagesstruktur", "Atemuebungen"],
+        "strengths": ["Selbstbeobachtung"],
+        "support_systems": ["Partner", "Freundeskreis"],
+        "confidence": 0.72
+      },
+      "therapeutic_focus": {
+        "priority_areas": ["Belastungsregulation"],
+        "intervention_suggestions": ["Verhaltensaktivierung"],
+        "progress_markers": ["weniger Erschoepfung"],
+        "confidence": 0.71
+      },
+      "overall_confidence": 0.72
+    }
+  },
+  {
+    "case_id": "invalid-stress-level",
+    "source": "fixture",
+    "expected_valid": false,
+    "payload": {
+      "core_personality": {
+        "traits": ["reflektiert"],
+        "communication_style": "klar",
+        "decision_making": "abwaegend",
+        "confidence": 0.8
+      },
+      "current_state": {
+        "emotional_tone": "angespannt",
+        "stress_level": "extreme",
+        "life_phase": "Umbruch",
+        "primary_concerns": ["Arbeitslast"],
+        "confidence": 0.75
+      },
+      "relationships": {
+        "family_dynamics": {},
+        "social_style": "zurueckhaltend",
+        "attachment_patterns": "sicher",
+        "confidence": 0.7
+      },
+      "goals_and_growth": {
+        "current_goals": ["Entlastung"],
+        "growth_areas": ["Priorisierung"],
+        "progress_indicators": ["mehr Pausen"],
+        "confidence": 0.7
+      },
+      "coping_and_resources": {
+        "strategies": ["Bewegung"],
+        "strengths": ["Disziplin"],
+        "support_systems": ["Partner"],
+        "confidence": 0.7
+      },
+      "therapeutic_focus": {
+        "priority_areas": ["Stressregulation"],
+        "intervention_suggestions": ["Psychoedukation"],
+        "progress_markers": ["weniger Ueberforderung"],
+        "confidence": 0.7
+      },
+      "overall_confidence": 0.73
+    }
+  },
+  {
+    "case_id": "invalid-empty-high-confidence",
+    "source": "fixture",
+    "expected_valid": false,
+    "payload": {
+      "core_personality": {
+        "traits": [],
+        "communication_style": "",
+        "decision_making": "",
+        "confidence": 0.95
+      },
+      "current_state": {
+        "emotional_tone": "",
+        "stress_level": "low",
+        "life_phase": "",
+        "primary_concerns": [],
+        "confidence": 0.95
+      },
+      "relationships": {
+        "family_dynamics": {},
+        "social_style": "",
+        "attachment_patterns": "",
+        "confidence": 0.95
+      },
+      "goals_and_growth": {
+        "current_goals": [],
+        "growth_areas": [],
+        "progress_indicators": [],
+        "confidence": 0.95
+      },
+      "coping_and_resources": {
+        "strategies": [],
+        "strengths": [],
+        "support_systems": [],
+        "confidence": 0.95
+      },
+      "therapeutic_focus": {
+        "priority_areas": [],
+        "intervention_suggestions": [],
+        "progress_markers": [],
+        "confidence": 0.95
+      },
+      "overall_confidence": 0.95
+    }
+  },
+  {
+    "case_id": "valid-lower-confidence-boundary",
+    "source": "fixture",
+    "expected_valid": true,
+    "payload": {
+      "core_personality": {
+        "traits": ["analytisch"],
+        "communication_style": "praezise",
+        "decision_making": "strukturiert",
+        "confidence": 0.34
+      },
+      "current_state": {
+        "emotional_tone": "fokussiert",
+        "stress_level": "low",
+        "life_phase": "stabil",
+        "primary_concerns": ["Zeitmanagement"],
+        "confidence": 0.35
+      },
+      "relationships": {
+        "family_dynamics": {
+          "members": ["Freunde"],
+          "patterns": ["kooperativ"]
+        },
+        "social_style": "ausgewogen",
+        "attachment_patterns": "sicher",
+        "confidence": 0.33
+      },
+      "goals_and_growth": {
+        "current_goals": ["Routine stabilisieren"],
+        "growth_areas": ["Priorisierung"],
+        "progress_indicators": ["klarere Tagesplaene"],
+        "confidence": 0.34
+      },
+      "coping_and_resources": {
+        "strategies": ["Wochenplanung"],
+        "strengths": ["Selbstdisziplin"],
+        "support_systems": ["Kollegen"],
+        "confidence": 0.35
+      },
+      "therapeutic_focus": {
+        "priority_areas": ["Selbstorganisation"],
+        "intervention_suggestions": ["Implementation Intentions"],
+        "progress_markers": ["weniger Aufschub"],
+        "confidence": 0.34
+      },
+      "overall_confidence": 0.35
+    }
+  },
+  {
+    "case_id": "invalid-overall-confidence-too-low",
+    "source": "fixture",
+    "expected_valid": false,
+    "payload": {
+      "core_personality": {
+        "traits": ["reflektiert"],
+        "communication_style": "offen",
+        "decision_making": "abwaegend",
+        "confidence": 0.42
+      },
+      "current_state": {
+        "emotional_tone": "ruhig",
+        "stress_level": "low",
+        "life_phase": "stabil",
+        "primary_concerns": ["Energiehaushalt"],
+        "confidence": 0.41
+      },
+      "relationships": {
+        "family_dynamics": {},
+        "social_style": "kooperativ",
+        "attachment_patterns": "sicher",
+        "confidence": 0.4
+      },
+      "goals_and_growth": {
+        "current_goals": ["Konstanz"],
+        "growth_areas": ["Regeneration"],
+        "progress_indicators": ["regelmaessiger Schlaf"],
+        "confidence": 0.4
+      },
+      "coping_and_resources": {
+        "strategies": ["Bewegung"],
+        "strengths": ["Selbstreflexion"],
+        "support_systems": ["Freundeskreis"],
+        "confidence": 0.4
+      },
+      "therapeutic_focus": {
+        "priority_areas": ["Selbstfuersorge"],
+        "intervention_suggestions": ["Verhaltensaktivierung"],
+        "progress_markers": ["stabilere Woche"],
+        "confidence": 0.4
+      },
+      "overall_confidence": 0.2
+    }
+  },
+  {
+    "case_id": "invalid-confidence-mismatch",
+    "source": "fixture",
+    "expected_valid": false,
+    "payload": {
+      "core_personality": {
+        "traits": ["gewissenhaft"],
+        "communication_style": "klar",
+        "decision_making": "datenbasiert",
+        "confidence": 0.2
+      },
+      "current_state": {
+        "emotional_tone": "ruhig",
+        "stress_level": "medium",
+        "life_phase": "stabil",
+        "primary_concerns": ["Workload"],
+        "confidence": 0.2
+      },
+      "relationships": {
+        "family_dynamics": {},
+        "social_style": "kooperativ",
+        "attachment_patterns": "sicher",
+        "confidence": 0.2
+      },
+      "goals_and_growth": {
+        "current_goals": ["Konstanz"],
+        "growth_areas": ["Resilienz"],
+        "progress_indicators": ["weniger Peaks"],
+        "confidence": 0.2
+      },
+      "coping_and_resources": {
+        "strategies": ["Pausen"],
+        "strengths": ["Selbstbeobachtung"],
+        "support_systems": ["Partner"],
+        "confidence": 0.2
+      },
+      "therapeutic_focus": {
+        "priority_areas": ["Belastungssteuerung"],
+        "intervention_suggestions": ["Coping-Plan"],
+        "progress_markers": ["gleichmaessigere Woche"],
+        "confidence": 0.2
+      },
+      "overall_confidence": 0.9
+    }
+  }
+]

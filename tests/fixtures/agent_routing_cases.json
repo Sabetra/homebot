@@ -1,0 +1,32 @@
+[
+  {
+    "case_id": "simple-definition",
+    "expected_mode": "SIMPLE",
+    "prompt": "Erkläre in zwei Sätzen, was Photosynthese ist."
+  },
+  {
+    "case_id": "simple-rewrite",
+    "expected_mode": "SIMPLE",
+    "prompt": "Formuliere höflicher: Schick mir die Unterlagen heute."
+  },
+  {
+    "case_id": "plan-local-rag",
+    "expected_mode": "PLAN_EXECUTE",
+    "prompt": "Durchsuche meine lokale Wissensbasis nach Kündigungsfristen und fasse die drei relevantesten Quellen zusammen."
+  },
+  {
+    "case_id": "plan-single-tool",
+    "expected_mode": "PLAN_EXECUTE",
+    "prompt": "Lies die Datei bericht.pdf ein und gib mir die enthaltenen Überschriften aus."
+  },
+  {
+    "case_id": "react-program",
+    "expected_mode": "REACT",
+    "prompt": "Erstelle ein vollständiges ausführbares Tetris-Spiel in Python, führe es aus, behebe Fehler und liefere die fertige Datei."
+  },
+  {
+    "case_id": "react-conflict",
+    "expected_mode": "REACT",
+    "prompt": "Recherchiere die widersprüchlichen Angaben in mehreren Quellen iterativ, prüfe jede Behauptung und korrigiere den Plan bei neuen Erkenntnissen."
+  }
+]

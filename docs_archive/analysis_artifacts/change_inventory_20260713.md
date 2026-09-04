@@ -1,0 +1,97 @@
+﻿# Change Inventory (2026-07-13)
+
+- Generated: 2026-07-13 23:19:39
+- Total changed/untracked items: 87
+- Agent last delta: 5
+- Preexisting/external: 82
+
+## Agent Last Delta
+- [modified] agent/orchestrator.py
+- [untracked] agent/orchestrator.py.bak_20260713_refactor_phase1
+- [untracked] docs/SOTA_WORKLOG_20260713.md
+- [untracked] docs/SOTA_WORKLOG_20260713.md.bak_20260713_refactor_phase1
+- [untracked] funktionen.md
+
+## Preexisting / External
+- [modified] .bm25s_index/_bm25_meta.json
+- [modified] .bm25s_index/_chunk_ids.json
+- [modified] .bm25s_index/data.csc.index.npy
+- [modified] .bm25s_index/indices.csc.index.npy
+- [modified] .bm25s_index/indptr.csc.index.npy
+- [modified] .bm25s_index/params.index.json
+- [modified] .bm25s_index/vocab.index.json
+- [modified] ARCHITECTURE.md
+- [deleted] CLEANUP.md
+- [modified] DEVELOPER_QUICK_START.md
+- [modified] README.md
+- [deleted] SOTA_IMPLEMENTATION_PROGRESS.md
+- [modified] agent/change_detector.py
+- [modified] agent/response_builder.py
+- [modified] agent/strixkat_eval.py
+- [modified] agent/verification_manager.py
+- [modified] agent_chatbot_logic.py
+- [deleted] docs/DOCUMENTATION_AUDIT_REPORT_2026-06-24.md
+- [deleted] docs/DOCUMENTATION_AUDIT_USER_CHANGE_SUMMARY.md
+- [deleted] docs/I18N_BULGARIAN_COMPLETE_ANALYSIS.md
+- [deleted] docs/I18N_BULGARIAN_IMPLEMENTATION.md
+- [modified] docs/README.md
+- [deleted] docs/SOTA_IMPLEMENTATION_TRACKER.md
+- [deleted] docs/SOTA_RAG_QUALITY_PIPELINE.md
+- [deleted] docs/SOTA_ROADMAP.md
+- [deleted] docs/finance_optimization_roadmap.md
+- [deleted] docs/finance_prompt_inventory.md
+- [deleted] docs/finance_user_change_summary.md
+- [modified] enhanced_streamlit_bot.py
+- [modified] finance/tab.py
+- [modified] i18n/__init__.py
+- [modified] i18n/i18n_manager.py
+- [modified] i18n/locales/bg.json
+- [modified] i18n/locales/de.json
+- [modified] i18n/locales/en.json
+- [modified] kg_dashboard.py
+- [modified] models_pydantic_v2.py
+- [modified] psychological_session/handlers/chat_input_handler.py
+- [modified] psychological_session/handlers/response_generator.py
+- [modified] psychological_session/lifecycle/session_lifecycle_manager.py
+- [modified] psychological_session/services/session_end_service.py
+- [modified] psychological_session/ui/active_session_renderer.py
+- [modified] psychological_session/ui/goal_progress_renderer.py
+- [modified] psychological_session/ui/session_management_renderer.py
+- [modified] psychological_session/ui/welcome_renderer.py
+- [untracked] agent/orchestrator.py.backup_20260713_llm_fix
+- [untracked] agent/orchestrator.py.backup_20260713_sota_integration
+- [untracked] agent/response_builder.py.bak_20260712
+- [untracked] agent/sota_pipeline.py.bak_20260713_sota_integration
+- [untracked] agent/verification_manager.py.backup_20260713_llm_fix
+- [untracked] agent/verification_manager.py.bak_20260713_error_fix
+- [untracked] agent/verification_manager.py.bak_20260713_llm_decompose_fix
+- [untracked] agent_chatbot_logic.py.bak_20260712_tool_context_fix
+- [untracked] docs/00_CONTEXT_MASTER.md
+- [untracked] docs/01_ARCHITECTURE_DEEP_DIVE.md
+- [untracked] docs/02_SOTA_ROADMAP.md
+- [untracked] docs/03_FINANCE_MODULE.md
+- [untracked] docs/04_I18N_GUIDE.md
+- [untracked] docs/05_DEVELOPER_GUIDE.md
+- [untracked] docs/06_CONTEXT_ENGINEERING_SOTA.md
+- [untracked] docs/09_archived/
+- [untracked] enhanced_streamlit_bot.py.bak_20260712
+- [untracked] enhanced_streamlit_bot.py.bak_20260712_012711
+- [untracked] finance/tab.py.bak_20260712_finance_longtail
+- [untracked] finance/tab.py.bak_20260712_phase2
+- [untracked] i18n/__init__.py.bak_20260712
+- [untracked] i18n/i18n_manager.py.bak_20260711
+- [untracked] i18n/i18n_manager.py.bak_20260712
+- [untracked] i18n/locale_negotiator.py
+- [untracked] i18n/locales/bg.json.bak_20260712
+- [untracked] i18n/locales/bg.json.bak_20260712_finance_longtail
+- [untracked] i18n/locales/bg.json.bak_20260712_phase2
+- [untracked] i18n/locales/de.json.bak_20260712
+- [untracked] i18n/locales/de.json.bak_20260712_finance_longtail
+- [untracked] i18n/locales/de.json.bak_20260712_phase2
+- [untracked] i18n/locales/en.json.bak_20260712
+- [untracked] i18n/locales/en.json.bak_20260712_finance_longtail
+- [untracked] i18n/locales/en.json.bak_20260712_phase2
+- [untracked] kg_dashboard.py.bak_20260712_phase2
+- [untracked] psychological_session/handlers/response_generator.py.bak_20260712
+- [untracked] start_private_with_finance.ps1
+- [untracked] start_public_no_finance.ps1

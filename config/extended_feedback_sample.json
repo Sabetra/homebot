@@ -1,0 +1,74 @@
+[
+  {
+    "response_id": "extended_sample_positive_20250907_161836",
+    "type": "direct_ui",
+    "value": 1,
+    "category": "helpfulness",
+    "comment": "Sehr hilfreiche und präzise Antwort!",
+    "user_confirmed": true,
+    "timestamp": "2025-09-07T16:18:36.776010",
+    "ui_method": "extended_feedback_buttons",
+    "feedback_type": "positive",
+    "feedback_subtype": "positive_feedback",
+    "extended_metadata": {
+      "source": "compatibility_test",
+      "pattern_matched": true,
+      "handler_used": "_handle_positive_feedback",
+      "gui_integration": "v2_extended"
+    }
+  },
+  {
+    "response_id": "extended_sample_negative_20250907_161836",
+    "type": "direct_ui",
+    "value": -1,
+    "category": "helpfulness",
+    "comment": "Antwort war nicht hilfreich und zu vage",
+    "user_confirmed": true,
+    "timestamp": "2025-09-07T16:18:36.776010",
+    "ui_method": "extended_feedback_buttons",
+    "feedback_type": "negative",
+    "feedback_subtype": "negative_feedback",
+    "extended_metadata": {
+      "source": "compatibility_test",
+      "pattern_matched": true,
+      "handler_used": "_handle_negative_feedback",
+      "gui_integration": "v2_extended"
+    }
+  },
+  {
+    "response_id": "extended_sample_incorrect_20250907_161836",
+    "type": "direct_ui",
+    "value": -2,
+    "category": "accuracy",
+    "comment": "Die Information über Python-Syntax war falsch",
+    "user_confirmed": true,
+    "timestamp": "2025-09-07T16:18:36.776010",
+    "ui_method": "extended_feedback_buttons",
+    "feedback_type": "incorrect",
+    "feedback_subtype": "incorrect_feedback",
+    "extended_metadata": {
+      "source": "compatibility_test",
+      "pattern_matched": true,
+      "handler_used": "_handle_incorrect_feedback",
+      "gui_integration": "v2_extended"
+    }
+  },
+  {
+    "response_id": "extended_sample_improve_20250907_161836",
+    "type": "direct_ui",
+    "value": 0,
+    "category": "suggestions",
+    "comment": "Könnte mehr Code-Beispiele enthalten",
+    "user_confirmed": true,
+    "timestamp": "2025-09-07T16:18:36.776010",
+    "ui_method": "extended_feedback_buttons",
+    "feedback_type": "improve",
+    "feedback_subtype": "improve_feedback",
+    "extended_metadata": {
+      "source": "compatibility_test",
+      "pattern_matched": true,
+      "handler_used": "_handle_improve_feedback",
+      "gui_integration": "v2_extended"
+    }
+  }
+]

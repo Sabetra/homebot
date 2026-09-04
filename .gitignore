@@ -1,0 +1,176 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+venv/
+env/
+ENV/
+venv_mistral_gguf/
+venv_mistral_vibe/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Logs
+*.log
+model_loader.log
+.coverage
+coverage.xml
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+*.db-shm
+*.db-wal
+
+# Temp files
+*.tmp
+temp/
+tmp/
+temp_images/
+temp_scripts/
+code_sandbox/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# 🔥 NEU: Modell-Cache (lokal, nicht versionieren!)
+models_cache/
+# Ausnahme: README für Dokumentation
+!models_cache/README.md
+
+# Hugging Face Cache (falls nicht in models_cache/)
+.cache/
+transformers_cache/
+
+# Archive/Backup
+archive/
+backup/
+*.backup
+*.bak
+# Backup-Suffixe mit Datums-/Markierungsangabe (2026-08-28: *.bak / *.backup matchen diese nicht)
+*.bak_*
+*.backup_*
+rag_backups/
+data/backups/
+
+# Sensitive data
+.env
+.env.local
+secrets.yaml
+credentials.json
+*.key
+*.db.key
+
+# Test outputs
+test_output/
+output/
+
+# Type checker cache
+.mypy_cache/
+
+# Runtime/cache artifacts
+.faiss_cache/
+faiss_cache/
+cache/
+
+# Generated outputs
+generated_images/
+generated_diagrams/
+eval_results/
+eval_code_executor_results/
+ragas_results/
+
+# Local runtime state
+user_feedback.jsonl
+user_feedback_responses.json
+system_stats.json
+
+# Local tool/session state
+.vibe/
+.status_filtered.txt
+
+# Streamlit local secrets
+.streamlit/credentials.toml
+.streamlit/secrets.toml
+
+# Local archive buckets (keep canonical docs/ and docs_archive/ in repo)
+archive_obsolete_*/
+archive_old_analysis/
+
+# --- Autosave-Absicherung (2026-08-10) ---
+# Diese Eintraege muessen stehen, bevor scripts/autosave_snapshot.ps1 laeuft.
+# Ohne sie wuerde der Autosave-Task venvs und Caches im Minutentakt einchecken.
+
+# Alle virtuellen Umgebungen (venv_mistral_gguf, venv_bot_20260802, kuenftige)
+venv_*/
+.venv/
+
+# Backups liegen ausserhalb des Repos unter %USERPROFILE%\bot6_backups\.
+# Eintrag bleibt, falls ein Agent den Ordner erneut im Repo anlegt.
+backups/
+
+# Archivierter toter Code
+dead_code_archive/
+
+# Werkzeug-Caches und Coverage-Reports
+.pytest_cache/
+htmlcov/
+htmlcov_integration/
+
+# Generierte mypy-Report-Dumps (Momentaufnahmen, kein Vertrag)
+mypy_*.txt
+
+# Temporaere Wegwerf-Skripte und -Dateien
+_tmp_*
+
+# --- Daten gehoeren nicht ins Repo (2026-08-10) ---
+# Produktive DBs und Caches liegen unter dem .db_root-Ziel
+# (%USERPROFILE%\.local\share\bot6_dbs). Pfade IMMER ueber
+# utils/db_path_resolver beziehen. Der KG-Cache folgt automatisch
+# dem Psycho-DB-Pfad und darf nie wieder eingecheckt werden.
+psychological_support_kg_cache/
+psycho_kg_faiss/
+
+# --- Public Launch Hygiene (2026-08-31) ---
+# Maschinen-/benutzerspezifische Runtime-Zustaende und lokale Arbeitsdateien
+# duerfen nie ins (oeffentliche) Repository. Vorlagen: *.example-Dateien.
+/.db_root
+/monitoring/
+/data/websearch_cache.json
+/settings.json
+/.continue/
+/_search_tmp.txt
+/config/path_allowlist.json
+/marketing/
+/.bm25s_index
+# Ad-hoc agent diagnostic files (top-level only)
+/_*.txt

@@ -1,0 +1,103 @@
+#!/bin/sh
+#
+# Pre-Commit-Gate (portabel, maschinenunabhängig)
+#
+# Fuehrt vor jedem *bewussten* Commit das deterministische Release-Gate aus
+# (pytest + Profile-Fixture, ohne Modellladen, ca. 65 s).
+#
+# WICHTIG - Autosave wird nie blockiert:
+#   scripts/autosave_snapshot.ps1 setzt BOT6_AUTOSAVE=1. Das Sicherheitsnetz
+#   muss auch einen kaputten Zwischenstand sichern koennen; genau dafuer ist
+#   es da. Ein Gate, das den Snapshot verhindert, wuerde den Schutz aushebeln.
+#
+# Bewusst umgehen (Ausnahmefall):
+#   git commit --no-verify -m "..."
+#
+# Aktiviert ueber:  git config core.hooksPath .githooks
+#
+# Python-Aufloesung (in dieser Reihenfolge):
+#   1. $BOT6_PYTHON (explizit, muss existieren)
+#   2. Erste Venv, die pytest importen kann (Gate-Voraussetzung) -
+#      Reihenfolge: Produktionsvenv (venv_bot_20260802), .venv, venv,
+#      Legacy (venv_mistral_gguf); Windows + Linux.
+#      So waehlt der Hook keine unausgebaute Venv (z. B. .venv ohne
+#      aiosqlite), die das Gate mit Fehlschlaegen lahmlegen wuerde.
+#   3. Erste vorhandene Venv (Fallback)
+#   4. python aus dem PATH
+
+if [ "$BOT6_AUTOSAVE" = "1" ]; then
+    exit 0
+fi
+
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+
+PYTHON=""
+if [ -n "$BOT6_PYTHON" ] && [ -x "$BOT6_PYTHON" ]; then
+    PYTHON="$BOT6_PYTHON"
+else
+    # Pass 1: erste Venv mit pytest (Gate-Voraussetzung)
+    for cand in \
+        "$REPO_ROOT/venv_bot_20260802/Scripts/python.exe" \
+        "$REPO_ROOT/.venv/Scripts/python.exe" \
+        "$REPO_ROOT/venv/Scripts/python.exe" \
+        "$REPO_ROOT/venv_bot_20260802/bin/python" \
+        "$REPO_ROOT/.venv/bin/python" \
+        "$REPO_ROOT/venv/bin/python" \
+        "$REPO_ROOT/venv_mistral_gguf/Scripts/python.exe"; do
+        if [ -x "$cand" ] && "$cand" -c "import pytest" >/dev/null 2>&1; then
+            PYTHON="$cand"
+            break
+        fi
+    done
+    # Pass 2: erste vorhandene Venv (Fallback)
+    if [ -z "$PYTHON" ]; then
+        for cand in \
+            "$REPO_ROOT/venv_bot_20260802/Scripts/python.exe" \
+            "$REPO_ROOT/.venv/Scripts/python.exe" \
+            "$REPO_ROOT/venv/Scripts/python.exe" \
+            "$REPO_ROOT/venv_bot_20260802/bin/python" \
+            "$REPO_ROOT/.venv/bin/python" \
+            "$REPO_ROOT/venv/bin/python" \
+            "$REPO_ROOT/venv_mistral_gguf/Scripts/python.exe"; do
+            if [ -x "$cand" ]; then PYTHON="$cand"; break; fi
+        done
+    fi
+fi
+if [ -z "$PYTHON" ]; then
+    PYTHON="$(command -v python 2>/dev/null || true)"
+fi
+if [ -z "$PYTHON" ]; then
+    echo "pre-commit: kein Python-Interpreter gefunden - Gate uebersprungen." >&2
+    echo "pre-commit: BOT6_PYTHON setzen oder venv anlegen (.venv/ bzw. venv/)." >&2
+    exit 1
+fi
+
+echo "pre-commit: deterministisches Release-Gate laeuft (ca. 65 s)..."
+echo "pre-commit: ueberspringen mit  git commit --no-verify"
+
+# Lizenz-Gate (fail-fast, ~1 s): LICENSES.md-Frische + AGPL-Policy.
+# Strict-Modus: unknown/needs-review im Runtime-Scope blockt den Commit.
+# Bei Roete: "python scripts/generate_licenses.py" ausfuehren und neu committen.
+"$PYTHON" scripts/check_licenses.py --strict
+LICENSE_STATUS=$?
+if [ $LICENSE_STATUS -ne 0 ]; then
+    echo "" >&2
+    echo "pre-commit: LICENSE-GATE ROT - Commit abgebrochen." >&2
+    echo "pre-commit: Aktion: python scripts/generate_licenses.py" >&2
+    exit $LICENSE_STATUS
+fi
+
+"$PYTHON" scripts/run_release_quality_gate.py --mode deterministic
+STATUS=$?
+
+if [ $STATUS -ne 0 ]; then
+    echo "" >&2
+    echo "pre-commit: GATE ROT - Commit abgebrochen." >&2
+    echo "pre-commit: Bericht unter monitoring/release_quality/" >&2
+    echo "pre-commit: Der Arbeitsstand ist trotzdem sicher - der Autosave-" >&2
+    echo "pre-commit: Watcher snapshottet unabhaengig von diesem Gate." >&2
+    exit $STATUS
+fi
+
+echo "pre-commit: Gate gruen."
+exit 0

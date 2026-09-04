@@ -1,0 +1,160 @@
+{
+  "analysis_date": "2025-08-29T12:40:33.122714",
+  "conclusion": "Userfeedback MIT Diversitätsschutz implementieren",
+  "risks": {
+    "Filter Bubble Effekt": {
+      "description": "Nutzer bevorzugen ähnliche Quellen, System lernt Bias",
+      "severity": "HOCH",
+      "probability": "MITTEL",
+      "impact": "Reduzierte Perspektivenvielfalt",
+      "example": "Nutzer bevorzugen wissenschaftliche Papers → News werden unterdrückt"
+    },
+    "Popularity Bias": {
+      "description": "Häufig genutzte Quellen werden überproportional bevorzugt",
+      "severity": "MITTEL",
+      "probability": "HOCH",
+      "impact": "Marginalisierung seltener aber wertvoller Quellen",
+      "example": "Wikipedia-Artikel dominieren über Fachliteratur"
+    },
+    "Recency Bias": {
+      "description": "Neue Quellen haben weniger Feedback, werden benachteiligt",
+      "severity": "MITTEL",
+      "probability": "HOCH",
+      "impact": "Veraltung der Wissensbasis",
+      "example": "Alte PDFs mit viel Feedback vs. neue wichtige Dokumente"
+    },
+    "Topic Narrowing": {
+      "description": "Fokussierung auf beliebte Themen, Nischenwissen vernachlässigt",
+      "severity": "MITTEL",
+      "probability": "MITTEL",
+      "impact": "Verlust von Expertenwissen",
+      "example": "Populäre IT-Themen dominieren über Fachwissen"
+    },
+    "Quality Misalignment": {
+      "description": "Nutzer bewerten 'leicht verständlich' höher als 'fachlich korrekt'",
+      "severity": "HOCH",
+      "probability": "MITTEL",
+      "impact": "Verschiebung zu oberflächlichem Wissen",
+      "example": "Blog-Posts werden höher bewertet als Fachpublikationen"
+    }
+  },
+  "safeguards": {
+    "Diversity-Weighted Scoring": {
+      "description": "Bewertung berücksichtigt Quellenvielfalt",
+      "implementation": [
+        "Bonus-Punkte für unterrepräsentierte Quellentypen",
+        "Penalty für Über-Dominanz bestimmter Quellen",
+        "Rotation zwischen verschiedenen Dokumenttypen",
+        "Mindest-Repräsentation aller Quellenkategorien"
+      ],
+      "effort": "MITTEL",
+      "effectiveness": "HOCH"
+    },
+    "Exploration vs. Exploitation Balance": {
+      "description": "Mischung aus bewährten und neuen Quellen",
+      "implementation": [
+        "10-20% der Ergebnisse aus 'ungetesteten' Quellen",
+        "Random-Sampling von Quellen ohne Feedback",
+        "A/B-Testing verschiedener Quellenstrategien",
+        "Zeitbasierte Auffrischung der Quellengewichtung"
+      ],
+      "effort": "HOCH",
+      "effectiveness": "HOCH"
+    },
+    "Multi-Perspective Retrieval": {
+      "description": "Bewusste Suche nach diversen Perspektiven",
+      "implementation": [
+        "Separate Slots für verschiedene Quellentypen",
+        "Anti-Clustering Algorithmus für ähnliche Quellen",
+        "Perspektiven-Diversität als Ranking-Faktor",
+        "Minimum-Vielfalt-Threshold pro Antwort"
+      ],
+      "effort": "MITTEL",
+      "effectiveness": "HOCH"
+    },
+    "Feedback-Independent Channels": {
+      "description": "Teile des Systems bleiben feedback-unabhängig",
+      "implementation": [
+        "30% der Retrieval-Ergebnisse feedback-agnostic",
+        "Parallele, ungefilterte Suche als Backup",
+        "Periodische 'Reset'-Phasen ohne Feedback-Bias",
+        "Separate Indices für verschiedene Anwendungsfälle"
+      ],
+      "effort": "NIEDRIG",
+      "effectiveness": "MITTEL"
+    },
+    "Meta-Learning über Quellentypen": {
+      "description": "System lernt über verschiedene Quellenarten",
+      "implementation": [
+        "Klassifikation von Dokumenttypen und -qualität",
+        "Kontextabhängige Quellenbewertung",
+        "Learning-to-Rank für verschiedene Fragetypen",
+        "Adaptive Gewichtung basierend auf Nutzerintention"
+      ],
+      "effort": "HOCH",
+      "effectiveness": "SEHR HOCH"
+    }
+  },
+  "enhanced_system": {
+    "Zwei-Ebenen-Feedback": {
+      "level_1": "Direkte Antwort-Bewertung (wie geplant)",
+      "level_2": "Meta-Feedback zu Quellenvielfalt",
+      "implementation": [
+        "Standard Thumbs-Up/Down für Antworten",
+        "Zusätzlich: 'Mehr Perspektiven gewünscht?'",
+        "Separate Bewertung für Quellenbreite",
+        "Feedback zu unterrepräsentierten Bereichen"
+      ]
+    },
+    "Smart Diversity Engine": {
+      "description": "Intelligente Quellenauswahl mit Diversitätsfokus",
+      "components": [
+        "Diversity Score für jede Quellenauswahl",
+        "Automatic Rebalancing bei Bias-Erkennung",
+        "Perspective Injection für einseitige Ergebnisse",
+        "Source Type Rotation Algorithm"
+      ]
+    },
+    "Monitoring & Alerting": {
+      "description": "Überwachung der Quellenvielfalt",
+      "metrics": [
+        "Source Type Distribution per Week",
+        "Feedback Bias Detection",
+        "Novelty Score von verwendeten Dokumenten",
+        "User Satisfaction with Diversity"
+      ],
+      "alerts": [
+        "Warnung bei >70% Dominanz eines Quellentyps",
+        "Alert bei sinkender Vielfalt über Zeit",
+        "Benachrichtigung bei neuen, unbeachteten Quellen"
+      ]
+    }
+  },
+  "total_effort_hours": 113,
+  "recommendations": {
+    "SOFORT IMPLEMENTIEREN (Phase 1)": [
+      "✅ 30% feedback-unabhängige Retrieval-Ergebnisse reservieren",
+      "✅ Source-Type-Tracking in der Datenbank hinzufügen",
+      "✅ Basis-Diversitäts-Metriken implementieren",
+      "✅ Warnung bei >70% Dominanz eines Quellentyps"
+    ],
+    "KURZFRISTIG (4-6 Wochen)": [
+      "📊 Multi-Ebenen-Feedback (Antwort + Quellenvielfalt)",
+      "🔄 Exploration-Exploitation-Balance (10-20% neue Quellen)",
+      "🎯 Anti-Clustering für ähnliche Quellen",
+      "📈 Wöchentliches Diversity-Reporting"
+    ],
+    "MITTELFRISTIG (2-3 Monate)": [
+      "🧠 Meta-Learning über verschiedene Quellentypen",
+      "🔄 Adaptive Gewichtung basierend auf Kontext",
+      "🎯 Perspective-Injection bei einseitigen Ergebnissen",
+      "📊 KI-basierte Bias-Erkennung und -Korrektur"
+    ],
+    "MONITORING-STRATEGIE": [
+      "📊 Tägliche Überwachung der Quellenverteilung",
+      "🚨 Automatische Alerts bei Diversitätsverlust",
+      "📈 A/B-Testing verschiedener Diversitäts-Strategien",
+      "👥 Regelmäßiges User-Feedback zu Quellenbreite"
+    ]
+  }
+}
