@@ -108,6 +108,48 @@
         "source": "Hugging Face (BAAI/bge-reranker-v2-m3)"
       },
       {
+        "id": "ms-marco-MiniLM-L-12-v2",
+        "display_name": "MS MARCO MiniLM L-12 v2 (reranker fallback 1)",
+        "required": false,
+        "role": "reranker",
+        "hf_repo": "cross-encoder/ms-marco-MiniLM-L-12-v2",
+        "cache_strategy": "hf_hub",
+        "size_gb_measured": null,
+        "license": "Apache-2.0 (Microsoft)",
+        "revision": null,
+        "revision_status": "latest",
+        "fallback_of": "bge-reranker-v2-m3",
+        "source": "Hugging Face (cross-encoder/ms-marco-MiniLM-L-12-v2)"
+      },
+      {
+        "id": "ms-marco-MiniLM-L-6-v2",
+        "display_name": "MS MARCO MiniLM L-6 v2 (reranker fallback 2)",
+        "required": false,
+        "role": "reranker",
+        "hf_repo": "cross-encoder/ms-marco-MiniLM-L-6-v2",
+        "cache_strategy": "hf_hub",
+        "size_gb_measured": 0.086,
+        "license": "Apache-2.0 (Microsoft)",
+        "revision": null,
+        "revision_status": "latest",
+        "fallback_of": "bge-reranker-v2-m3",
+        "source": "Hugging Face (cross-encoder/ms-marco-MiniLM-L-6-v2)"
+      },
+      {
+        "id": "ms-marco-TinyBERT-L-2-v2",
+        "display_name": "MS MARCO TinyBERT L-2 v2 (reranker fallback 3)",
+        "required": false,
+        "role": "reranker",
+        "hf_repo": "cross-encoder/ms-marco-TinyBERT-L-2-v2",
+        "cache_strategy": "hf_hub",
+        "size_gb_measured": null,
+        "license": "Apache-2.0 (Microsoft)",
+        "revision": null,
+        "revision_status": "latest",
+        "fallback_of": "bge-reranker-v2-m3",
+        "source": "Hugging Face (cross-encoder/ms-marco-TinyBERT-L-2-v2)"
+      },
+      {
         "id": "multilingual-e5-large",
         "display_name": "Multilingual E5 Large (embeddings)",
         "required": true,
@@ -162,6 +204,19 @@
         "source": "Hugging Face (cross-encoder/nli-MiniLM2-L6-H768)"
       },
       {
+        "id": "all-MiniLM-L6-v2",
+        "display_name": "All-MiniLM-L6-v2 (semantic cache embeddings)",
+        "required": false,
+        "role": "semantic_cache",
+        "hf_repo": "sentence-transformers/all-MiniLM-L6-v2",
+        "cache_strategy": "st_home",
+        "size_gb_measured": 0.085,
+        "license": "Apache-2.0 (sentence-transformers)",
+        "revision": null,
+        "revision_status": "latest",
+        "source": "Hugging Face (sentence-transformers/all-MiniLM-L6-v2)"
+      },
+      {
         "id": "easyocr-bundled",
         "display_name": "EasyOCR bundled models (CRAFT + CRNN)",
         "required": false,
@@ -187,6 +242,14 @@
         "revision_status": "default",
         "source": "Hugging Face (docling-project/docling-models)"
       }
+    ],
+    "known_alternatives": [
+      {"hf_repo": "intfloat/multilingual-e5-large-instruct", "role": "embeddings", "note": "SOTA e5-large instruct variant (1024 dim). Opt-in via RAG_EMBEDDING_MODEL."},
+      {"hf_repo": "BAAI/bge-m3", "role": "embeddings", "note": "SOTA multilingual embedding (1024 dim). Opt-in via RAG_EMBEDDING_MODEL."},
+      {"hf_repo": "BAAI/bge-large-en-v1.5", "role": "embeddings", "note": "English-optimized embedding (1024 dim). Opt-in via RAG_EMBEDDING_MODEL."},
+      {"hf_repo": "sentence-transformers/paraphrase-multilingual-mpnet-base-v2", "role": "embeddings", "note": "Smaller multilingual embedding (768 dim). Opt-in via RAG_EMBEDDING_MODEL."},
+      {"hf_repo": "jinaai/jina-embeddings-v2-base-de", "role": "embeddings", "note": "German-optimized embedding (768 dim). Opt-in via RAG_EMBEDDING_MODEL."},
+      {"hf_repo": "Alibaba-NLP/gte-multilingual-base", "role": "embeddings", "note": "SOTA multilingual embedding (768 dim). Opt-in via RAG_EMBEDDING_MODEL."}
     ]
   }
 }
