@@ -1,0 +1,88 @@
+{
+  "version": 1,
+  "last_verified": "2026-09-05",
+  "description": "Homebot model manifest - Single Source of Truth for all local model requirements. SOTA 2026: declarative manifest with pinned revisions, verifiable sizes, licenses and load policies. Consumed by: scripts/setup_models.py, tests/test_model_manifest_consistency.py, docs/07_MODEL_REQUIREMENTS.md.",
+  "env_overrides": {
+    "llm_root": "BOT_MODELS_DIR",
+    "aux_cache": "SENTENCE_TRANSFORMERS_HOME",
+    "hf_cache": "HF_HOME",
+    "embedding_model": "EMBEDDING_MODEL_NAME",
+    "offline": ["APP_LOCAL_ONLY", "HF_HUB_OFFLINE", "TRANSFORMERS_OFFLINE"]
+  },
+  "llm": {
+    "format": "gguf",
+    "runtime": "llama-cpp-python (via scripts/model_loader.py)",
+    "default_root": "~/.cache/lm-studio/models/lmstudio-community",
+    "root_override_env": "BOT_MODELS_DIR",
+    "any_gguf_allowed": true,
+    "vision_marker": "mmproj*.gguf in the same folder as the main GGUF",
+    "license_note": "Gemma weights are governed by Google's Gemma Terms of Use (acceptance required, e.g. via Hugging Face login or LM Studio). Model weights are NOT part of this repository and must not be redistributed.",
+    "models": [
+      {
+        "id": "gemma-4-12b-it",
+        "display_name": "Gemma 4 12B (QAT Q4_0)",
+        "required": false,
+        "production_default": true,
+        "folder": "gemma-4-12B-it-QAT-GGUF",
+        "file": "gemma-4-12B-it-QAT-Q4_0.gguf",
+        "mmproj": "mmproj-gemma-4-12B-it-QAT-BF16.gguf",
+        "size_gb_measured": 6.5,
+        "mmproj_size_gb_measured": 0.16,
+        "license": "Google Gemma Terms of Use (acceptance required)",
+        "source": "LM Studio GUI / Hugging Face (gated) / Unsloth GGUF"
+      },
+      {
+        "id": "gemma-4-e4b-it",
+        "display_name": "Gemma 4 E4B (Q4_K_M)",
+        "required": false,
+        "production_default": false,
+        "folder": "gemma-4-E4B-it-GGUF",
+        "file": "gemma-4-E4B-it-Q4_K_M.gguf",
+        "mmproj": "mmproj-gemma-4-E4B-it-BF16.gguf",
+        "size_gb_measured": 4.97,
+        "mmproj_size_gb_measured": 0.92,
+        "license": "Google Gemma Terms of Use (acceptance required)",
+        "source": "LM Studio GUI / Hugging Face (gated) / Unsloth GGUF"
+      },
+      {
+        "id": "gemma-4-26b-a4b-it",
+        "display_name": "Gemma 4 26B A4B (Q4_K_M)",
+        "required": false,
+        "production_default": false,
+        "folder": "gemma-4-26B-A4B-it-GGUF",
+        "file": "gemma-4-26B-A4B-it-Q4_K_M.gguf",
+        "mmproj": "mmproj-gemma-4-26B-A4B-it-BF16.gguf",
+        "size_gb_measured": 15.64,
+        "mmproj_size_gb_measured": 1.11,
+        "license": "Google Gemma Terms of Use (acceptance required)",
+        "source": "LM Studio GUI / Hugging Face (gated) / Unsloth GGUF"
+      },
+      {
+        "id": "gemma-3-12b-it",
+        "display_name": "Gemma 3 12B (Q4_K_M)",
+        "required": false,
+        "production_default": false,
+        "folder": "gemma-3-12b-it-GGUF",
+        "file": "gemma-3-12b-it-Q4_K_M.gguf",
+        "mmproj": "mmproj-model-f16.gguf",
+        "size_gb_measured": null,
+        "mmproj_size_gb_measured": null,
+        "license": "Google Gemma Terms of Use (acceptance required)",
+        "source": "LM Studio GUI / Hugging Face (gated) / Unsloth GGUF"
+      },
+      {
+        "id": "magistral-small-2509",
+        "display_name": "Magistral Small 2509 (Q4_K_M)",
+        "required": false,
+        "production_default": false,
+        "folder": "Magistral-Small-2509-GGUF",
+        "file": "Magistral-Small-2509-Q4_K_M.gguf",
+        "mmproj": "mmproj-Magistral-Small-2509-F16.gguf",
+        "size_gb_measured": 13.35,
+        "mmproj_size_gb_measured": 0.82,
+        "license": "Apache-2.0 (Mistral AI)",
+        "source": "LM Studio GUI / Hugging Face (Mistral-Small / Magistral)"
+      }
+    ]
+  }
+}
