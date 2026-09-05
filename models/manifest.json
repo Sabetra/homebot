@@ -1,7 +1,7 @@
 {
   "version": 1,
   "last_verified": "2026-09-05",
-  "description": "Homebot model manifest - Single Source of Truth for all local model requirements. SOTA 2026: declarative manifest with pinned revisions, verifiable sizes, licenses and load policies. Consumed by: scripts/setup_models.py, tests/test_model_manifest_consistency.py, docs/07_MODEL_REQUIREMENTS.md.",
+  "description": "Homebot model manifest - Single Source of Truth for all local model requirements. SOTA 2026: declarative manifest with pinned revisions, verifiable sizes, licenses and load policies. Consumed by: scripts/setup_models.py, tests/test_model_manifest_consistency.py, docs/21_MODEL_REQUIREMENTS.md.",
   "env_overrides": {
     "llm_root": "BOT_MODELS_DIR",
     "aux_cache": "SENTENCE_TRANSFORMERS_HOME",
