@@ -33,6 +33,7 @@ Stand: 2026-08-20 (Doku-Audit)
 | [18_LEGAL_WEB_PERSIST.md](18_LEGAL_WEB_PERSIST.md) | Legal/Ethical Compliance für web-sourced RAG-Persistierung: robots.txt/Header/Meta-Gates, Retention (30 d), Pruning, CPython-Robots-Quirks |
 | [19_LICENSES_AND_COMPLIANCE.md](19_LICENSES_AND_COMPLIANCE.md) | Lizenzen & Compliance: AGPL-3.0 (Copyright Michaël Artebas), `LICENSES.md`-Generator/Checker, Klassifizierung, Modell-Gewichte, Workflow |
 | [20_TOKEN_SCALING.md](20_TOKEN_SCALING.md) | Token/Context-Skalierung: hardware-bewusster Auto-Vorschlag (Sweet Spot), Präzedenz UI > ENV > Auto, KV-Quantisierung, Persistenz, Fallback-Regeln |
+| [21_MODEL_REQUIREMENTS.md](21_MODEL_REQUIREMENTS.md) | **Modell-Requirements & Offline-Setup:** `models/manifest.json` (SSoT), `scripts/setup_models.py` (status/check/fetch), LLM+AUX-Modelle, Cache-Orte, Lizenzen, Drift-Prävention |
 | [../ARCHITECTURE.md](../ARCHITECTURE.md) | Legacy-Architektur-Referenz (root); aktuell kanonisch: 01_ARCHITECTURE_DEEP_DIVE.md |
 | [../DEVELOPER_QUICK_START.md](../DEVELOPER_QUICK_START.md) | Entwickler-Quickstart (root): Setup, Start, Tests |
 | [../VISUALIZATION_GUIDE.md](../VISUALIZATION_GUIDE.md) | Visualisierung (root): Mermaid, Graphviz, Charts — 100% lokal |

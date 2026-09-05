@@ -124,6 +124,7 @@ User Input -> Semantic Router -> [SIMPLE | PLAN_EXECUTE | REACT]
 | `18_LEGAL_WEB_PERSIST.md` | Legal/Ethical Compliance für web-sourced RAG-Persistierung (robots.txt/Header/Meta-Gates, Retention 30 d, Pruning) | Bei Web-RAG-Persistierung |
 | `19_LICENSES_AND_COMPLIANCE.md` | Lizenzen & Compliance: AGPL-3.0 (Michaël Artebas), LICENSES.md-Generator/Checker, Modell-Gewichte | Bei Lizenz-/Dependency-/Compliance-Änderungen |
 | `20_TOKEN_SCALING.md` | Token/Context-Skalierung: hardware-bewusster Auto-Vorschlag, Präzedenz UI > ENV > Auto, KV-Quantisierung, Persistenz, Fallbacks | Bei Token-/Context-/KV-/Reasoning-Effort-Änderungen |
+| `21_MODEL_REQUIREMENTS.md` | **Modell-Requirements & Offline-Setup:** `models/manifest.json` (SSoT), `scripts/setup_models.py` (status/check/fetch), LLM+AUX-Modelle, Cache-Orte, Lizenzen, Drift-Prävention | Bei Modell-/Setup-/Lizenz-/Offline-Änderungen |
 | `RTX4090_RYZEN9_GUIDE.md` | Hardware tuning (verified LLM profile) | When touching GPU/LLM params |
 | `funktionen.md` (root) | Compendium of large/complex functions | Before editing orchestrator/pipeline code |
 | `ARCHITECTURE.md` (root) | Legacy architecture reference | Historical context |
