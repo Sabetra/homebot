@@ -81,6 +81,8 @@ backup/
 *.backup_*
 rag_backups/
 data/backups/
+# Vulnerability-Scanner-Cache (generiert, OSV per-Package; lokal, nicht versionieren)
+data/vuln_cache/
 
 # Sensitive data
 .env

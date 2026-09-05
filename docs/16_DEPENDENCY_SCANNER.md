@@ -1,18 +1,26 @@
-<!-- last-verified: 2026-07-31 -->
+<!-- last-verified: 2026-09-05 -->
 
 # 16 – Dependency Vulnerability Scanner
 
 ## Zweck
 
-Lokaler, privacy-preserving Security-Scanner für Python-Dependencies. Prüft `requirements.txt` auf bekannte CVEs **ohne Cloud-Calls** — konform mit Local-First-Prinzip.
+Lokaler, privacy-preserving Security-Scanner für Python-Dependencies. Prüft `requirements.txt` auf bekannte CVEs. Primary-Quelle ist die **OSV-Datenbank** (api.osv.dev) mit lokalem per-Package-Cache — der Scanner bleibt nach dem ersten Fetch voll offline-fähig.
 
 ## SOTA-Basis
 
-- **pip-audit** (pypa/advisory-database) — Primary-Engine, nutzt Python-Advisory-DB
+- **OSV (api.osv.dev/v1/query)** — Primary-Engine, direkt abgefragt (kein pip-audit-Subprocess)
+- **pip-audit** (pypa/advisory-database) — Zweitquelle, nur wenn OSV komplett down + kein Cache
+- **Heuristik** — letzter Fallback (7 Pakete), immer als Scan-Fehler markiert
 - **OSV-Schema** — Structured vulnerability data format
-- **safety-check** — Referenz für CLI-UX und Reporting
 
-Recherche: 2026-07-31 via DuckDuckGo (`@fetch-mcp` MCP-Server)
+Recherche: 2026-07-31 via DuckDuckGo; OSV-Refactor: 2026-09-05
+
+## Warum OSV statt pip-audit?
+
+pip-audit hängt in dieser Umgebung (Subprocess + Advisory-DB-Update, mehrere
+Minuten ohne Ergebnis). Der direkte OSV-API-Call ist zuverlässig und schnell
+(53 Packages in ~16s, danach <1s aus dem Cache). OSV ist die gleiche Quelle,
+die pip-audit intern nutzt, daher kein Qualitätsverlust.
 
 ## Architektur
 
@@ -23,11 +31,19 @@ requirements.txt
 parse_requirements()  ----  List[Tuple[str, str]]
     |
     v
+to_concrete_version()  ----  OSV braucht konkrete Versionen (Untergrenze)
+    |
+    v
 VulnerabilityScanner.scan()
     |
-    +-- pip-audit (Primary, subprocess, sandboxed)
+    +-- OSV (Primary): _scan_with_osv() -> api.osv.dev/v1/query
+    |       +-- frischer per-Package-Cache  (offline, <1s)
+    |       +-- sonst Live-Query, dann Cache-Update
     |
-    +-- Heuristic Fallback (wenn pip-audit nicht installiert)
+    +-- pip-audit (Zweitquelle, subprocess, sandboxed)
+    |       [nur wenn OSV down + kein Cache]
+    |
+    +-- Heuristic Fallback (7 Pakete, IMMER als Fehler markiert)
     |
     v
 ScanResult -> ReportFormatter
@@ -40,23 +56,23 @@ ScanResult -> ReportFormatter
 
 | Aspekt | Maßnahme |
 |--------|---------|
-| Network | **Kein externer Call** — pip-audit arbeitet lokal; `--skip-db-update` erzwingt Offline-Modus |
-| Sandbox | Alle `subprocess.run()` Calls haben `timeout`, `capture_output=True`, `text=True` |
-| Code | Kein `eval()`, kein `exec()`, kein `importlib` |
-| Privacy | Keine Telemetrie, keine Daten nach außen, kein Schadcode-Download |
-| Cache | Advisory-Daten lokal in `data/vuln_cache/`, 24h TTL |
+| Network | OSV-API (api.osv.dev) ist die einzige externe Quelle; `--offline` erzwingt reines Cache-Verhalten; frischer Cache macht den Scan voll offline-fähig |
+| Sandbox | pip-audit-Subprocess (Zweitquelle) hat `timeout`, `capture_output=True`, `text=True`; OSV-Query hat Timeout (15s) |
+| Code | Kein `eval()`, kein `exec()`, kein `importlib`; nur Stdlib (urllib, json, re) |
+| Privacy | Keine Telemetrie; OSV-Query sendet nur Paketname + Version; kein Schadcode-Download |
+| Cache | per-Package-OSV-Cache in `data/vuln_cache/osv/`, 24h TTL |
 
 ## Privacy
 
-- **Zero external network calls** im Produktivpfad
-- Alle Scans lokal
+- Einzige externe Quelle: OSV-API (Paketname + konkrete Version, keine PII)
+- Nach dem ersten Fetch: voll offline-fähig per `--offline`
 - Cache verbleibt auf lokalem Dateisystem
 - Keine Secrets in Logs
 
 ## Usage
 
 ```powershell
-# Basis-Scan
+# Basis-Scan (OSV, nutzt frischen Cache falls vorhanden)
 python scripts/dependency_vulnerability_scanner.py
 
 # Custom requirements
@@ -68,9 +84,26 @@ python scripts/dependency_vulnerability_scanner.py --strict
 # JSON-Report
 python scripts/dependency_vulnerability_scanner.py -o report.json
 
-# Cache aktualisieren
-python scripts/dependency_vulnerability_scanner.py --update-cache
+# OFFLINE: nur lokalen Cache, KEIN Netzwerk (OSV wird nicht kontaktiert)
+python scripts/dependency_vulnerability_scanner.py --offline
+
+# REFRESH: Cache-TTL ignorieren, OSV zwangsweise aktualisieren
+python scripts/dependency_vulnerability_scanner.py --refresh
+
+# Cache-Verzeichnis überschreiben
+python scripts/dependency_vulnerability_scanner.py --cache-dir C:\tmp\cache
 ```
+
+## Offline / Refresh-Verhalten
+
+| Modus | Netzwerk | Cache |
+|-------|----------|-------|
+| Default | frischer Cache -> kein; sonst ja | 24h TTL, dann Refresh |
+| `--offline` | **nie** | frischen oder (markierten) Stale-Cache; ohne Cache -> Fehler |
+| `--refresh` | **immer** | Cache wird neu geschrieben |
+
+Exit-Codes: `0` = ok, `1` = Vulns gefunden (`--strict`), `2` = Scan-Fehler
+(z.B. offline ohne Cache oder Fallback auf Heuristik).
 
 ## Tests
 
@@ -78,7 +111,9 @@ python scripts/dependency_vulnerability_scanner.py --update-cache
 python -m pytest tests/test_dependency_vulnerability_scanner.py -v
 ```
 
-43 Tests: Parser (10), Models (7), Cache (6), Severity (8), Heuristik (3), Reporter (6), Integration (3).
+60 Tests: Parser (10), Models (7), AdvisoryCache (6), ExtractSeverity (8),
+Heuristik (3), Reporter (6), OSV-Scan (5), OSV-Cache (2),
+to_concrete_version (6), OSV-Severity (7).
 
 ## CI/CD-Integration
 
@@ -99,12 +134,13 @@ python -m pytest tests/test_dependency_vulnerability_scanner.py -v
 
 ## Limitationen
 
-- Heuristik-Fallback ist **kein Ersatz** für pip-audit (nur 7 bekannte Patterns)
-- pip-audit's Advisory-DB muss aktuell sein (manuell via `pip install --upgrade pip-audit`)
+- Heuristik-Fallback ist **kein Ersatz** für OSV (nur 7 bekannte Patterns) und wird als Scan-Fehler markiert
+- OSV-Query sendet Paketname + Version an api.osv.dev (keine PII, aber kein 100% lokaler Scan)
 - Scan prüft nur Python-Dependencies (kein npm, kein NuGet, kein Cargo)
+- Version aus einem Bereich (z.B. `>=1.24,<2.0`) wird als **Untergrenze** geprüft (konservativ)
 
 ## Wartung
 
-- Bei jedem `requirements.txt`-Update neu scannen
-- pip-audit regelmäßig updaten
+- Bei jedem `requirements.txt`-Update neu scannen (oder `--refresh`)
+- Cache-TTL: 24h (via `DEFAULT_CACHE_TTL_HOURS`)
 - Heuristik-Liste bei neuen kritischen CVEs erweitern
