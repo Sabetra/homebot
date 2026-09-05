@@ -18,19 +18,13 @@ Privatsphäre:
     - Keine Daten nach außen
     - Alle Scans lokal
 
-SOTA-Enrichment (Standard seit 2026-09-05):
-    CISA KEV + FIRST EPSS -> P0-P3-Risikotier (siehe scripts/vuln_enrich.py).
-    Best-effort + offline-faehig (Cache: data/vuln_cache/). Ohne KEV/EPSS-Daten
-    bleiben die Felder null - der Scan bleibt gueltig, Exit-Codes unveraendert.
-
 Usage:
     python scripts/dependency_vulnerability_scanner.py
     python scripts/dependency_vulnerability_scanner.py --requirements requirements.txt
     python scripts/dependency_vulnerability_scanner.py --strict  # Exit 1 bei ANY Vulnerability
-    python scripts/dependency_vulnerability_scanner.py --no-enrich  # Alt-Verhalten (nur Severity)
 
 Author: Auto-Generated (SOTA-Research 2026-07-31)
-Last Verified: 2026-09-05
+Last Verified: 2026-07-31
 """
 
 import argparse
@@ -42,25 +36,6 @@ import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
-
-# SOTA-Risiko-Priorisierung (CISA KEV + FIRST EPSS + P0-P3-Tiers, 2026-09-05).
-# Doppelte Import-Pfade: als Paket (Tests: `scripts.vuln_enrich`) und als
-# Direktlauf (`python scripts/dependency_vulnerability_scanner.py`, dann liegt
-# nur das scripts/-Verzeichnis auf sys.path).
-try:
-    from scripts.vuln_enrich import (
-        EPSSClient,
-        KEVCatalog,
-        extract_cve,
-        prioritize,
-    )
-except ImportError:  # noqa: PLC0415 - Import-Pfad-Aufloesung, kein Daten-Fallback
-    from vuln_enrich import (
-        EPSSClient,
-        KEVCatalog,
-        extract_cve,
-        prioritize,
-    )
 
 # ============================================================================
 # CONSTANTS
@@ -103,14 +78,7 @@ logger = logging.getLogger(__name__)
 class Vulnerability:
     """Repräsentiert eine gefundene Schwachstelle."""
 
-    __slots__ = (
-        "package", "version", "vuln_id", "severity", "description", "url",
-        # SOTA-Enrichment (KEV/EPSS + P0-P3-Risikotier, 2026-09-05):
-        "cve_id",
-        "kev", "kev_date_added", "kev_ransomware",
-        "epss", "epss_percentile", "epss_date",
-        "risk_tier", "risk_score", "risk_reasons",
-    )
+    __slots__ = ("package", "version", "vuln_id", "severity", "description", "url")
 
     def __init__(
         self,
@@ -120,16 +88,6 @@ class Vulnerability:
         severity: str = "unknown",
         description: str = "",
         url: str = "",
-        cve_id: Optional[str] = None,
-        kev: bool = False,
-        kev_date_added: Optional[str] = None,
-        kev_ransomware: bool = False,
-        epss: Optional[float] = None,
-        epss_percentile: Optional[float] = None,
-        epss_date: Optional[str] = None,
-        risk_tier: Optional[str] = None,
-        risk_score: Optional[float] = None,
-        risk_reasons: Optional[List[str]] = None,
     ):
         self.package = package
         self.version = version
@@ -137,18 +95,8 @@ class Vulnerability:
         self.severity = severity
         self.description = description
         self.url = url
-        self.cve_id = cve_id
-        self.kev = kev
-        self.kev_date_added = kev_date_added
-        self.kev_ransomware = kev_ransomware
-        self.epss = epss
-        self.epss_percentile = epss_percentile
-        self.epss_date = epss_date
-        self.risk_tier = risk_tier
-        self.risk_score = risk_score
-        self.risk_reasons = risk_reasons
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> Dict[str, str]:
         return {
             "package": self.package,
             "version": self.version,
@@ -156,16 +104,6 @@ class Vulnerability:
             "severity": self.severity,
             "description": self.description[:200],
             "url": self.url,
-            "cve_id": self.cve_id,
-            "kev": self.kev,
-            "kev_date_added": self.kev_date_added,
-            "kev_ransomware": self.kev_ransomware,
-            "epss": self.epss,
-            "epss_percentile": self.epss_percentile,
-            "epss_date": self.epss_date,
-            "risk_tier": self.risk_tier,
-            "risk_score": self.risk_score,
-            "risk_reasons": self.risk_reasons,
         }
 
     def __repr__(self) -> str:
@@ -184,8 +122,6 @@ class ScanResult:
         self.scan_time: float = 0.0
         self.cache_used: bool = False
         self.errors: List[str] = []
-        # SOTA-Enrichment-Statistik (KEV/EPSS/Tiers); None = nicht enrichiert.
-        self.enrichment_stats: Optional[Dict[str, Any]] = None
 
     @property
     def has_critical(self) -> bool:
@@ -203,7 +139,6 @@ class ScanResult:
             "has_high": self.has_high,
             "scan_time": self.scan_time,
             "cache_used": self.cache_used,
-            "enrichment_stats": self.enrichment_stats,
             "vulnerabilities": [v.to_dict() for v in self.vulnerabilities],
             "errors": self.errors,
         }
@@ -391,14 +326,12 @@ class VulnerabilityScanner:
         strict: bool = False,
         offline: bool = False,
         refresh: bool = False,
-        enrich: bool = True,
     ):
         self.requirements_path = requirements_path
         self.cache = cache or AdvisoryCache()
         self.strict = strict
         self.offline = offline
         self.refresh = refresh
-        self.enrich = enrich
         self._used_fresh_cache = False
 
     def scan(self) -> ScanResult:
@@ -461,56 +394,12 @@ class VulnerabilityScanner:
         result.vulnerabilities = vulns
         result.scan_time = (datetime.now() - start_time).total_seconds()
 
-        # Step 3: SOTA-Risiko-Priorisierung (CISA KEV + FIRST EPSS -> P0-P3).
-        # Best-effort-Vertrag: ein Enrichment-Fehler darf den Scan NIEMALS
-        # scheitern lassen; ohne Daten bleiben die Felder null (kein
-        # False-Negative, keine erfundenen Scores).
-        if self.enrich and result.vulnerabilities:
-            result.enrichment_stats = self._enrich_vulns(result.vulnerabilities)
-
         logger.info(
             f"Scan abgeschlossen: {len(vulns)} Vulnerabilities in "
             f"{result.scan_time:.1f}s"
         )
 
         return result
-
-    def _enrich_vulns(self, vulns: List[Vulnerability]) -> Optional[Dict[str, Any]]:
-        """
-        SOTA-Enrichment: CISA KEV + FIRST EPSS -> P0-P3-Risikotier.
-
-        Verwendet KEINEN weiteren Network-Pfad als KEV-Feed/EPSS-API
-        (best-effort, offline-faehig via Cache unter data/vuln_cache/).
-        Returns:
-            Statistik-Dict (siehe vuln_enrich.prioritize) oder None, wenn
-            das Enrichment fehlgeschlagen ist (Scan bleibt gueltig).
-        """
-        try:
-            kev = KEVCatalog(
-                cache_dir=self.cache.cache_dir,
-                offline=self.offline,
-                refresh=self.refresh,
-            )
-            epss = EPSSClient(
-                cache_dir=self.cache.cache_dir,
-                offline=self.offline,
-                refresh=self.refresh,
-            )
-            stats = prioritize(vulns, kev, epss)
-            tiers = stats.get("tiers", {})
-            logger.info(
-                f"Enrichment: KEV={'ja' if stats.get('kev_available') else 'nein'}, "
-                f"EPSS={'ja' if stats.get('epss_available') else 'nein'}, "
-                f"enriched {stats.get('enriched', 0)}/{stats.get('total', 0)}, "
-                f"Tiers P0={tiers.get('P0', 0)} P1={tiers.get('P1', 0)} "
-                f"P2={tiers.get('P2', 0)} P3={tiers.get('P3', 0)}"
-            )
-            return stats
-        except Exception as e:  # noqa: BLE001 - Enrichment darf den Scan nie brechen
-            logger.warning(
-                f"Enrichment fehlgeschlagen (best-effort, Scan bleibt gueltig): {e}"
-            )
-            return None
 
     def _scan_with_pip_audit(self, req_path: Path) -> Optional[List[Vulnerability]]:
         """
@@ -615,7 +504,6 @@ class VulnerabilityScanner:
             severity=severity,
             description=description,
             url=url,
-            cve_id=extract_cve(vuln_id, aliases),
         )
 
     # ------------------------------------------------------------------
@@ -801,7 +689,6 @@ class VulnerabilityScanner:
                     severity=self._osv_severity(v),
                     description=description,
                     url=f"https://osv.dev/vulnerability/{vid}",
-                    cve_id=extract_cve(vid, v.get("aliases")),
                 )
             )
         return out
@@ -958,22 +845,6 @@ class ReportFormatter:
         lines.append(f"  Vulnerabilities:      {len(result.vulnerabilities)}")
         lines.append(f"  Scan-Dauer:           {result.scan_time:.1f}s")
         lines.append(f"  Cache verwendet:      {'Ja' if result.cache_used else 'Nein'}")
-        if result.enrichment_stats:
-            tiers = result.enrichment_stats.get("tiers", {})
-            lines.append(
-                f"  Risiko-Tiering:       "
-                f"P0: {tiers.get('P0', 0)} | "
-                f"P1: {tiers.get('P1', 0)} | "
-                f"P2: {tiers.get('P2', 0)} | "
-                f"P3: {tiers.get('P3', 0)}"
-            )
-            lines.append(
-                f"  Enrichment:           "
-                f"KEV: {'ja' if result.enrichment_stats.get('kev_available') else 'nein'}, "
-                f"EPSS: {'ja' if result.enrichment_stats.get('epss_available') else 'nein'}, "
-                f"enriched {result.enrichment_stats.get('enriched', 0)}/"
-                f"{result.enrichment_stats.get('total', 0)}"
-            )
         lines.append("")
 
         if not result.vulnerabilities:
@@ -999,29 +870,15 @@ class ReportFormatter:
                     lines.append(f"\n  {emoji} {sev.upper()} ({len(by_severity[sev])}):")
                     lines.append("  " + "-" * 40)
                     for v in by_severity[sev]:
-                        tags: List[str] = []
-                        if getattr(v, "risk_tier", None):
-                            tags.append(v.risk_tier)
-                        if getattr(v, "kev", False):
-                            tags.append("KEV!")
-                        if getattr(v, "epss", None) is not None:
-                            tags.append(f"EPSS={v.epss:.3f}")
-                        tag = f"  [{' | '.join(tags)}]" if tags else ""
-                        lines.append(f"    • {v.package}=={v.version}{tag}")
-                        cve_note = (
-                            f" -> {v.cve_id}" if (v.cve_id and v.cve_id != v.vuln_id) else ""
-                        )
-                        lines.append(f"      {v.vuln_id}{cve_note}")
+                        lines.append(f"    • {v.package}=={v.version}")
+                        lines.append(f"      {v.vuln_id}")
                         if v.description:
                             desc = v.description[:120]
                             lines.append(f"      {desc}")
 
             lines.append("")
             lines.append("  ⚠ EMPFEHLUNG:")
-            if any(getattr(v, "risk_tier", None) == "P0" for v in result.vulnerabilities):
-                lines.append("    🔥 P0 (CISA KEV - aktiv ausgenutzt): SOFORT handeln (0-24h)!")
-                lines.append("    Betroffene Packages JETZT patchen oder mitigieren.")
-            elif result.has_critical:
+            if result.has_critical:
                 lines.append("    KRITISCHE Vulnerabilities gefunden!")
                 lines.append("    Sofortiges Update der betroffenen Packages empfohlen.")
             elif result.has_high:
@@ -1122,12 +979,6 @@ Beispiele:
         help="Cache-TTL ignorieren und OSV-Quellen zwangsweise aktualisieren",
     )
     parser.add_argument(
-        "--no-enrich",
-        action="store_true",
-        help="KEV/EPSS-Enrichment und P0-P3-Risikotiering deaktivieren "
-             "(Alt-Verhalten: nur Severity, keine KEV/EPSS-Abfragen)",
-    )
-    parser.add_argument(
         "--cache-dir",
         type=Path,
         default=None,
@@ -1151,7 +1002,6 @@ Beispiele:
         strict=args.strict,
         offline=args.offline,
         refresh=args.refresh,
-        enrich=not args.no_enrich,
     )
 
     result = scanner.scan()
