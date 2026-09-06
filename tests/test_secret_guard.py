@@ -82,8 +82,9 @@ def test_content_private_key_material() -> None:
     # Marker aus "openssh-key-v1" (base64); bewusst via Konkat, damit
     # dieser Test selbst im Repo-Scan keinen Treffer erzeugt.
     marker = "b3BlbnNza" + "C1rZXktdjE" + "AAAA"
-    content = ("-----BEGIN OPENSSH PRIVATE KEY-----\n" + marker + "\n"
-               "-----END OPENSSH PRIVATE KEY-----\n")
+    # BEGIN/END-Zeilen ebenfalls gesplittet (siehe Marker-Hinweis oben).
+    content = ("-----BEGIN OPEN" + "SSH PRIVATE KEY-----\n" + marker + "\n"
+               "-----END OPEN" + "SSH PRIVATE KEY-----\n")
     reasons = secret_guard.scan_path("note.txt", content, ())
     assert "private-key-material" in reasons
     assert "openssh-private-key" in reasons
@@ -91,17 +92,17 @@ def test_content_private_key_material() -> None:
 
 def test_content_known_api_key_formats() -> None:
     assert "aws-access-key-id" in secret_guard.scan_path(
-        "a.txt", "key = AKIA1234567890ABCDEF\n", ())
+        "a.txt", "key = AKIA" + "1234567890ABCDEF\n", ())
     assert "github-pat" in secret_guard.scan_path(
         "a.txt", "token: ghp_" + "a" * 40 + "\n", ())
     assert "openai-style-key" in secret_guard.scan_path(
         "a.txt", "sk-" + "a1B2c3D4e5F6g7H8i9J0kLmN" + "\n", ())
     assert "slack-token" in secret_guard.scan_path(
-        "a.txt", "xoxb-1234567890-abc\n", ())
+        "a.txt", "xox" + "b-1234567890-abc\n", ())
 
 
 def test_content_secret_assignment_flagged() -> None:
-    content = 'password = "abcdefghij1234567890xyz"\n'
+    content = 'password = "abcdefghij' + '1234567890xyz"\n'
     assert "secret-assignment" in secret_guard.scan_path("cfg.txt", content, ())
 
 
@@ -146,9 +147,10 @@ def test_cli_flagged_exit_one_and_stdout_contract(tmp_path: Path) -> None:
     proc = _run_guard("--files", str(bad))
     assert proc.returncode == 1, proc.stderr
     # stdout-Vertrag: eine Pfad-Zeile pro geflaggter Datei (fuer Hooks/PS1).
-    # Bei --files wird der (vollstaendige) Pfad durchgereicht, den der
-    # Aufrufer auch angegeben hat - damit er ihn zurueckverarbeiten kann.
-    assert str(bad) in proc.stdout.splitlines()
+    # Bei --files wird der Pfad posix-normalisiert zurueckgereicht
+    # (Windows-Backslashes -> Forward-Slashes), damit Hooks ihn verarbeiten
+    # koennen - der Aufrufer prueft daher die normalisierte Form.
+    assert str(bad).replace("\\", "/") in proc.stdout.splitlines()
 
 
 def test_cli_repo_tracked_clean() -> None:
