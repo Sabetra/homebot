@@ -114,15 +114,24 @@ def _kev_ransomware(kev_entry: Optional[Dict[str, Any]]) -> bool:
     )
 
 
+def _downgrade_tier(tier: str) -> str:
+    """Senkt einen Tier-Wert um genau eine Stufe (Boden: P3)."""
+    order = ("P0", "P1", "P2", "P3")
+    if tier in order:
+        return order[min(len(order) - 1, order.index(tier) + 1)]
+    return tier
+
+
 def compute_risk(
     severity: str,
     kev_entry: Optional[Dict[str, Any]],
     epss: Optional[float],
+    reachable: Optional[bool] = None,
 ) -> Tuple[str, float, List[str]]:
     """
     Berechnet die risikobasierte Priorisierung (P0-P3) einer Schwachstelle.
 
-    Modell (SOTA 2026: CISA KEV + EPSS + Severity):
+    Modell (SOTA 2026: CISA KEV + EPSS + Severity + Reachability):
         P0  = aktiv ausgenutzt (CISA KEV)                    -> SOFORT (0-24h)
         P1  = kritische Severity ODER high + EPSS >= 0.3     -> 7 Tage
         P2  = hohe/mittlere Severity                         -> 30 Tage
@@ -132,11 +141,18 @@ def compute_risk(
         critical=10, high=5, medium=2, low=1, unknown=0
         + 5.0  bei CISA-KEV
         + EPSS * 2.0  (Score 0..1)
+        - 2.0  wenn das Paket im Code NICHT erreichbar ist
+
+    Reachability (3. Saule der "Prioritization Trinity"):
+        reachable=False senkt den Tier-Wert um genau eine Stufe (Boden P3).
+        reachable=None (unbestimmbar: Paket nicht installiert / keine Analyse)
+        aendert NICHTS - es wird niemals eine falsche Negativ-Annahme gemacht.
 
     Args:
         severity:  "critical" | "high" | "medium" | "low" | "unknown"
         kev_entry: KEV-Eintrag (dict) oder None, wenn nicht im Katalog
         epss:      EPSS-Score 0..1 oder None (unverfuegbar)
+        reachable: True | False | None (siehe oben)
 
     Returns:
         (tier, score, reasons) - tier in {"P0","P1","P2","P3"}, score (float,
@@ -172,6 +188,13 @@ def compute_risk(
         tier = "P2"
     else:
         tier = "P3"
+
+    # Reachability: Paket wird nirgends importiert -> reale Exposition
+    # geringer -> genau ein Tier senken (Boden P3). None aendert nichts.
+    if reachable is False:
+        tier = _downgrade_tier(tier)
+        score = max(0.0, score - 2.0)
+        reasons.append("nicht im Code erreichbar (herabgestuft)")
 
     return tier, round(score, 3), reasons
 
@@ -551,21 +574,32 @@ def prioritize(
     vulns: List[Any],
     kev: KEVCatalog,
     epss: EPSSClient,
+    reachability: Optional[Any] = None,
 ) -> Dict[str, Any]:
     """
-    Erreichbarkeitsunaehgige Risiko-Priorisierung einer Vuln-Liste.
+    Risiko-Priorisierung einer Vuln-Liste (KEV + EPSS + Reachability).
 
     Setzt auf jedem Vulnerability-Objekt die Felder:
         kev, kev_date_added, kev_ransomware,
         epss, epss_percentile, epss_date,
-        risk_tier, risk_score, risk_reasons
+        risk_tier, risk_score, risk_reasons,
+        reachable   (True | False | None, nur wenn reachability uebergeben)
     (nur wenn das Objekt die Attribute akzeptiert; sonst wird es uebersprungen.)
+
+    Args:
+        vulns:        Liste von Vulnerability-Objekten
+        kev:          geladener CISA-KEV-Katalog
+        epss:         EPSS-Client
+        reachability: Optionaler CodeReachability-Analyser (SOTA 2026,
+                      3. Saule). Wenn None -> Verhalten wie bisher
+                      (reachable bleibt None, keine Tier-Aenderung).
 
     Returns:
         Statistik-Dict:
             {"tiers": {"P0": n, "P1": n, "P2": n, "P3": n},
              "kev_available": bool,
              "epss_available": bool,
+             "reachability_available": bool,
              "enriched": int, "total": int}
     """
     kev.load()
@@ -574,13 +608,22 @@ def prioritize(
 
     tier_counts: Dict[str, int] = {"P0": 0, "P1": 0, "P2": 0, "P3": 0}
     enriched = 0
+    ra_available = bool(reachability is not None and getattr(reachability, "available", False))
 
     for v in vulns:
         cve_id = getattr(v, "cve_id", None)
         kev_entry = kev.entry(cve_id) if (kev.available and cve_id) else None
         epss_val = epss_scores.get(cve_id) if cve_id else None
 
-        tier, score, reasons = compute_risk(v.severity, kev_entry, epss_val)
+        # Reachability-Lookup (best-effort: Fehler -> None, Scan bricht nie ab)
+        reachable: Optional[bool] = None
+        if ra_available:
+            try:
+                reachable = reachability.is_reachable(getattr(v, "package", "") or "")
+            except Exception:  # noqa: BLE001 - best-effort, nie fatal
+                reachable = None
+
+        tier, score, reasons = compute_risk(v.severity, kev_entry, epss_val, reachable)
 
         if _can_set(v, "kev"):
             v.kev = kev_entry is not None
@@ -592,6 +635,7 @@ def prioritize(
             v.risk_tier = tier
             v.risk_score = score
             v.risk_reasons = reasons
+            v.reachable = reachable
 
         if kev_entry is not None or epss_val is not None:
             enriched += 1
@@ -601,6 +645,7 @@ def prioritize(
         "tiers": tier_counts,
         "kev_available": bool(kev.available),
         "epss_available": bool(epss.available),
+        "reachability_available": ra_available,
         "enriched": enriched,
         "total": len(vulns),
     }
