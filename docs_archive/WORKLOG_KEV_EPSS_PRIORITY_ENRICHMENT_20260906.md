@@ -32,7 +32,7 @@ CISA KEV und FIRST EPSS-basierte P0–P3-Priorisierung in den OSV-Dependency-Sca
 | 3 | compute_risk: P0–P3-Regeln + Score (critical=10/high=5/medium=2/low=1 + KEV 5 + EPSS×2) | TestComputeRisk (12) | ✅ |
 | 4 | `prioritize()` im Scanner-Namespace importierbar (mock-patchbar), best-effort | TestPrioritize + TestScannerEnrichment (8) | ✅ |
 | 5 | Enrichment-Fehler brechen den Scan nie (kev/epss bleiben null, Exit-Codes unverändert) | TestScannerEnrichment | ✅ |
-| 6 | Live-Validierung: KEV/EPSS-Abfrage gegen echte Endpunkte | manuell | ⚠️ ausstehend |
+| 6 | Live-Validierung: KEV/EPSS-Abfrage gegen echte Endpunkte | manuell | ✅ (2026-09-06, 164/165 enriched) |
 | 7 | Report: `kev`, `epss`, `risk_tier`, `risk_score`, `enrichment_stats` (Console + JSON) | TestReportFormatter + Code | ✅ |
 | 8 | `--no-enrich`, `--offline`, `--refresh` greifen auch für KEV/EPSS | Tests + argparse | ✅ |
 | 9 | Doku-Pflicht: Doc 16, funktionen.md §N, Worklog | Inspektion | ✅ |
@@ -86,14 +86,14 @@ CISA KEV und FIRST EPSS-basierte P0–P3-Priorisierung in den OSV-Dependency-Sca
 
 | # | Risiko | Schweregrad | Maßnahme |
 |---|--------|-------------|----------|
-| 1 | Live-KEV/EPSS-Endpunkte noch nicht in Session validiert | niedrig (best-effort) | DoD #6: manuell ausführen |
+| 1 | Live-KEV/EPSS-Endpunkte noch nicht in Session validiert | niedrig (best-effort) | **gelöst 2026-09-06**: Live-Run OK |
 | 2 | `kev_ransomware`-Feld nicht in Test-Report-Assertion | sehr niedrig | Feature vorhanden, Doku angepasst |
 
 ## Offene Fragen
 
 | # | Frage | Owner | Deadline | Status |
 |---|-------|-------|----------|--------|
-| 1 | Live-KEV/EPSS-Abfrage validieren (DoD #6) | Developer | vor Release | offen |
+| 1 | Live-KEV/EPSS-Abfrage validieren (DoD #6) | Developer | vor Release | **erledigt** (2026-09-06) |
 | 2 | Reviewer für DoD + Doku | Team-Lead | vor Release | offen |
 
 ## Testergebnisse
@@ -103,3 +103,6 @@ CISA KEV und FIRST EPSS-basierte P0–P3-Priorisierung in den OSV-Dependency-Sca
 | 1 | `pytest tests/test_dependency_vulnerability_scanner.py -q` (nach allen Fixes) | **100 passed** (0 failed, 0 errors, 1 warning) | 2026-09-06 |
 | 2 | `pytest tests/test_dependency_vulnerability_scanner.py -q` (vor Test-Fixes) | 90 passed, 10 failed | 2026-09-06 |
 | 3 | `pytest tests/test_dependency_vulnerability_scanner.py -q` (vor `prioritize`-Fix) | 84 passed, 16 failed | 2026-09-06 |
+| 4 | Live-Run `python scripts/dependency_vulnerability_scanner.py` (OSV+KEV+EPSS, 53 Packages) | 165 Vulns; enriched 164/165; P0=0 P1=19 P2=125 P3=21; Exit 0 | 2026-09-06 |
+| 5 | Live-Run `--strict` | Exit 1 (korrekt: Vulns gefunden) | 2026-09-06 |
+| 6 | Live-Run `--offline --no-enrich` (Cache-Treiber) | Scan aus Cache, Exit 0 | 2026-09-06 |

@@ -119,7 +119,7 @@ User Input -> Semantic Router -> [SIMPLE | PLAN_EXECUTE | REACT]
 | `08_WELLBEING_MODULE_OPTIMIZATION.md` | Wellbeing-Modul: Safety, Identity, Datenlebenszyklus, Persistenz und SOTA-Fixes | Bei Änderungen am Wellbeing-Modul |
 | `14_KG_COMMUNITY_DETECTION_IMPLEMENTATION.md` | Standalone Community Detection/Subgraph Retrieval; produktive Verdrahtung offen | Bei KG-Community-Arbeit |
 | `15_STREAMING_ARCHITECTURE.md` | Typed chat events, route behavior, cancellation and persistence | When modifying normal chat streaming |
-| `16_DEPENDENCY_SCANNER.md` | Dependency Vulnerability Scanner: lokaler, privacy-preserving Security-Scan | Bei Security-Audits |
+| `16_DEPENDENCY_SCANNER.md` | Dependency Vulnerability Scanner: OSV-Scan + CISA KEV / FIRST EPSS-Risiko-Priorisierung (P0–P3) | Bei Security-Audits |
 | `17_FILESYSTEM_CONNECTOR.md` | SOTA Filesystem Connector: Path-Sandbox, Declarative Tool Profiles, Security-Layer | Bei FS-Tool-Änderungen |
 | `18_LEGAL_WEB_PERSIST.md` | Legal/Ethical Compliance für web-sourced RAG-Persistierung (robots.txt/Header/Meta-Gates, Retention 30 d, Pruning) | Bei Web-RAG-Persistierung |
 | `19_LICENSES_AND_COMPLIANCE.md` | Lizenzen & Compliance: AGPL-3.0 (Michaël Artebas), LICENSES.md-Generator/Checker, Modell-Gewichte | Bei Lizenz-/Dependency-/Compliance-Änderungen |
