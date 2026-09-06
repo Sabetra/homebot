@@ -1,7 +1,7 @@
 # Workdoc: SOTA-Risiko-Priorisierung für den Dependency-Scanner
 
 > **Erstellt:** 2026-09-05
-> **Status:** IN_ARBEIT
+> **Status:** ABGESCHLOSSEN (2026-09-06, Tests 100/100 grün)
 > **Autor:** Bot
 > **Reviewer:** —
 
