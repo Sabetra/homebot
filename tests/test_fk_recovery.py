@@ -39,7 +39,7 @@ def temp_db_and_adapter():
     
     db = WellbeingDatabase(db_path=db_path)
     manager = WellbeingSessionManager(db=db)
-    adapter = SessionManagerAdapter(psych_manager=manager)
+    adapter = SessionManagerAdapter(wellbeing_manager=manager)
     
     yield db, adapter
     
