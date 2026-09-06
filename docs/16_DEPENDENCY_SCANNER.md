@@ -158,9 +158,11 @@ Exit-Codes: `0` = ok, `1` = Vulns gefunden (`--strict`), `2` = Scan-Fehler
 python -m pytest tests/test_dependency_vulnerability_scanner.py -v
 ```
 
-60 Tests: Parser (10), Models (7), AdvisoryCache (6), ExtractSeverity (8),
-Heuristik (3), Reporter (6), OSV-Scan (5), OSV-Cache (2),
-to_concrete_version (6), OSV-Severity (7).
+100 Tests (17 Klassen): Parser (10), Vulnerability-Modell (3), ScanResult (4),
+AdvisoryCache (6), ExtractSeverity (8), Heuristik (3), Reporter (6), OSV-Scan (5),
+OSV-Cache (2), to_concrete_version (6), OSV-Severity (7),
+**Enrichment (SOTA):** ComputeRisk (12), ExtractCve (7), KevCatalog (7),
+EpssClient (6), Prioritize (3), ScannerEnrichment (5).
 
 ## CI/CD-Integration
 
@@ -185,6 +187,9 @@ to_concrete_version (6), OSV-Severity (7).
 - OSV-Query sendet Paketname + Version an api.osv.dev (keine PII, aber kein 100% lokaler Scan)
 - Scan prüft nur Python-Dependencies (kein npm, kein NuGet, kein Cargo)
 - Version aus einem Bereich (z.B. `>=1.24,<2.0`) wird als **Untergrenze** geprüft (konservativ)
+- Enrichment ist **best-effort**: offline ohne Cache bzw. bei API-Ausfall bleiben `kev`/`epss`/`risk_tier` unbewertet (keine Fake-Daten); der Scan bleibt gültig
+- EPSS deckt nur CVEs ab, die FIRST kennt; KEV nur aktuell gelistete CVEs — Abwesenheit bedeutet nicht "nicht ausgenutzt"
+- Keine Reachability-Analyse (installierte, aber ungenutzte CVEs werden mitpriorisiert) — bekanntes, dokumentiertes Next-Step
 
 ## Wartung
 

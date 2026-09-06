@@ -1322,42 +1322,48 @@ SOTA LangGraph-basierte StateGraph-Pipeline für psychologische Sessions mit 7 N
 
 ## N. `scripts/dependency_vulnerability_scanner.py` — Dependency Vulnerability Scanner
 
-> **Stand:** 2026-07-31 | **Doku:** [docs/16_DEPENDENCY_SCANNER.md](docs/16_DEPENDENCY_SCANNER.md)
+> **Stand:** 2026-09-06 | **Doku:** [docs/16_DEPENDENCY_SCANNER.md](docs/16_DEPENDENCY_SCANNER.md)
 
 | Aspekt | Detail |
 |--------|--------|
-| **Zweck** | Privacy-preserving Security-Scan für Python-Dependencies (lokal, keine Cloud-Calls) |
-| **Engine** | pip-audit (Primary, subprocess-sandboxed) + Heuristik-Fallback |
+| **Zweck** | Privacy-preserving Security-Scan für Python-Dependencies + SOTA-Risiko-Priorisierung (P0–P3) |
+| **Engine** | OSV-API (Primary) + pip-audit (Zweitquelle) + Heuristik-Fallback |
+| **Enrichment** | CISA KEV + FIRST EPSS via `scripts/vuln_enrich.py` (best-effort, `--no-enrich` deaktiviert) |
 | **Input** | `requirements.txt` (oder custom via `-r`) |
-| **Output** | Console-Report + JSON (`-o report.json`) |
+| **Output** | Console-Report (inkl. Risk-Tier) + JSON (`-o report.json`, inkl. `enrichment_stats`) |
 | **Security** | `--strict` Exit-1 bei ANY Vulnerability (CI/CD-fähig) |
-| **Cache** | `data/vuln_cache/`, 24h TTL, `--update-cache` zum manuellen Aktualisieren |
-| **Tests** | 43 Tests (`tests/test_dependency_vulnerability_scanner.py`) |
+| **Cache** | `data/vuln_cache/` (osv/, kev/, epss/), 24h TTL, `--refresh` zum manuellen Aktualisieren |
+| **Tests** | 100 Tests / 17 Klassen (`tests/test_dependency_vulnerability_scanner.py`) |
 | **RAG** | **Nicht** in RAG aufnehmen (Tool, kein Wissensdokument, Ergebnisse zeitabhängig) |
 
 ### Kern-Komponenten
 
 | # | Funktion/Klasse | Zeilen | Beschreibung |
 |---|----------------|--------|-------------|
-| 1 | `parse_requirements()` | ~40 | Parst `requirements.txt` in `List[Tuple[str, str]]` (Name+Version) |
-| 2 | `Vulnerability` (dataclass) | ~50 | CVE-ID, Severity (CRITICAL/HIGH/MEDIUM/LOW), Package, Affected Versions, Description |
-| 3 | `ScanResult` (dataclass) | ~60 | Gesamtergebnis: vulnerabilities, summary, scan_time, packages_scanned |
-| 4 | `VulnerabilityScanner.scan()` | ~100 | Haupt-Scan: pip-audit-Call oder Heuristik-Fallback |
-| 5 | `VulnerabilityScanner._scan_pip_audit()` | ~120 | Subprocess-Call mit `--skip-db-update` (Offline-Modus), `--format=json` |
-| 6 | `VulnerabilityScanner._scan_heuristic()` | ~150 | Fallback: 7 bekannte kritische Patterns (z.B. `urllib3<1.26.5`, `cryptography<3.3.2`) |
-| 7 | `VulnerabilityCache` | ~80 | Cache-Management: `data/vuln_cache/`, 24h TTL, JSON-Serialisierung |
-| 8 | `ReportFormatter.format_console()` | ~60 | Human-readable Console-Output mit Severity-Farben |
-| 9 | `ReportFormatter.format_json()` | ~40 | Maschinenlesbarer JSON-Output für CI/CD |
-| 10 | `main()` | ~50 | CLI-Entry-Point mit Argument-Parsing |
+| 1 | `parse_requirements()` | ~297 | Parst `requirements.txt` in `List[Tuple[str, str]]` (Name+Version) |
+| 2 | `Vulnerability` | ~103 | CVE-ID, Severity, Package + Enrichment-Felder (`kev`, `epss`, `risk_tier`, `risk_score`, …) |
+| 3 | `ScanResult` | ~178 | Gesamtergebnis: vulnerabilities, summary, scan_time, packages_scanned, `enrichment_stats` |
+| 4 | `VulnerabilityScanner.scan()` | ~404 | Haupt-Scan: OSV → pip-audit → Heuristik, danach best-effort-Enrichment |
+| 5 | `VulnerabilityScanner._scan_with_osv()` | ~625 | Primary-Engine: `api.osv.dev/v1/query` mit per-Package-Cache (24h TTL) |
+| 6 | `VulnerabilityScanner._enrich_vulns()` | ~478 | Best-effort-Enrichment: KEV + EPSS + `prioritize()`; Fehler fallen nie auf den Scan zurück |
+| 7 | `VulnerabilityScanner._scan_pip_audit()` | ~515 | Zweitquelle: Subprocess mit Timeout, `--skip-db-update`, `--format=json` |
+| 8 | `VulnerabilityScanner._heuristic_scan()` | ~842 | Fallback: 7 bekannte kritische Patterns (IMMER als Scan-Fehler markiert) |
+| 9 | `vuln_enrich.compute_risk()` | ~117 | Pure/deterministisches Tiering: P0=KEV, P1=critical/(high+EPSS≥0.3), P2=high/medium, P3=rest; Score 0–17 |
+| 10 | `vuln_enrich.KEVCatalog` | ~198 | CISA-KEV-Feed: Cache (`kev/kev_cache.json`), Offline/Refresh, case-insensitiver Lookup |
+| 11 | `vuln_enrich.EPSSClient` | ~373 | FIRST-EPSS: Batch (Chunk ≤100 CVEs), Cache (`epss/epss_cache.json`), `get_scores()` → `Dict[str, float]` |
+| 12 | `vuln_enrich.prioritize()` | ~550 | Orchestriert KEV+EPSS+`compute_risk` pro Vuln; robust gegen `__slots__`/Attribute-Fehler |
+| 13 | `ReportFormatter` | ~947 | Console-Report (inkl. P0–P3) + JSON-Report mit `enrichment_stats` |
+| 14 | `main()` | ~1061 | CLI-Entry-Point: `--strict`, `--offline`, `--refresh`, `--no-enrich`, `-r`, `-o` |
 
 ### SOTA Features
-- pip-audit als Primary-Engine (pypa/advisory-database, Python-Standard)
-- Subprocess-Sandboxing (timeout, capture_output, text mode)
-- Heuristik-Fallback wenn pip-audit nicht installiert
-- Lokaler Cache mit TTL (kein Network-Call bei wiederholten Scans)
+- OSV als Primary-Engine (direkter API-Call statt pip-audit-Subprocess, pypa/advisory-database als Zweitquelle)
+- **CISA KEV + FIRST EPSS-Enrichment** (2026-Standard-Signale: "aktiv ausgenutzt" + Exploit-Wahrscheinlichkeit)
+- **Risiko-Tiering P0–P3** (KEV → P0, critical/high+EPSS → P1, high/medium → P2, low/unknown → P3) + Score 0–17
+- Per-Package-OSV-Cache + KEV/EPSS-Cache (24h TTL) → `--offline` für ALLE Quellen
+- Best-effort-Enrichment: KEV/EPSS-Fehler brechen den Scan nie (`kev`/`epss` bleiben `null`)
+- EPSS-Batch mit Chunking (≤100 CVEs/Request) + Rate-Limit-Delay
 - `--strict` Mode für CI/CD-Pipelines (Exit-1 bei ANY Vulnerability)
-- Zero Telemetry, Zero Cloud-Calls, Zero PII-Leak
-- SOTA-Recherche via DuckDuckGo MCP-Server (`@fetch-mcp`)
+- Zero Telemetry, nur CVE-IDs an FIRST, KEV reiner GET; Zero PII-Leak
 
 ## O. `agent/adaptive_rag.py` — Adaptive-RAG Pipeline (Multi-Hop + LLM-Router)
 
