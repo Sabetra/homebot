@@ -40,13 +40,19 @@ from typing import Dict, Iterable, List, Optional, Set
 
 logger = logging.getLogger(__name__)
 
-# Verzeichnisse, die keine App-Code-Quellen sind (Venvs, Caches, Doku).
-# Zusätzlich: alles, dessen Name mit "venv" beginnt (venv_bot_*, .venv, ...).
+# Verzeichnisse, die keine App-Code-Quellen sind (Venvs, Caches, Doku,
+# Einmal-Skripte, Archive). Zusätzlich: alles, dessen Name mit "venv"
+# beginnt (venv_bot_*, .venv, ...).
+# Design-Entscheidung 2026-09-06: temp_scripts/ und dead_code_archive/
+# sind Throwaway-/Archiv-Code und tauchen NICHT in der Reachability auf
+# (verhindert z.B. auch SyntaxWarnings aus Legacy-Skripten wie
+# temp_scripts/patch_db.py im Scanner-Output).
 DEFAULT_EXCLUDE_DIRS: frozenset = frozenset({
     ".git", ".hg", ".svn", "node_modules", "__pycache__",
     ".venv", "venv", "site-packages", "dist", "build",
     ".tox", ".nox", ".mypy_cache", ".pytest_cache", ".ruff_cache",
     "backups", "docs", "docs_archive",
+    "temp_scripts", "dead_code_archive",
 })
 
 
