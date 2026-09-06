@@ -222,6 +222,8 @@ class KEVCatalog:
         self.refresh = refresh
         self.available = False
         self._by_cve: Dict[str, Dict[str, Any]] = {}
+        self._load_attempted = False
+        self.load()  # Load-beim-Init: available/is_kev/entry sofort nach __init__
 
     # -- Lookup -------------------------------------------------------------
 
@@ -257,6 +259,10 @@ class KEVCatalog:
             # Bereits geladen (frueherer load()-Aufruf) - keine Wiederholung.
             self.available = True
             return True
+        if self._load_attempted:
+            # Bereits einmal versucht (und fehlgeschlagen) - kein Doppel-Fetch.
+            return self.available
+        self._load_attempted = True
 
         cached = self._read_cache()
         if cached is not None and self._fresh() and not self.refresh:
@@ -449,6 +455,17 @@ class EPSSClient:
         return result
 
     # -- Intern -------------------------------------------------------------
+
+    def _fresh(self) -> bool:
+        """True, wenn die EPSS-Cache-Datei juenger als die TTL ist."""
+        if not self.cache_file.exists():
+            return False
+        try:
+            payload = json.loads(self.cache_file.read_text(encoding="utf-8"))
+            cached_at = datetime.fromisoformat(payload.get("cached_at", ""))
+            return (datetime.now() - cached_at) < self.ttl
+        except (json.JSONDecodeError, ValueError, TypeError):
+            return False
 
     def _read_cache(self) -> Tuple[Dict[str, Any], Optional[str]]:
         if not self.cache_file.exists():
