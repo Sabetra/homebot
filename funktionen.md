@@ -1355,13 +1355,14 @@ SOTA LangGraph-basierte StateGraph-Pipeline für psychologische Sessions mit 7 N
 | 13 | `reachability.extract_imports()` | ~60 | AST-Import-Sammlung einer `.py`-Datei (BOM-tolerant via `utf-8-sig`; Parse-Fehler → `set()`) |
 | 14 | `reachability._dist_requires()` | ~110 | Deklarierte Abhängigkeiten einer Distribution via `importlib.metadata.requires()` (Parsen von `Requires-Dist`) |
 | 15 | `reachability.CodeReachability` | ~200 | Repo-Scan: Import-Set + Distribution-Map (`packages_distributions()`) + **Abhängigkeits-Closure** (BFS); `is_reachable()` → `True`/`False`/`None` (unbestimmbar) |
-| 16 | `ReportFormatter` | ~947 | Console-Report (inkl. P0–P3 + `[unreachable]`-Tag) + JSON-Report mit `enrichment_stats` |
-| 17 | `main()` | ~1061 | CLI-Entry-Point: `--strict`, `--offline`, `--refresh`, `--no-enrich`, `-r`, `-o` |
+| 16 | `ReportFormatter` | ~981 | Console-Report (inkl. P0–P3 + `unreachable`-Tag in der Tag-Liste `[Tier | KEV! | unreachable | EPSS=…]`) + JSON-Report mit `enrichment_stats` |
+| 17 | `main()` | ~1097 | CLI-Entry-Point: `--strict`, `--offline`, `--refresh`, `--no-enrich`, `-r`, `-o` |
 
 ### SOTA Features
 - OSV als Primary-Engine (direkter API-Call statt pip-audit-Subprocess, pypa/advisory-database als Zweitquelle)
 - **CISA KEV + FIRST EPSS-Enrichment** (2026-Standard-Signale: "aktiv ausgenutzt" + Exploit-Wahrscheinlichkeit)
 - **Risiko-Tiering P0–P3** (KEV → P0, critical/high+EPSS → P1, high/medium → P2, low/unknown → P3) + Score 0–17
+- **Code-Level Reachability** (2026-09-06): statische AST-Import-Analyse + `importlib.metadata`-Abhängigkeits-Closure (BFS); installiert aber ungenutzte CVEs → Tier eine Stufe herab (P0→P1, …); `None` = unbestimmbar (Tier unverändert); BOM-tolerant (`utf-8-sig`); voll lokal, best-effort, bricht den Scan nie
 - Per-Package-OSV-Cache + KEV/EPSS-Cache (24h TTL) → `--offline` für ALLE Quellen
 - Best-effort-Enrichment: KEV/EPSS-Fehler brechen den Scan nie (`kev`/`epss` bleiben `null`)
 - EPSS-Batch mit Chunking (≤100 CVEs/Request) + Rate-Limit-Delay
