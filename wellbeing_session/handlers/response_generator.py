@@ -101,7 +101,7 @@ def _care_language_instruction() -> str:
 # This constant drives ALL paths in the psychological chat pipeline:
 #   - Primary path  : ResponseGenerator._build_system_prompt() prepends this
 #                     to the formatted session context block
-#   - Fallback path : psychological_chat() uses it when care_system_prompt
+#   - Fallback path : wellbeing_chat() uses it when care_system_prompt
 #                     is None (ResponseGenerator not available)
 #   - Emergency path: _build_fallback_messages() uses it when context build fails
 #
@@ -160,7 +160,7 @@ class ResponseGenerator:
         self.context_manager = context_manager
         self.chat_logic = chat_logic
         
-    def generate_psychological_response(
+    def generate_wellbeing_response(
         self,
         user_input: str,
         build_context_func: Callable,
@@ -179,7 +179,7 @@ class ResponseGenerator:
         Returns:
             Generated AI response
         """
-        session_id = st.session_state.psych_current_session
+        session_id = st.session_state.wellbeing_current_session
         session_info = self.session_manager.get_session_summary(session_id)
         if not session_info:
             raise RuntimeError(
@@ -224,7 +224,7 @@ class ResponseGenerator:
             
             # Convert session messages to LLM format
             messages = self.session_manager.get_session_context(
-                st.session_state.psych_current_session, 
+                st.session_state.wellbeing_current_session, 
                 max_messages=max_messages_for_history
             )
             
@@ -232,7 +232,7 @@ class ResponseGenerator:
             # Session-Messages existieren (neue Session, erster Turn).
             # Vorher war dies im `if messages:` Block → bei leerem History
             # blieb optimized_messages = [], care_system_prompt = None,
-            # und psychological_chat() fiel auf DEFAULT_SYSTEM_PROMPT zurück.
+            # und wellbeing_chat() fiel auf DEFAULT_SYSTEM_PROMPT zurück.
             system_prompt = self._build_system_prompt(formatted_context)
             llm_messages = [{'role': 'system', 'content': system_prompt}]
             
@@ -281,11 +281,11 @@ class ResponseGenerator:
         
         # Use chat logic for better responses
         if self.chat_logic:
-            # ✅ DIAGNOSTIC: Log was an psychological_chat übergeben wird
+            # ✅ DIAGNOSTIC: Log was an wellbeing_chat übergeben wird
             kg_count = len(comprehensive_context.get('knowledge_graph', []))
             summ_count = len(comprehensive_context.get('session_summaries', []))
             logger.info(
-                f"🔗 [HANDOFF] → psychological_chat | "
+                f"🔗 [HANDOFF] → wellbeing_chat | "
                 f"user_id={user_id} | "
                 f"KG_triples={kg_count} | "
                 f"session_summaries={summ_count} | "
@@ -422,9 +422,9 @@ Das sind wichtige Gedanken, die Sie mit mir teilen. Können Sie mir mehr darübe
                     break
             
             if care_system_prompt:
-                logger.info(f"✅ [PSYCHO-CHAT] Care-System-Prompt wird an psychological_chat übergeben ({len(care_system_prompt)} Zeichen)")
+                logger.info(f"✅ [PSYCHO-CHAT] Care-System-Prompt wird an wellbeing_chat übergeben ({len(care_system_prompt)} Zeichen)")
             
-            # Use psychological_chat() with:
+            # Use wellbeing_chat() with:
             # 1. session_context (KG, previous sessions, mood, goals, insights)
             # 2. session_history from DB (conversation continuity)
             # 3. care_system_prompt (formatted context as system prompt)
@@ -432,8 +432,8 @@ Das sind wichtige Gedanken, die Sie mit mir teilen. Können Sie mir mehr darübe
                 return "Entschuldigung, Chat-Logik ist nicht verfügbar."
             
             # RC-1 FIX: Übergebe den Care-System-Prompt
-            # Damit nutzt psychological_chat() diesen statt DEFAULT_SYSTEM_PROMPT
-            response = self.chat_logic.psychological_chat(
+            # Damit nutzt wellbeing_chat() diesen statt DEFAULT_SYSTEM_PROMPT
+            response = self.chat_logic.wellbeing_chat(
                 user_input,
                 session_context=session_context_dict,
                 session_history=messages,
@@ -477,12 +477,12 @@ Das sind wichtige Gedanken, die Sie mit mir teilen. Können Sie mir mehr darübe
             # instead of passing empty dict
             session_context_dict: Dict[str, Any] = {}
             try:
-                if hasattr(st.session_state, 'psych_interface') and st.session_state.psych_interface:
-                    built_context = st.session_state.psych_interface._build_session_context(user_query=user_input)
+                if hasattr(st.session_state, 'wellbeing_interface') and st.session_state.wellbeing_interface:
+                    built_context = st.session_state.wellbeing_interface._build_session_context(user_query=user_input)
                     if built_context:
                         session_context_dict = built_context
                         logger.info(
-                            f"✅ [FALLBACK] Session-Context aus psych_interface gebaut: "
+                            f"✅ [FALLBACK] Session-Context aus wellbeing_interface gebaut: "
                             f"KG={len(session_context_dict.get('knowledge_graph', []))}"
                         )
             except Exception as ctx_err:
@@ -495,8 +495,8 @@ Das sind wichtige Gedanken, die Sie mit mir teilen. Können Sie mir mehr darübe
                     fallback_care_prompt = msg['content']
                     break
             
-            # Use psychological_chat() with session context AND history
-            response = st.session_state.chat_logic.psychological_chat(
+            # Use wellbeing_chat() with session context AND history
+            response = st.session_state.chat_logic.wellbeing_chat(
                 user_input,
                 session_context=session_context_dict,
                 session_history=messages,
@@ -585,7 +585,7 @@ Das sind wichtige Gedanken, die Sie mit mir teilen. Können Sie mir mehr darübe
         
         session_context_dict = {
             'user_id': user_id,
-            'user_name': st.session_state.psych_current_user,  # Display name for personal address
+            'user_name': st.session_state.wellbeing_current_user,  # Display name for personal address
             'session_id': session_id,
             'mood': comprehensive_context.get('mood_progression', {}).get('current_mood', 'neutral'),
             'goals': comprehensive_context.get('care_goals', []),

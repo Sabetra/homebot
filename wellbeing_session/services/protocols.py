@@ -168,7 +168,7 @@ class AsyncDBPoolProtocol(Protocol):
 class AsyncResponseGeneratorProtocol(Protocol):
     """Async protocol for response generation."""
 
-    async def generate_psychological_response(
+    async def generate_wellbeing_response(
         self,
         user_input: str,
         session_id: str,
@@ -185,12 +185,12 @@ class AsyncResponseGeneratorProtocol(Protocol):
 class AsyncMessageHandlerProtocol(Protocol):
     """Async protocol for message handling."""
 
-    async def handle_psychological_message(
+    async def handle_wellbeing_message(
         self,
         user_message: str,
         ai_response: str,
         session_id: str,
-        psych_enabled: bool,
+        wellbeing_enabled: bool,
         build_context_func: Any,
         format_context_func: Any,
     ) -> str:

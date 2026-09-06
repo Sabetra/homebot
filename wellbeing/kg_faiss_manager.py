@@ -84,7 +84,7 @@ def _get_faiss() -> Any:
     return faiss
 
 
-class PsychoKGFAISSManager:
+class WellbeingKGFAISSManager:
     """
     FAISS Index Manager für psychologische KG-Triples.
     
@@ -154,7 +154,7 @@ class PsychoKGFAISSManager:
         # can be safely interleaved with search() under Streamlit threading.
         self._index_lock = threading.RLock()
 
-        logger.info(f"✅ PsychoKGFAISSManager initialized (dim={embedding_dim}, cache={self.cache_dir})")
+        logger.info(f"✅ WellbeingKGFAISSManager initialized (dim={embedding_dim}, cache={self.cache_dir})")
         
         # Auto-Load/Build
         if auto_load:
@@ -424,7 +424,7 @@ class PsychoKGFAISSManager:
         # restricts results. Falsy user_id would silently disable that filter.
         if not user_id:
             raise ValueError(
-                "PsychoKGFAISSManager.search requires a non-empty user_id "
+                "WellbeingKGFAISSManager.search requires a non-empty user_id "
                 "to enforce per-user data isolation."
             )
 
@@ -616,15 +616,15 @@ class PsychoKGFAISSManager:
 
 
 # Singleton Factory
-_psycho_kg_faiss_manager_instance = None
+_wellbeing_kg_faiss_manager_instance = None
 
 def get_psycho_kg_faiss_manager(
     db_path: str = "wellbeing_store.db",
     embedding_dim: int = 1024,
     db_instance: Any = None  # ⚠️ NEW: Accept DB instance to prevent circular init
-) -> "PsychoKGFAISSManager":
+) -> "WellbeingKGFAISSManager":
     """
-    Singleton Factory für PsychoKGFAISSManager.
+    Singleton Factory für WellbeingKGFAISSManager.
     
     Verhindert multiple Index-Instanzen (Memory Leak Prevention).
     
@@ -638,10 +638,10 @@ def get_psycho_kg_faiss_manager(
         embedding_dim: Embedding dimensionality (1024 for bge-large)
         db_instance: Optional existing WellbeingDatabase instance (prevents circular init)
     """
-    global _psycho_kg_faiss_manager_instance
+    global _wellbeing_kg_faiss_manager_instance
     
-    if _psycho_kg_faiss_manager_instance is None:
-        _psycho_kg_faiss_manager_instance = PsychoKGFAISSManager(
+    if _wellbeing_kg_faiss_manager_instance is None:
+        _wellbeing_kg_faiss_manager_instance = WellbeingKGFAISSManager(
             db_path=db_path,
             embedding_dim=embedding_dim,
             auto_load=False,  # ⚠️ Prevent circular init with WellbeingDatabase
@@ -651,7 +651,7 @@ def get_psycho_kg_faiss_manager(
     # without a DB handle. Reuse the existing manager, but attach the live
     # WellbeingDatabase instance so build/search paths do not fall back
     # to a fresh loader-less DB.
-    if db_instance is not None and _psycho_kg_faiss_manager_instance._db_instance is None:
-        _psycho_kg_faiss_manager_instance._db_instance = db_instance
+    if db_instance is not None and _wellbeing_kg_faiss_manager_instance._db_instance is None:
+        _wellbeing_kg_faiss_manager_instance._db_instance = db_instance
 
-    return _psycho_kg_faiss_manager_instance
+    return _wellbeing_kg_faiss_manager_instance

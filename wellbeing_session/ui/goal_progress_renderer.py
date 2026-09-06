@@ -67,7 +67,7 @@ class GoalProgressDataBuilder:
 
         session_summary = self.session_manager.get_session_summary(session_id)
         summary_user_id = str((session_summary or {}).get("user_id") or "").strip()
-        state_user_id = str(st.session_state.get("psych_current_user_id") or "").strip()
+        state_user_id = str(st.session_state.get("wellbeing_current_user_id") or "").strip()
         resolved_user_id = state_user_id
         if not resolved_user_id:
             resolved_user_id = str(self.session_manager.resolve_user_id(current_user_name)).strip()

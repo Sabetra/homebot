@@ -26,9 +26,9 @@ except ImportError:
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 try:
-    from psychological_session_loader import PsychologicalSessionLoader
+    from wellbeing_session_loader import WellbeingSessionLoader
 except ImportError:
-    print("❌ PsychologicalSessionLoader nicht verfügbar")
+    print("❌ WellbeingSessionLoader nicht verfügbar")
     sys.exit(1)
 
 class SessionListWidget(QListWidget):
@@ -225,7 +225,7 @@ class SessionManagerGUI(QMainWindow):
     def init_session_loader(self):
         """Initialisiert Session-Loader"""
         try:
-            self.session_loader = PsychologicalSessionLoader()
+            self.session_loader = WellbeingSessionLoader()
             
             if self.session_loader.db:
                 self.statusBar().showMessage("✅ Session-Loader bereit")

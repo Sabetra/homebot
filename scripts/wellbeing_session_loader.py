@@ -17,7 +17,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 logger = logging.getLogger(__name__)
 
-class PsychologicalSessionLoader:
+class WellbeingSessionLoader:
     """
     Session-Loader für psychologische Unterstützung
     
@@ -506,7 +506,7 @@ def demonstrate_session_management():
     print("🧠📋 Session-Management für psychologische Unterstützung")
     print("="*60)
     
-    loader = PsychologicalSessionLoader()
+    loader = WellbeingSessionLoader()
     
     if not loader.db:
         print("❌ Session-Loader konnte nicht initialisiert werden")

@@ -147,7 +147,7 @@ class ChatInputHandler:
         self.context_manager = context_manager
         self.chat_logic = chat_logic
         
-    def handle_psychological_chat_input(
+    def handle_wellbeing_chat_input(
         self, 
         user_input: str, 
         generate_response_func: Callable[[str], str]
@@ -171,12 +171,12 @@ class ChatInputHandler:
             if _should_pause_risk_assessment(user_input):
                 logger.info(
                     "User-Feedback erkannt: Risikobewertung pausieren (session=%s...)",
-                    session_id[:12] if (session_id := st.session_state.psych_current_session) else "N/A",
+                    session_id[:12] if (session_id := st.session_state.wellbeing_current_session) else "N/A",
                 )
                 try:
                     treatment_mgr = getattr(self.session_manager, "treatment_manager", None)
                     if treatment_mgr is not None:
-                        session_id_cur = st.session_state.psych_current_session
+                        session_id_cur = st.session_state.wellbeing_current_session
                         if session_id_cur:
                             treatment_mgr.pause_risk_assessment(session_id_cur, turns=10)
                 except Exception as exc:  # noqa: BLE001
@@ -185,7 +185,7 @@ class ChatInputHandler:
             # Perform emotional analysis FIRST (for user message)
             user_emotional_markers = self._analyze_user_emotion(user_input)
             
-            session_id = st.session_state.psych_current_session
+            session_id = st.session_state.wellbeing_current_session
             user_write = self.session_manager.add_message_with_result(
                 session_id,
                 role="user",
@@ -203,8 +203,8 @@ class ChatInputHandler:
                 return
 
             session_id = user_write.session_id
-            if st.session_state.psych_current_session != session_id:
-                st.session_state.psych_current_session = session_id
+            if st.session_state.wellbeing_current_session != session_id:
+                st.session_state.wellbeing_current_session = session_id
                 logger.warning("Psychologische Session nach User-Write auf %s... neu gebunden", session_id[:12])
             
             # ── Kein Block: Risk-Info fließt nur als Kontext ein ──
@@ -247,8 +247,8 @@ class ChatInputHandler:
                     st.markdown(ai_response)
                 return
 
-            if st.session_state.psych_current_session != assistant_write.session_id:
-                st.session_state.psych_current_session = assistant_write.session_id
+            if st.session_state.wellbeing_current_session != assistant_write.session_id:
+                st.session_state.wellbeing_current_session = assistant_write.session_id
                 logger.warning(
                     "Psychologische Session nach Assistant-Write auf %s... neu gebunden",
                     assistant_write.session_id[:12],
@@ -273,7 +273,7 @@ class ChatInputHandler:
         """Check context status before processing."""
         try:
             messages = self.session_manager.get_session_context(
-                st.session_state.psych_current_session, 
+                st.session_state.wellbeing_current_session, 
                 max_messages=50
             )
             

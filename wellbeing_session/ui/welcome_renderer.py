@@ -64,7 +64,7 @@ class WelcomeRenderer:
         )
         
         # Quick start option
-        if st.session_state.psych_current_user and create_session_func:
+        if st.session_state.wellbeing_current_user and create_session_func:
             st.markdown(_tr("wellbeing_ui.welcome.quickstart", "### 🚀 Schnellstart"))
             if st.button(_tr("wellbeing_ui.welcome.start_button", "💬 Neue Wellbeing-Session starten"), key="quick_start_psych"):
                 create_session_func()

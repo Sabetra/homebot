@@ -1,6 +1,6 @@
 """Finanz-DB: Schema, DAO und Migrations.
 
-Strikt getrennt von ``rag_store.db``/``psychological_db``. Persistenz-Pfad
+Strikt getrennt von ``rag_store.db``/``wellbeing_db``. Persistenz-Pfad
 default ``database/finance.db``; berschreibbar via ``FINANCE_DB_PATH``-Env.
 
 Schema-Prinzipien:

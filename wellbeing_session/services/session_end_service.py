@@ -75,12 +75,12 @@ class SessionEndService:
         """Render the session-end confirmation dialog.
 
         Reads/writes ``st.session_state`` keys:
-        - ``psych_current_session``
-        - ``psych_enabled``
+        - ``wellbeing_current_session``
+        - ``wellbeing_enabled``
         - ``show_insight_info``
         - ``show_end_session_dialog``
         """
-        session_id: Optional[str] = st.session_state.get("psych_current_session")
+        session_id: Optional[str] = st.session_state.get("wellbeing_current_session")
         if not session_id:
             return
 
@@ -224,7 +224,7 @@ class SessionEndService:
         if self._profile_cache is None:
             return
         try:
-            user_id = st.session_state.get('psych_current_user_id')
+            user_id = st.session_state.get('wellbeing_current_user_id')
             if not user_id:
                 logger.info("ℹ️ Kein user_id in session_state — Profile-Invalidierung übersprungen")
                 return
@@ -240,8 +240,8 @@ class SessionEndService:
     @staticmethod
     def _reset_session_state() -> None:
         """Reset all session-state keys related to the active session."""
-        st.session_state.psych_current_session = None
-        st.session_state.psych_enabled = False
+        st.session_state.wellbeing_current_session = None
+        st.session_state.wellbeing_enabled = False
         st.session_state.show_insight_info = False
         st.session_state.show_end_session_dialog = False
 

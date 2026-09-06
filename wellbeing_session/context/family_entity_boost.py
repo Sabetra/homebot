@@ -5,7 +5,7 @@ search stage. It prefers data-driven entity grounding from the KG entity index
 and uses lexical role aliases only as a bounded fallback signal.
 
 Used by:
-- PsychologicalContextBuilder._gather_knowledge_graph()
+- WellbeingContextBuilder._gather_knowledge_graph()
 - SessionContextBuilder._load_kg_triples()
 
 SOTA direction:

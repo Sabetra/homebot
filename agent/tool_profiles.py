@@ -159,7 +159,7 @@ TOOL_PROFILES: Dict[str, ToolProfile] = {
         description="Eingeschränkter Zugriff für Finance-Tab (Read-only FS)",
     ),
 
-    "psych_tab": ToolProfile(
+    "wellbeing_tab": ToolProfile(
         allowed_tools=[
             "rag_search",
         ],
@@ -213,7 +213,7 @@ def filter_tool_schemas(schemas: List[Dict[str, Any]], mode: str) -> List[Dict[s
 
     Args:
         schemas: Liste von OpenAI-Tool-Schemas (wie von tool_schemas.get_tool_schemas()).
-        mode: Tab-Mode (z.B. 'main_chat', 'finance_tab', 'psych_tab').
+        mode: Tab-Mode (z.B. 'main_chat', 'finance_tab', 'wellbeing_tab').
 
     Returns:
         Gefilterte Schema-Liste.

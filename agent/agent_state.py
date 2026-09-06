@@ -35,7 +35,7 @@ class AgentState(TypedDict, total=False):
     # ═══════════════════════════════════════════════════════════════════
     image_path: Optional[str]               # Optional: Bild für multimodale Anfragen
     tab_mode: str                           # Progressive Disclosure (2026-08-24):
-                                            #   "main_chat" | "finance_tab" | "psych_tab" | "settings_tab"
+                                            #   "main_chat" | "finance_tab" | "wellbeing_tab" | "settings_tab"
                                             #   Quelle: settings["tab_mode"] (UI aktivierter Tab), Default "main_chat"
                                             #   Wirkt auf: _tool_schemas_for_state → Tool-Pool-Filter (tool_profiles.py)
     tool_pool: Optional[List[str]]          # Explizite Tool-Pool-Override (Capability-Gap-Retry, max 1x).

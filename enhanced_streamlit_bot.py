@@ -154,7 +154,7 @@ def _init_session_state() -> None:
         "feedback_data": [],
         "uploaded_documents": [],
         "pending_followup": None,
-        "psych_interface": None,
+        "wellbeing_interface": None,
         "use_react_agent": True,
         "search_depth": 5,
         "faiss_confidence": 0.70,
@@ -171,13 +171,13 @@ def _init_session_state() -> None:
             st.session_state[key] = value
 
 
-def _is_psych_interface_compatible(iface: object) -> bool:
+def _is_wellbeing_interface_compatible(iface: object) -> bool:
     return hasattr(iface, "render_complete_interface")
 
 
-def _get_or_init_psych_interface() -> Optional[WellbeingSessionInterface]:
-    current = st.session_state.get("psych_interface")
-    if current is not None and _is_psych_interface_compatible(current):
+def _get_or_init_wellbeing_interface() -> Optional[WellbeingSessionInterface]:
+    current = st.session_state.get("wellbeing_interface")
+    if current is not None and _is_wellbeing_interface_compatible(current):
         chat_logic = st.session_state.get("chat_logic")
         model_loader = st.session_state.get("model_loader")
         if chat_logic is not None and hasattr(current, "set_chat_logic"):
@@ -193,11 +193,11 @@ def _get_or_init_psych_interface() -> Optional[WellbeingSessionInterface]:
             iface.set_chat_logic(chat_logic)
         if model_loader is not None and hasattr(iface, "set_model_loader"):
             iface.set_model_loader(model_loader)
-        st.session_state.psych_interface = iface
+        st.session_state.wellbeing_interface = iface
         return iface
     except Exception as exc:
         logger.warning("Psychological interface unavailable: %s", exc)
-        st.session_state.psych_interface = None
+        st.session_state.wellbeing_interface = None
         return None
 
 
@@ -451,10 +451,10 @@ def initialize_ai() -> bool:
         st.session_state.chat_logic = chat_logic
         st.session_state.initialized = True
 
-        psych_interface = st.session_state.get("psych_interface")
-        if psych_interface is not None and _is_psych_interface_compatible(psych_interface):
-            psych_interface.set_chat_logic(chat_logic)
-            psych_interface.set_model_loader(model_loader)
+        wellbeing_interface = st.session_state.get("wellbeing_interface")
+        if wellbeing_interface is not None and _is_wellbeing_interface_compatible(wellbeing_interface):
+            wellbeing_interface.set_chat_logic(chat_logic)
+            wellbeing_interface.set_model_loader(model_loader)
 
         return True
     except Exception as exc:
@@ -476,12 +476,12 @@ def unload_ai() -> None:
     st.session_state.initialized = False
     st.session_state.model_loader = None
     st.session_state.chat_logic = None
-    psych_interface = st.session_state.get("psych_interface")
-    if psych_interface is not None and _is_psych_interface_compatible(psych_interface):
-        if hasattr(psych_interface, "set_chat_logic"):
-            psych_interface.set_chat_logic(None)
-        if hasattr(psych_interface, "set_model_loader"):
-            psych_interface.set_model_loader(None)
+    wellbeing_interface = st.session_state.get("wellbeing_interface")
+    if wellbeing_interface is not None and _is_wellbeing_interface_compatible(wellbeing_interface):
+        if hasattr(wellbeing_interface, "set_chat_logic"):
+            wellbeing_interface.set_chat_logic(None)
+        if hasattr(wellbeing_interface, "set_model_loader"):
+            wellbeing_interface.set_model_loader(None)
 
 
 def get_ai_response_modern(
@@ -821,7 +821,7 @@ def main() -> None:
     # ---- Psychology ----
     with tab_map[i18n_t("gui.tabs.wellbeing")]:
         try:
-            render_wellbeing_tab(_get_or_init_psych_interface)
+            render_wellbeing_tab(_get_or_init_wellbeing_interface)
         except Exception as exc:
             logger.exception("Psychology tab failed")
             st.error(f"{i18n_t('gui.psychology.not_available')}: {exc}")

@@ -1,6 +1,6 @@
 from wellbeing_session.response_provenance import (
     build_psych_web_provenance_instruction,
-    finalize_psych_response_provenance,
+    finalize_wellbeing_response_provenance,
     validate_psych_response_provenance,
 )
 
@@ -75,7 +75,7 @@ def test_invalid_draft_is_regenerated_once_and_valid_retry_survives() -> None:
         attempts.append(correction_instruction)
         return "Ich stütze diese Einordnung auf allgemeines Fachwissen, nicht auf eine aktuelle Websuche."
 
-    response, was_replaced = finalize_psych_response_provenance(
+    response, was_replaced = finalize_wellbeing_response_provenance(
         "Meine Online-Recherche: https://invented.example/advice",
         verified_web_urls=(),
         regenerate=regenerate,
@@ -96,7 +96,7 @@ def test_invalid_retry_fails_closed_without_leaking_draft() -> None:
         attempts += 1
         return "Laut meiner Websuche: https://still-invented.example/source"
 
-    response, was_replaced = finalize_psych_response_provenance(
+    response, was_replaced = finalize_wellbeing_response_provenance(
         "Online-Recherche: https://invented.example/advice",
         verified_web_urls=(),
         regenerate=regenerate,
@@ -113,7 +113,7 @@ def test_regeneration_error_fails_closed() -> None:
     def regenerate(_: str) -> str:
         raise RuntimeError("model unavailable")
 
-    response, was_replaced = finalize_psych_response_provenance(
+    response, was_replaced = finalize_wellbeing_response_provenance(
         "Meine Online-Recherche: https://invented.example/advice",
         verified_web_urls=(),
         regenerate=regenerate,

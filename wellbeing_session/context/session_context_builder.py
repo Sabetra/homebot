@@ -1,5 +1,5 @@
 ﻿"""
-Session Context Builder - builds full session context for psychological_chat().
+Session Context Builder - builds full session context for wellbeing_chat().
 
 Collects ALL available psychological context data WITH relevance filtering:
 - Knowledge Graph Triples (filtered by relevance to user_query)
@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 
 class SessionContextBuilder:
     """
-    Builds full session context dictionaries for psychological_chat().
+    Builds full session context dictionaries for wellbeing_chat().
 
     Collects knowledge-graph triples, previous session summaries,
     mood progression, care goals and user insights into a
@@ -58,7 +58,7 @@ class SessionContextBuilder:
         self, user_query: Optional[str] = None
     ) -> Optional[Dict[str, Any]]:
         """
-        Build FULL session context for psychological_chat().
+        Build FULL session context for wellbeing_chat().
 
         Collects ALL available context data WITH relevance filtering:
         - Knowledge Graph Triples (filtered by relevance to user_query)
@@ -73,11 +73,11 @@ class SessionContextBuilder:
         Returns:
             Dictionary with full, relevant context or ``None``.
         """
-        if not st.session_state.psych_current_session:
+        if not st.session_state.wellbeing_current_session:
             logger.warning("❌ [BUILD_CONTEXT] Keine aktive Session!")
             return None
 
-        session_id: str = st.session_state.psych_current_session
+        session_id: str = st.session_state.wellbeing_current_session
 
         # Get user ID from session summary (not from session_state!)
         session_summary_dict = self.session_manager.get_session_summary(session_id)
@@ -111,7 +111,7 @@ class SessionContextBuilder:
         # === BUILD FULL CONTEXT ===
         context: Dict[str, Any] = {
             "user_id": user_id,
-            "user_name": st.session_state.psych_current_user,
+            "user_name": st.session_state.wellbeing_current_user,
             "session_id": session_id,
             "mood": session_summary_dict.get("emotional_state", "Neutral"),
             "goals": (

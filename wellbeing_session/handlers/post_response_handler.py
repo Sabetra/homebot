@@ -4,10 +4,10 @@ POST-RESPONSE HANDLER — Decoupled Mood/Goal Tracking
 =====================================================
 
 Extracts the post-response processing (mood tracking, goal extraction)
-out of psychological_chat() into a standalone handler.
+out of wellbeing_chat() into a standalone handler.
 
 This eliminates the 4-level-deep import chain:
-    psychological_chat → WellbeingSessionInterface → SessionManager → MoodTracker/GoalManager
+    wellbeing_chat → WellbeingSessionInterface → SessionManager → MoodTracker/GoalManager
 
 Instead, the handler receives the SessionManager directly (dependency injection).
 
@@ -25,7 +25,7 @@ class PostResponseHandler:
     """
     Handles post-response processing (mood tracking, goal extraction).
     
-    Designed to be called AFTER psychological_chat() returns,
+    Designed to be called AFTER wellbeing_chat() returns,
     typically by ResponseGenerator or the session interface.
     
     Usage:

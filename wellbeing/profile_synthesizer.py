@@ -184,15 +184,15 @@ class ProfileSynthesizer:
     - Evidence-based only
     """
     
-    def __init__(self, psychological_db: Any, model_loader: Any) -> None:
+    def __init__(self, wellbeing_db: Any, model_loader: Any) -> None:
         """
         Initialize profile synthesizer
         
         Args:
-            psychological_db: WellbeingDatabase instance
+            wellbeing_db: WellbeingDatabase instance
             model_loader: ModelLoader for LLM calls
         """
-        self.db = psychological_db
+        self.db = wellbeing_db
         self.model_loader = model_loader
         self._profile_json_grammar: Any = None
         
@@ -662,7 +662,7 @@ class ProfileSynthesizer:
     def _load_user_insights(self, user_id: str) -> List[Dict[str, Any]]:
         """Load user insights from canonical ``wellbeing_insights`` table.
 
-        Schema (see :mod:`psychological_user_insight_extractor`):
+        Schema (see :mod:`wellbeing_user_insight_extractor`):
         ``insight_type, category, value, confidence, temporal_context,
         created_at, mention_count``.
         """
@@ -1029,9 +1029,9 @@ WICHTIG: Nur valides JSON zurückgeben, keine zusätzlichen Kommentare!"""
 
 
 # Factory function
-def create_profile_synthesizer(psychological_db: Any, model_loader: Any) -> "ProfileSynthesizer":
+def create_profile_synthesizer(wellbeing_db: Any, model_loader: Any) -> "ProfileSynthesizer":
     """Create ProfileSynthesizer instance"""
-    return ProfileSynthesizer(psychological_db, model_loader)
+    return ProfileSynthesizer(wellbeing_db, model_loader)
 
 
 if __name__ == "__main__":

@@ -153,7 +153,7 @@ def get_dependency_registry() -> _DependencyRegistry:
 # State schema (TypedDict -- LangGraph native, SERIALIZABLE ONLY)
 # ---------------------------------------------------------------------------
 
-class PsychSessionState(TypedDict, total=False):
+class WellbeingSessionState(TypedDict, total=False):
     """Typed state flowing through the LangGraph session graph.
 
     LangGraph uses TypedDict (not dataclass) for reducer-based state merging.
@@ -168,7 +168,7 @@ class PsychSessionState(TypedDict, total=False):
     user_input: str
     session_id: str
     user_id: str
-    psych_enabled: bool
+    wellbeing_enabled: bool
 
     # ── Emotion analysis ──
     emotional_markers: List[str]
@@ -201,13 +201,13 @@ class PsychSessionState(TypedDict, total=False):
 # Node functions (pure: State → State)
 # ---------------------------------------------------------------------------
 
-def _get_dep(state: PsychSessionState, key: str) -> Any:
+def _get_dep(state: WellbeingSessionState, key: str) -> Any:
     """Get a dependency from the registry using the thread_id in state."""
     thread_id = state.get("_thread_id", "default")
     return _registry.get(thread_id, key)
 
 
-def validate_input(state: PsychSessionState) -> dict:
+def validate_input(state: WellbeingSessionState) -> dict:
     """Validate that user input is non-empty and session is active."""
     t0 = time.perf_counter()
     errors: List[str] = list(state.get("errors", []))
@@ -256,7 +256,7 @@ def _analyze_emotion_with_retry(analyzer: Any, user_input: str) -> Any:
         return analyzer.analyze_emotional_state(user_input)
 
 
-def analyze_emotion(state: PsychSessionState) -> dict:
+def analyze_emotion(state: WellbeingSessionState) -> dict:
     """Run emotion analysis on user input.
 
     Uses the _emotional_analyzer from the dependency registry.
@@ -299,14 +299,14 @@ def analyze_emotion(state: PsychSessionState) -> dict:
     return update
 
 
-def crisis_router(state: PsychSessionState) -> Literal["crisis_response", "build_context"]:
+def crisis_router(state: WellbeingSessionState) -> Literal["crisis_response", "build_context"]:
     """Conditional edge: route to crisis path or normal path."""
     if state.get("is_crisis", False):
         return "crisis_response"
     return "build_context"
 
 
-def crisis_response(state: PsychSessionState) -> dict:
+def crisis_response(state: WellbeingSessionState) -> dict:
     """Generate immediate crisis response with helpline info.
 
     SOTA: All crisis texts are i18n-resolved. No hardcoded language strings.
@@ -351,7 +351,7 @@ def crisis_response(state: PsychSessionState) -> dict:
     return update
 
 
-def build_context(state: PsychSessionState) -> dict:
+def build_context(state: WellbeingSessionState) -> dict:
     """Build comprehensive psychological context for the response."""
     t0 = time.perf_counter()
 
@@ -393,7 +393,7 @@ def build_context(state: PsychSessionState) -> dict:
     return update
 
 
-def generate_response(state: PsychSessionState) -> dict:
+def generate_response(state: WellbeingSessionState) -> dict:
     """Generate AI response using the LangChain-wrapped local model or chat_logic."""
     t0 = time.perf_counter()
 
@@ -445,7 +445,7 @@ def generate_response(state: PsychSessionState) -> dict:
     return update
 
 
-def enhance_response(state: PsychSessionState) -> dict:
+def enhance_response(state: WellbeingSessionState) -> dict:
     """Enhance the AI response with emotional context and session info."""
     t0 = time.perf_counter()
 
@@ -481,7 +481,7 @@ def enhance_response(state: PsychSessionState) -> dict:
     return update
 
 
-def record_messages(state: PsychSessionState) -> dict:
+def record_messages(state: WellbeingSessionState) -> dict:
     """Record user and assistant messages to the session DB."""
     t0 = time.perf_counter()
 
@@ -510,7 +510,7 @@ def record_messages(state: PsychSessionState) -> dict:
 # Helper
 # ---------------------------------------------------------------------------
 
-def _trace(node_name: str, t0: float, state: PsychSessionState) -> dict:
+def _trace(node_name: str, t0: float, state: WellbeingSessionState) -> dict:
     """Build trace/timing update for a node."""
     elapsed = (time.perf_counter() - t0) * 1000
     trace = list(state.get("node_trace", []))
@@ -542,7 +542,7 @@ def build_langgraph_session_graph(
             "Install with: pip install langgraph langchain-core"
         )
 
-    graph = StateGraph(PsychSessionState)
+    graph = StateGraph(WellbeingSessionState)
 
     # ── Add nodes ──
     graph.add_node("validate_input", validate_input)

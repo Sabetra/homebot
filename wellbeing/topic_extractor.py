@@ -31,7 +31,7 @@ class WellbeingTopicExtractor:
     def extract_topics_from_conversation(self, session_context: List[str], 
                                        current_message: str = "") -> List[str]:
         """
-        Extrahiert Hauptthemen aus Gesprächskontext (für psychological_interface)
+        Extrahiert Hauptthemen aus Gesprächskontext (für wellbeing_support_interface)
         
         Args:
             session_context: Liste bisheriger Nachrichten

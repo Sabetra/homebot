@@ -148,7 +148,7 @@ def get_metrics_monitoring_path() -> Path:
     return get_db_path("monitoring", "metrics.db")
 
 
-def get_psych_sessions_path() -> Path:
+def get_wellbeing_sessions_path() -> Path:
     """Psychological sessions under data/."""
     return get_db_path("data", "wellbeing_sessions.db")
 
@@ -166,5 +166,5 @@ __all__ = [
     "get_agent_rag_path",
     "get_web_policy_path",
     "get_metrics_monitoring_path",
-    "get_psych_sessions_path",
+    "get_wellbeing_sessions_path",
 ]

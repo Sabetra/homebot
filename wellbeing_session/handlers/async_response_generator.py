@@ -118,7 +118,7 @@ class AsyncResponseGenerator:
 
     @traced_async("handler.generate_response")
     @metered_async("handler.generate_response")
-    async def generate_psychological_response(
+    async def generate_wellbeing_response(
         self,
         user_input: str,
         session_id: str,
@@ -282,7 +282,7 @@ class AsyncResponseGenerator:
             session_context = self._convert_to_session_context(
                 comprehensive_context, user_id, session_id,
             )
-            response = self.chat_logic.psychological_chat(
+            response = self.chat_logic.wellbeing_chat(
                 user_input, session_context=session_context,
             )
             return str(response)

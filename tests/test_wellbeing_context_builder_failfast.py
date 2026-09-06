@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from wellbeing_session.context.context_builder import PsychologicalContextBuilder
+from wellbeing_session.context.context_builder import WellbeingContextBuilder
 from wellbeing_session.context.session_context_builder import SessionContextBuilder
 
 
@@ -44,8 +44,8 @@ def test_session_context_builder_propagates_runtime_profile_errors():
         builder._load_persistent_profile("user-1")
 
 
-def test_psychological_context_builder_propagates_runtime_profile_errors():
-    builder = PsychologicalContextBuilder(
+def test_wellbeing_context_builder_propagates_runtime_profile_errors():
+    builder = WellbeingContextBuilder(
         session_manager=_DummySessionManager(),
         profile_cache=_ProfileCacheRuntimeError(),
         enable_monitoring=False,
@@ -56,7 +56,7 @@ def test_psychological_context_builder_propagates_runtime_profile_errors():
 
 
 def test_extract_sources_supports_previous_sessions_alias():
-    builder = PsychologicalContextBuilder(
+    builder = WellbeingContextBuilder(
         session_manager=_DummySessionManager(),
         profile_cache=_ProfileCacheOk(),
         enable_monitoring=False,

@@ -21,7 +21,7 @@ def test_response_generator_rejects_missing_persisted_identity(monkeypatch) -> N
     monkeypatch.setattr(
         response_module.st,
         "session_state",
-        SimpleNamespace(psych_current_session="session-1"),
+        SimpleNamespace(wellbeing_current_session="session-1"),
     )
     generator = ResponseGenerator(
         _SessionManagerWithoutIdentity(),
@@ -29,7 +29,7 @@ def test_response_generator_rejects_missing_persisted_identity(monkeypatch) -> N
     )
 
     with pytest.raises(RuntimeError, match="no persisted user identity"):
-        generator.generate_psychological_response(
+        generator.generate_wellbeing_response(
             "hello",
             build_context_func=lambda **kwargs: {},
             format_context_func=lambda context: "",
@@ -40,7 +40,7 @@ def test_session_context_builder_rejects_missing_persisted_identity(monkeypatch)
     monkeypatch.setattr(
         session_context_module.st,
         "session_state",
-        SimpleNamespace(psych_current_session="session-1"),
+        SimpleNamespace(wellbeing_current_session="session-1"),
     )
     builder = SessionContextBuilder(_SessionManagerWithoutIdentity())
 

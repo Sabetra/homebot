@@ -55,7 +55,7 @@ class _GrammarBlindLoader:
 
 def test_call_llm_for_synthesis_uses_grammar_when_supported(monkeypatch):
     loader = _GrammarAwareLoader()
-    synthesizer = ProfileSynthesizer(psychological_db=_DummyDB(), model_loader=loader)
+    synthesizer = ProfileSynthesizer(wellbeing_db=_DummyDB(), model_loader=loader)
 
     sentinel_grammar = object()
     monkeypatch.setattr(synthesizer, "_compile_profile_json_grammar", lambda: sentinel_grammar)
@@ -69,7 +69,7 @@ def test_call_llm_for_synthesis_uses_grammar_when_supported(monkeypatch):
 
 def test_call_llm_for_synthesis_without_grammar_support():
     loader = _GrammarBlindLoader()
-    synthesizer = ProfileSynthesizer(psychological_db=_DummyDB(), model_loader=loader)
+    synthesizer = ProfileSynthesizer(wellbeing_db=_DummyDB(), model_loader=loader)
 
     _ = synthesizer._call_llm_for_synthesis("prompt", 256)
 
@@ -79,7 +79,7 @@ def test_call_llm_for_synthesis_without_grammar_support():
 
 def test_validate_profile_schema_requires_section_confidences():
     loader = _GrammarBlindLoader()
-    synthesizer = ProfileSynthesizer(psychological_db=_DummyDB(), model_loader=loader)
+    synthesizer = ProfileSynthesizer(wellbeing_db=_DummyDB(), model_loader=loader)
 
     valid = {
         "core_personality": {"traits": [], "communication_style": "", "decision_making": "", "confidence": 0.8},
@@ -99,7 +99,7 @@ def test_validate_profile_schema_requires_section_confidences():
 
 def test_parse_llm_response_rejects_invalid_stress_level():
     loader = _GrammarBlindLoader()
-    synthesizer = ProfileSynthesizer(psychological_db=_DummyDB(), model_loader=loader)
+    synthesizer = ProfileSynthesizer(wellbeing_db=_DummyDB(), model_loader=loader)
 
     response = (
         '{"core_personality": {"traits": [], "communication_style": "", "decision_making": "", "confidence": 0.8}, '
@@ -116,7 +116,7 @@ def test_parse_llm_response_rejects_invalid_stress_level():
 
 def test_parse_llm_response_rejects_empty_high_confidence_profile():
     loader = _GrammarBlindLoader()
-    synthesizer = ProfileSynthesizer(psychological_db=_DummyDB(), model_loader=loader)
+    synthesizer = ProfileSynthesizer(wellbeing_db=_DummyDB(), model_loader=loader)
 
     response = (
         '{"core_personality": {"traits": [], "communication_style": "", "decision_making": "", "confidence": 0.95}, '

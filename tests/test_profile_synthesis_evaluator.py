@@ -115,9 +115,9 @@ def test_build_thresholds_keeps_defaults_for_gemma4_12b_canary():
 
 
 def test_kg_faiss_manager_factory_injects_late_bound_db_instance(monkeypatch):
-    singleton = kg_manager.PsychoKGFAISSManager.__new__(kg_manager.PsychoKGFAISSManager)
+    singleton = kg_manager.WellbeingKGFAISSManager.__new__(kg_manager.WellbeingKGFAISSManager)
     singleton._db_instance = None
-    monkeypatch.setattr(kg_manager, "_psycho_kg_faiss_manager_instance", singleton)
+    monkeypatch.setattr(kg_manager, "_wellbeing_kg_faiss_manager_instance", singleton)
 
     sentinel_db = object()
     factory_result = kg_manager.get_psycho_kg_faiss_manager(db_instance=sentinel_db)

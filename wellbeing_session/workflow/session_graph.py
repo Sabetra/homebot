@@ -62,7 +62,7 @@ class SessionState:
     user_input: str = ""
     session_id: str = ""
     user_id: str = ""
-    psych_enabled: bool = True
+    wellbeing_enabled: bool = True
 
     # -- Emotional analysis --
     emotional_markers: List[str] = field(default_factory=list)

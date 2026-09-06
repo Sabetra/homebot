@@ -126,7 +126,7 @@ def _probe_imports() -> Dict[str, bool]:
 
     # User insight extractor (external)
     try:
-        from psychological_user_insight_extractor import PsychologicalUserInsightExtractor  # noqa: F401
+        from wellbeing_user_insight_extractor import WellbeingUserInsightExtractor  # noqa: F401
         avail["user_insight_extractor"] = True
     except ImportError:
         avail["user_insight_extractor"] = False
@@ -380,25 +380,25 @@ class ServiceContainer:
         try:
             from wellbeing.profile_cache_manager import ProfileCacheManager
 
-            psychological_db = (
+            wellbeing_db = (
                 self.session_manager.manager.db
                 if hasattr(self.session_manager, "manager")
                 else None
             )
-            if psychological_db is not None:
+            if wellbeing_db is not None:
                 self.profile_cache = ProfileCacheManager(
-                    psychological_db=psychological_db,
+                    wellbeing_db=wellbeing_db,
                     profile_synthesizer=None,  # lazy — set when model_loader arrives
                     ttl_minutes=self.config.profile_cache_ttl_minutes,
                     max_cache_size=self.config.profile_cache_max_size,
                 )
                 # Inject back into DB for KG-update → profile invalidation
-                if hasattr(psychological_db, 'set_profile_cache'):
-                    psychological_db.set_profile_cache(self.profile_cache)
+                if hasattr(wellbeing_db, 'set_profile_cache'):
+                    wellbeing_db.set_profile_cache(self.profile_cache)
                 logger.info("✅ ServiceContainer: ProfileCacheManager created (lazy synthesizer)")
             else:
                 self.profile_cache = None
-                logger.warning("⚠️ ServiceContainer: no psychological_db → profile cache disabled")
+                logger.warning("⚠️ ServiceContainer: no wellbeing_db → profile cache disabled")
         except Exception as exc:
             self.profile_cache = None
             logger.warning(f"⚠️ ServiceContainer: ProfileCacheManager init failed: {exc}")
@@ -527,14 +527,14 @@ class ServiceContainer:
             return
 
         try:
-            from psychological_user_insight_extractor import PsychologicalUserInsightExtractor
+            from wellbeing_user_insight_extractor import WellbeingUserInsightExtractor
 
-            self.insight_extractor = PsychologicalUserInsightExtractor(
+            self.insight_extractor = WellbeingUserInsightExtractor(
                 session_manager=self.session_manager,
-                psychological_db=None,
+                wellbeing_db=None,
                 chat_function=None,  # set when chat_logic is available
             )
-            logger.info("✅ ServiceContainer: PsychologicalUserInsightExtractor created")
+            logger.info("✅ ServiceContainer: WellbeingUserInsightExtractor created")
         except Exception as exc:
             self.insight_extractor = None
             logger.warning(f"⚠️ ServiceContainer: insight extractor init failed: {exc}")
@@ -585,14 +585,14 @@ class ServiceContainer:
         try:
             from wellbeing.profile_synthesizer import ProfileSynthesizer
 
-            psychological_db = (
+            wellbeing_db = (
                 self.session_manager.manager.db
                 if hasattr(self.session_manager, "manager")
                 else None
             )
-            if psychological_db is not None:
+            if wellbeing_db is not None:
                 self.profile_cache.synthesizer = ProfileSynthesizer(
-                    psychological_db=psychological_db,
+                    wellbeing_db=wellbeing_db,
                     model_loader=model_loader,
                 )
                 logger.info("✅ ServiceContainer: ProfileSynthesizer lazy-initialized")

@@ -86,7 +86,7 @@ def get_phase3_cleanup_modules():
         "test_source_validation.py",
         "test_tools_rag_integration.py",
         "simple_crashsafe_test.py",
-        "simple_psychological_context.py"  # Nach Integration
+        "simple_wellbeing_context.py"  # Nach Integration
     ]
     
     # KATEGORIE 4: Demo/Experimental-Module
@@ -211,7 +211,7 @@ def check_critical_modules_intact():
         "agent_chatbot_logic.py",
         "model_loader.py",
         "agent_toolkit.py",
-        "wellbeing/psychological_interface.py",
+        "wellbeing/wellbeing_support_interface.py",
         "agent/rag_store.py",
         "agent/smart_rag_store.py", 
         "agent/tools.py",

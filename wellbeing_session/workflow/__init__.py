@@ -31,13 +31,13 @@ from .session_graph import (
 # ── Real LangGraph (requires langgraph + langchain-core) ──
 try:
     from .langgraph_real import (
-        PsychSessionState,
+        WellbeingSessionState,
         build_langgraph_session_graph,
         LANGGRAPH_AVAILABLE,
         get_dependency_registry,
     )
 except ImportError:
-    PsychSessionState = None  # type: ignore[assignment,misc]
+    WellbeingSessionState = None  # type: ignore[assignment,misc]
     build_langgraph_session_graph = None  # type: ignore[assignment]
     LANGGRAPH_AVAILABLE = False
     get_dependency_registry = None  # type: ignore[assignment]
@@ -71,7 +71,7 @@ __all__ = [
     "record_messages_node",
     "build_default_session_graph",
     # SOTA: Real LangGraph
-    "PsychSessionState",
+    "WellbeingSessionState",
     "build_langgraph_session_graph",
     "LANGGRAPH_AVAILABLE",
     "get_dependency_registry",

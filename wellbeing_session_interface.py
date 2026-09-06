@@ -126,7 +126,7 @@ from wellbeing_session.context import (
     adaptive_triple_selection,
     rank_summaries_by_relevance,
     # ✅ Phase 6a: Context Builder
-    PsychologicalContextBuilder,
+    WellbeingContextBuilder,
     ContextBuildRequest,
     ContextBuildResult,
     create_context_builder,
@@ -145,7 +145,7 @@ try:
         SessionState as WorkflowSessionState,
         build_default_session_graph,
         # SOTA: Real LangGraph
-        PsychSessionState,
+        WellbeingSessionState,
         build_langgraph_session_graph,
         LANGGRAPH_AVAILABLE,
         get_dependency_registry,
@@ -165,7 +165,7 @@ except ImportError:
     WORKFLOW_AVAILABLE = False
     LANGGRAPH_AVAILABLE = False
     LANGCHAIN_ADAPTER_AVAILABLE = False
-    PsychSessionState = None  # type: ignore[assignment,misc]
+    WellbeingSessionState = None  # type: ignore[assignment,misc]
     build_langgraph_session_graph = None  # type: ignore[assignment]
     LocalLlamaCppChat = None  # type: ignore[assignment,misc]
     RecursiveLLMSummarizer = None  # type: ignore[assignment,misc]
@@ -233,9 +233,9 @@ class WellbeingSessionInterface:
         """Initialise the session interface via ServiceContainer."""
         # ✅ PHASE 7: Retrieve/create and normalize SessionManager in st.session_state.
         # This hardens against legacy cached objects from earlier runtime versions.
-        cached_raw = st.session_state.get("_psych_session_manager")
+        cached_raw = st.session_state.get("_wellbeing_session_manager")
         cached_manager, is_new_manager = self._normalize_cached_session_manager(cached_raw)
-        st.session_state._psych_session_manager = cached_manager
+        st.session_state._wellbeing_session_manager = cached_manager
 
         if is_new_manager:
             logger.info("🔄 WellbeingSessionInterface: new SessionManager created")
@@ -258,7 +258,7 @@ class WellbeingSessionInterface:
         self.active_session_renderer: ActiveSessionRenderer = self._container.active_session_renderer
         self.welcome_renderer: WelcomeRenderer = self._container.welcome_renderer
         self.lifecycle_manager: SessionLifecycleManager = self._container.lifecycle_manager
-        self.context_builder: PsychologicalContextBuilder = self._container.context_builder
+        self.context_builder: WellbeingContextBuilder = self._container.context_builder
         self.session_context_builder: SessionContextBuilder = self._container.session_context_builder
         self.user_insight_extractor_module: UserInsightExtractor = self._container.user_insight_extractor_module
         self.context_formatter: ContextFormatter = self._container.context_formatter
@@ -341,7 +341,7 @@ class WellbeingSessionInterface:
 
         if cached_raw is not None:
             logger.warning(
-                "⚠️ Invalid cached _psych_session_manager type: %s -- recreating",
+                "⚠️ Invalid cached _wellbeing_session_manager type: %s -- recreating",
                 type(cached_raw).__name__,
             )
 
@@ -383,12 +383,12 @@ class WellbeingSessionInterface:
         self.chat_logic = chat_logic
         self._container.update_chat_logic(chat_logic)
 
-        # ✅ RC-7 FIX: Setze psycho_interface auf chat_logic,
+        # ✅ RC-7 FIX: Setze wellbeing_interface auf chat_logic,
         # damit PostResponseHandler den SessionManager findet.
-        # Vorher: chat_logic.psycho_interface = None (nie zugewiesen)
+        # Vorher: chat_logic.wellbeing_interface = None (nie zugewiesen)
         # → PostResponseHandler konnte SessionManager nicht auflösen
         if chat_logic is not None:
-            chat_logic.psycho_interface = self
+            chat_logic.wellbeing_interface = self
 
         # Sync direct attribute references
         self.insight_extractor = self._container.insight_extractor
@@ -511,7 +511,7 @@ class WellbeingSessionInterface:
         """
         return self.session_management_renderer.render_session_management_ui()
     
-    def handle_psychological_message(self, user_message: str, ai_response: str) -> str:
+    def handle_wellbeing_message(self, user_message: str, ai_response: str) -> str:
         """
         Verarbeitet psychologische Nachrichten mit Session-Kontext.
         
@@ -534,7 +534,7 @@ class WellbeingSessionInterface:
             return self._handle_via_legacy_workflow(user_message, ai_response)
         
         # Direct delegation (no graph)
-        return self.message_handler.handle_psychological_message(
+        return self.message_handler.handle_wellbeing_message(
             user_message=user_message,
             ai_response=ai_response,
             build_context_func=self._build_comprehensive_user_context,
@@ -556,11 +556,11 @@ class WellbeingSessionInterface:
             Enhanced AI response from LangGraph execution
         """
         try:
-            session_id = getattr(st.session_state, 'psych_current_session', '')
+            session_id = getattr(st.session_state, 'wellbeing_current_session', '')
             user_id = (
-                getattr(st.session_state, 'psych_current_user_id', '')
+                getattr(st.session_state, 'wellbeing_current_user_id', '')
                 or self.session_manager.resolve_user_id(
-                    getattr(st.session_state, 'psych_current_user', '')
+                    getattr(st.session_state, 'wellbeing_current_user', '')
                 )
             )
             thread_id = session_id or "default"
@@ -584,7 +584,7 @@ class WellbeingSessionInterface:
                 "user_input": user_message,
                 "session_id": session_id,
                 "user_id": user_id,
-                "psych_enabled": True,
+                "wellbeing_enabled": True,
                 "pre_generated_response": ai_response,
                 "errors": [],
                 "node_trace": [],
@@ -619,7 +619,7 @@ class WellbeingSessionInterface:
             # Fallback to legacy graph or direct
             if self._workflow_graph is not None:
                 return self._handle_via_legacy_workflow(user_message, ai_response)
-            return self.message_handler.handle_psychological_message(
+            return self.message_handler.handle_wellbeing_message(
                 user_message=user_message,
                 ai_response=ai_response,
                 build_context_func=self._build_comprehensive_user_context,
@@ -637,11 +637,11 @@ class WellbeingSessionInterface:
             
             state = WfState(
                 user_input=user_message,
-                session_id=getattr(st.session_state, 'psych_current_session', ''),
+                session_id=getattr(st.session_state, 'wellbeing_current_session', ''),
                 user_id=(
-                    getattr(st.session_state, 'psych_current_user_id', '')
+                    getattr(st.session_state, 'wellbeing_current_user_id', '')
                     or self.session_manager.resolve_user_id(
-                        getattr(st.session_state, 'psych_current_user', '')
+                        getattr(st.session_state, 'wellbeing_current_user', '')
                     )
                 ),
                 ai_response=ai_response,
@@ -661,7 +661,7 @@ class WellbeingSessionInterface:
             
         except Exception as e:
             logger.error(f"❌ Legacy workflow failed, falling back: {e}")
-            return self.message_handler.handle_psychological_message(
+            return self.message_handler.handle_wellbeing_message(
                 user_message=user_message,
                 ai_response=ai_response,
                 build_context_func=self._build_comprehensive_user_context,
@@ -695,10 +695,10 @@ class WellbeingSessionInterface:
     def get_session_statistics(self) -> Dict[str, Any]:
         """Holt Session-Statistiken für Display"""
         try:
-            if not st.session_state.psych_current_session:
+            if not st.session_state.wellbeing_current_session:
                 return {}
             
-            session_id = st.session_state.psych_current_session
+            session_id = st.session_state.wellbeing_current_session
             summary = self.session_manager.get_session_summary(session_id)
             
             if not summary:
@@ -742,10 +742,10 @@ class WellbeingSessionInterface:
     # Each entry: (key, default-factory). Using a factory keeps mutable
     # defaults isolated per Streamlit session.
     _PSYCH_STATE_DEFAULTS: tuple[tuple[str, Any], ...] = (
-        ("psych_current_user", ""),
-        ("psych_current_user_id", ""),
-        ("psych_current_session", ""),
-        ("psych_enabled", False),
+        ("wellbeing_current_user", ""),
+        ("wellbeing_current_user_id", ""),
+        ("wellbeing_current_session", ""),
+        ("wellbeing_enabled", False),
     )
 
     def _ensure_session_state_defaults(self) -> None:
@@ -765,7 +765,7 @@ class WellbeingSessionInterface:
 
         # Streamlit-idiomatic single source of truth for psych_* session state.
         # Must run before any renderer touches these keys -- the renderers use
-        # direct attribute access (e.g. st.session_state.psych_current_user)
+        # direct attribute access (e.g. st.session_state.wellbeing_current_user)
         # which raises AttributeError on missing keys (Streamlit ≥ 1.30).
         self._ensure_session_state_defaults()
 
@@ -804,7 +804,7 @@ class WellbeingSessionInterface:
         st.divider()
         
         # Wenn eine Session aktiv ist, zeige Chat-Interface
-        if st.session_state.psych_enabled and st.session_state.psych_current_session:
+        if st.session_state.wellbeing_enabled and st.session_state.wellbeing_current_session:
             self._render_active_session_interface()
         else:
             self._render_welcome_interface()
@@ -847,7 +847,7 @@ class WellbeingSessionInterface:
         """
         # Delegate to active session renderer with required callbacks
         self.active_session_renderer.render_active_session_interface(
-            handle_input_func=self._handle_psychological_chat_input,
+            handle_input_func=self._handle_wellbeing_chat_input,
             end_session_func=self._end_current_session,
             show_session_notes_func=self._show_session_notes
         )
@@ -863,18 +863,18 @@ class WellbeingSessionInterface:
             create_session_func=self._create_and_start_new_session
         )
     
-    def _handle_psychological_chat_input(self, user_input: str):
+    def _handle_wellbeing_chat_input(self, user_input: str):
         """
         Verarbeitet psychologische Chat-Eingaben mit Context-Management
         
         ✅ PHASE 4: Delegiert an ChatInputHandler
         """
-        self.chat_input_handler.handle_psychological_chat_input(
+        self.chat_input_handler.handle_wellbeing_chat_input(
             user_input=user_input,
-            generate_response_func=self._generate_psychological_response
+            generate_response_func=self._generate_wellbeing_response
         )
     
-    def _generate_psychological_response(self, user_input: str) -> str:
+    def _generate_wellbeing_response(self, user_input: str) -> str:
         """
         Generiert eine psychologische AI-Antwort mit ALLEN Core-Modulen integriert.
         
@@ -886,7 +886,7 @@ class WellbeingSessionInterface:
         Returns:
             Generierte AI-Antwort
         """
-        return self.response_generator.generate_psychological_response(
+        return self.response_generator.generate_wellbeing_response(
             user_input=user_input,
             build_context_func=self._build_comprehensive_user_context,
             format_context_func=self._format_context_for_llm,
@@ -950,18 +950,18 @@ class WellbeingSessionInterface:
         """Erstellt und startet eine neue psychologische Session"""
         try:
             session_id = self.session_manager.create_session(
-                st.session_state.psych_current_user
+                st.session_state.wellbeing_current_user
             )
             
-            st.session_state.psych_current_session = session_id
-            st.session_state.psych_enabled = True
+            st.session_state.wellbeing_current_session = session_id
+            st.session_state.wellbeing_enabled = True
 
             # ✅ SOTA: Homework Follow-up & Outcome-Baseline am Session-Start
             if self._wellbeing_pipeline is not None:
                 user_id = (
-                    st.session_state.get('psych_current_user_id', '')
+                    st.session_state.get('wellbeing_current_user_id', '')
                     or self.session_manager.resolve_user_id(
-                        st.session_state.get('psych_current_user', '')
+                        st.session_state.get('wellbeing_current_user', '')
                     )
                 )
                 if user_id:
@@ -1037,8 +1037,8 @@ class WellbeingSessionInterface:
 
             # Verwende die psychologische User-ID, nicht die generische current_user_id.
             user_id = (
-                st.session_state.get('psych_current_user_id')
-                or st.session_state.get('psych_current_user')
+                st.session_state.get('wellbeing_current_user_id')
+                or st.session_state.get('wellbeing_current_user')
                 or st.session_state.get('current_user_id')
             )
 
@@ -1054,7 +1054,7 @@ class WellbeingSessionInterface:
                 )
                 return {}
             
-            # Extrahiere Insights mit dem PsychologicalUserInsightExtractor
+            # Extrahiere Insights mit dem WellbeingUserInsightExtractor
             insights = self.insight_extractor.extract_insights_from_session(
                 session_id=session_id,
                 user_id=user_id,
@@ -1078,16 +1078,16 @@ class WellbeingSessionInterface:
     def _end_current_session(self) -> None:
         """Delegate session-ending workflow to SessionEndService."""
         try:
-            if not st.session_state.get("psych_current_session"):
+            if not st.session_state.get("wellbeing_current_session"):
                 return
 
             # ✅ SOTA: Outcome-Assessment & Screening-Score am Session-Ende
             if self._wellbeing_pipeline is not None:
-                session_id = st.session_state.get("psych_current_session", "")
+                session_id = st.session_state.get("wellbeing_current_session", "")
                 user_id = (
-                    st.session_state.get('psych_current_user_id', '')
+                    st.session_state.get('wellbeing_current_user_id', '')
                     or self.session_manager.resolve_user_id(
-                        st.session_state.get('psych_current_user', '')
+                        st.session_state.get('wellbeing_current_user', '')
                     )
                 )
                 if session_id and user_id:
@@ -1142,7 +1142,7 @@ class WellbeingSessionInterface:
     
     def _build_session_context(self, user_query: Optional[str] = None) -> Optional[Dict[str, Any]]:
         """
-        Baut VOLLSTÄNDIGEN Session-Kontext für psychological_chat().
+        Baut VOLLSTÄNDIGEN Session-Kontext für wellbeing_chat().
         
         ✅ PHASE 6B: Delegiert an SessionContextBuilder.
         
@@ -1159,7 +1159,7 @@ class WellbeingSessionInterface:
         """
         Lädt Session-Historie in die message_history der chat_logic
         
-        Damit psychological_chat() die vollständige Gesprächshistorie hat!
+        Damit wellbeing_chat() die vollständige Gesprächshistorie hat!
         
         Args:
             session_messages: Liste von Session-Nachrichten aus der DB
@@ -1205,7 +1205,7 @@ class WellbeingSessionInterface:
     def _build_comprehensive_user_context(self, user_id: str, current_session_id: str, 
                                           user_input: str) -> Dict[str, Any]:
         """
-        ✅ PHASE 6A: Wrapper für den neuen PsychologicalContextBuilder
+        ✅ PHASE 6A: Wrapper für den neuen WellbeingContextBuilder
         
         Delegates to the refactored, type-safe context builder in
         wellbeing_session/context/context_builder.py

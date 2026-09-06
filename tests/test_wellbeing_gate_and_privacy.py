@@ -7,7 +7,7 @@ Regression-Tests (2026-08-28) — KG-Trennung & Privacy:
    wenn `ENABLE_AGENT_PSYCH_INTEGRATION` gesetzt ist oder ein Orchestrator-Patch
    den Schalter aktiviert hat.
 2. Psych-Tab-Pfad: Der Schalter kann dort weiterhin aktiviert werden
-   (`psychological_chat` nutzt ihn) — das Guard betrifft nur den normalen Chat.
+   (`wellbeing_chat` nutzt ihn) — das Guard betrifft nur den normalen Chat.
 3. PII-Regression: Die hartkodierten Namen (Christine/Kiano) dürfen in den
    betroffenen Modulen nicht wieder auftauchen.
 """
@@ -19,9 +19,9 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 import pytest
 
 from agent_chatbot_logic import AgentChatbotLogic
-from utils.psychological_orchestrator_integration import (
-    get_psychological_context_enabled,
-    set_psychological_context_enabled,
+from utils.wellbeing_orchestrator_integration import (
+    get_wellbeing_context_enabled,
+    set_wellbeing_context_enabled,
 )
 
 
@@ -39,7 +39,7 @@ def test_agent_chat_forces_psych_context_off_even_with_env_opt_in(monkeypatch):
     observed = {}
 
     def fake_standard_agent_chat(*args, **kwargs):
-        observed["enabled_during"] = get_psychological_context_enabled()
+        observed["enabled_during"] = get_wellbeing_context_enabled()
         return "antwort"
 
     monkeypatch.setattr(AgentChatbotLogic, "_standard_agent_chat",
@@ -47,16 +47,16 @@ def test_agent_chat_forces_psych_context_off_even_with_env_opt_in(monkeypatch):
     monkeypatch.setenv("ENABLE_AGENT_PSYCH_INTEGRATION", "1")
 
     # Simuliere einen aktiven Orchestrator-Patch (Flag vor dem Call ON)
-    set_psychological_context_enabled(True)
+    set_wellbeing_context_enabled(True)
     try:
         result = bot._agent_chat("hallo welt")
     finally:
-        set_psychological_context_enabled(False)
+        set_wellbeing_context_enabled(False)
 
     assert result == "antwort"
     assert observed["enabled_during"] is False, \
         "normaler Chat muss den Psych-Kontext zwangsweise deaktivieren"
-    assert get_psychological_context_enabled() is False
+    assert get_wellbeing_context_enabled() is False
 
 
 def test_agent_chat_resets_flag_even_on_exception(monkeypatch):
@@ -68,23 +68,23 @@ def test_agent_chat_resets_flag_even_on_exception(monkeypatch):
     monkeypatch.setattr(AgentChatbotLogic, "_standard_agent_chat",
                         failing_standard_agent_chat)
 
-    set_psychological_context_enabled(True)
+    set_wellbeing_context_enabled(True)
     try:
         with pytest.raises(RuntimeError, match="boom"):
             bot._agent_chat("hallo")
     finally:
-        set_psychological_context_enabled(False)
-    assert get_psychological_context_enabled() is False, \
+        set_wellbeing_context_enabled(False)
+    assert get_wellbeing_context_enabled() is False, \
         "Flag darf nach einem Fehler nicht auf True stehen (Leak-Guard)"
 
 
 def test_agent_chat_does_not_use_deprecated_psych_gate(monkeypatch):
     """Der deaktivierte Intent-Gate darf im normalen Pfad keine Rolle mehr
-    spielen: `_agent_chat` ruft `_ensure_psychological_integration` nicht auf."""
+    spielen: `_agent_chat` ruft `_ensure_wellbeing_integration` nicht auf."""
     bot = _make_bare_bot()
     calls = []
     monkeypatch.setattr(
-        AgentChatbotLogic, "_ensure_psychological_integration",
+        AgentChatbotLogic, "_ensure_wellbeing_integration",
         lambda self: calls.append(self),
     )
 
@@ -94,35 +94,35 @@ def test_agent_chat_does_not_use_deprecated_psych_gate(monkeypatch):
     monkeypatch.setattr(AgentChatbotLogic, "_standard_agent_chat",
                         fake_standard_agent_chat)
 
-    set_psychological_context_enabled(True)
+    set_wellbeing_context_enabled(True)
     try:
         bot._agent_chat("test")
     finally:
-        set_psychological_context_enabled(False)
+        set_wellbeing_context_enabled(False)
 
     assert calls == []
 
 
 def test_deprecated_helpers_retained_for_rollback():
-    assert callable(getattr(AgentChatbotLogic, "_ensure_psychological_integration", None))
-    assert callable(getattr(AgentChatbotLogic, "_should_enable_psychological_integration", None))
+    assert callable(getattr(AgentChatbotLogic, "_ensure_wellbeing_integration", None))
+    assert callable(getattr(AgentChatbotLogic, "_should_enable_wellbeing_integration", None))
 
 
 def test_psych_tab_flag_can_still_be_enabled():
-    """Der Psych-Tab-Pfad (psychological_chat) aktiviert den Schalter selbst —
+    """Der Psych-Tab-Pfad (wellbeing_chat) aktiviert den Schalter selbst —
     das Guard darf diese Fähigkeit nicht einschränken."""
-    set_psychological_context_enabled(True)
+    set_wellbeing_context_enabled(True)
     try:
-        assert get_psychological_context_enabled() is True
+        assert get_wellbeing_context_enabled() is True
     finally:
-        set_psychological_context_enabled(False)
-    assert get_psychological_context_enabled() is False
+        set_wellbeing_context_enabled(False)
+    assert get_wellbeing_context_enabled() is False
 
 
 def test_no_hardcoded_pii_in_edited_modules():
     repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     for rel in (
-        "utils/psychological_orchestrator_integration.py",
+        "utils/wellbeing_orchestrator_integration.py",
         "agent/privacy_handler_enhanced.py",
     ):
         with open(os.path.join(repo_root, rel), "r", encoding="utf-8") as fh:

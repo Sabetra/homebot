@@ -61,7 +61,7 @@ class _SynthesizerStub:
 
 def test_migrate_schema_is_idempotent():
     db = _InMemoryDB()
-    manager = ProfileCacheManager(psychological_db=db, profile_synthesizer=None)
+    manager = ProfileCacheManager(wellbeing_db=db, profile_synthesizer=None)
 
     with db.get_connection() as conn:
         manager._migrate_schema(conn)
@@ -80,7 +80,7 @@ def test_migrate_schema_is_idempotent():
 
 def test_load_from_db_raises_for_corrupt_payload():
     db = _InMemoryDB()
-    manager = ProfileCacheManager(psychological_db=db, profile_synthesizer=None)
+    manager = ProfileCacheManager(wellbeing_db=db, profile_synthesizer=None)
 
     with db.get_connection() as conn:
         conn.execute(
@@ -98,7 +98,7 @@ def test_load_from_db_raises_for_corrupt_payload():
 
 def test_get_cached_profile_raises_when_persistence_fails():
     db = _BrokenEncryptDB()
-    manager = ProfileCacheManager(psychological_db=db, profile_synthesizer=_SynthesizerStub())
+    manager = ProfileCacheManager(wellbeing_db=db, profile_synthesizer=_SynthesizerStub())
 
     with pytest.raises(RuntimeError, match="DB save failed"):
         manager.get_cached_profile("user-1", force_regenerate=True)
@@ -106,7 +106,7 @@ def test_get_cached_profile_raises_when_persistence_fails():
 
 def test_load_from_db_success_with_metadata_fields():
     db = _InMemoryDB()
-    manager = ProfileCacheManager(psychological_db=db, profile_synthesizer=None)
+    manager = ProfileCacheManager(wellbeing_db=db, profile_synthesizer=None)
 
     profile_payload = {
         "user_id": "u2",
@@ -158,7 +158,7 @@ def test_load_from_db_success_with_metadata_fields():
 
 def test_get_user_lock_is_reused_per_user_and_distinct_between_users():
     db = _InMemoryDB()
-    manager = ProfileCacheManager(psychological_db=db, profile_synthesizer=None)
+    manager = ProfileCacheManager(wellbeing_db=db, profile_synthesizer=None)
 
     lock_a1 = manager._get_user_lock("u-a")
     lock_a2 = manager._get_user_lock("u-a")
@@ -170,7 +170,7 @@ def test_get_user_lock_is_reused_per_user_and_distinct_between_users():
 
 def test_clear_cache_user_removes_user_lock_entry():
     db = _InMemoryDB()
-    manager = ProfileCacheManager(psychological_db=db, profile_synthesizer=None)
+    manager = ProfileCacheManager(wellbeing_db=db, profile_synthesizer=None)
 
     _ = manager._get_user_lock("u-clear")
     assert "u-clear" in manager._user_locks

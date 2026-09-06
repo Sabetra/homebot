@@ -1,8 +1,8 @@
 """
-Test: Verifiziert, ob psychological_chat() in agent_chatbot_logic.py
+Test: Verifiziert, ob wellbeing_chat() in agent_chatbot_logic.py
 die Rolle-Alternation (user/assistant/user/assistant) garantiert.
 
-Hypothese: psychological_chat() Normalisiert llm_messages NICHT vor dem
+Hypothese: wellbeing_chat() Normalisiert llm_messages NICHT vor dem
 LLM-Aufruf. Bei Session-History mit konsekutiven gleichen Rollen
 tritt "Conversation roles must alternate user/assistant/..." auf.
 
@@ -61,7 +61,7 @@ def _build_llm_messages_like_psych_chat(
 ) -> List[Dict[str, str]]:
     """
     Simuliert exakt den llm_messages-Aufbau wie in 
-    agent_chatbot_logic.py:psychological_chat() Zeilen 3133-3169.
+    agent_chatbot_logic.py:wellbeing_chat() Zeilen 3133-3169.
     
     Steps:
     1. llm_messages = []
@@ -99,7 +99,7 @@ def _build_llm_messages_like_psych_chat(
 
 class TestRoleAlternationPsychologicalChat:
     """
-    Tests die Rolle-Alternation im psychological_chat-Pfad.
+    Tests die Rolle-Alternation im wellbeing_chat-Pfad.
     """
     
     def test_consecutive_user_messages_causes_violation(self):

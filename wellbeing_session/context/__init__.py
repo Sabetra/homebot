@@ -25,7 +25,7 @@ from .models import (
 )
 
 from .context_builder import (
-    PsychologicalContextBuilder,
+    WellbeingContextBuilder,
     SessionManagerProtocol,
     create_context_builder,
 )
@@ -61,7 +61,7 @@ __all__ = [
     'ContextBuildResult',
     
     # Phase 6a: Builder
-    'PsychologicalContextBuilder',
+    'WellbeingContextBuilder',
     'SessionManagerProtocol',
     'create_context_builder',
     

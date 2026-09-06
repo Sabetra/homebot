@@ -45,20 +45,20 @@ def set_current_user_id(user_id: str):
     _thread_local.user_id = user_id
 
 
-def set_psychological_context_enabled(enabled: bool):
+def set_wellbeing_context_enabled(enabled: bool):
     """Enable/disable psychological query enrichment for current request/thread."""
-    _thread_local.psych_context_enabled = bool(enabled)
+    _thread_local.wellbeing_context_enabled = bool(enabled)
 
 
-def get_psychological_context_enabled() -> bool:
+def get_wellbeing_context_enabled() -> bool:
     """Return whether current request/thread allows psychological enrichment."""
-    return bool(getattr(_thread_local, 'psych_context_enabled', False))
+    return bool(getattr(_thread_local, 'wellbeing_context_enabled', False))
 
 def get_thread_local_user_id() -> Optional[str]:
     """Holt die User-ID für den aktuellen Thread"""
     return getattr(_thread_local, 'user_id', None)
 
-class PsychologicalOrchestratorIntegration:
+class WellbeingOrchestratorIntegration:
     """
     Psychologische Integration für den AgentOrchestrator
     
@@ -74,19 +74,19 @@ class PsychologicalOrchestratorIntegration:
     - Smart invalidation triggers
     """
     
-    def __init__(self, orchestrator, psychological_db=None, user_insight_extractor=None):
+    def __init__(self, orchestrator, wellbeing_db=None, user_insight_extractor=None):
         """
         Initialisiert die psychologische Integration
         
         Args:
             orchestrator: AgentOrchestrator Instanz
-            psychological_db: WellbeingDatabase Instanz
-            user_insight_extractor: PsychologicalUserInsightExtractor Instanz
+            wellbeing_db: WellbeingDatabase Instanz
+            user_insight_extractor: WellbeingUserInsightExtractor Instanz
         """
         self.orchestrator = orchestrator
-        self.psychological_db = psychological_db
+        self.wellbeing_db = wellbeing_db
         self.user_insight_extractor = user_insight_extractor
-        self.enabled = psychological_db is not None
+        self.enabled = wellbeing_db is not None
         
         # NEU: Setup persistent profile caching (State-of-the-Art)
         self.profile_cache_manager = None
@@ -96,9 +96,9 @@ class PsychologicalOrchestratorIntegration:
             create_profile_cache_manager is not None):
             try:
                 if hasattr(orchestrator, 'model_loader') and orchestrator.model_loader:
-                    synthesizer = create_profile_synthesizer(psychological_db, orchestrator.model_loader)
+                    synthesizer = create_profile_synthesizer(wellbeing_db, orchestrator.model_loader)
                     self.profile_cache_manager = create_profile_cache_manager(
-                        psychological_db, synthesizer, ttl_minutes=30, max_cache_size=100
+                        wellbeing_db, synthesizer, ttl_minutes=30, max_cache_size=100
                     )
                     logger.info("✅ Persistent profile caching enabled (TTL: 30min, LLM-based synthesis)")
                 else:
@@ -110,9 +110,9 @@ class PsychologicalOrchestratorIntegration:
         if self.enabled:
             logger.info("🧠 Psychologische Orchestrator-Integration aktiviert")
         else:
-            logger.warning("⚠️ Psychologische Integration nicht verfügbar - kein psychological_db")
+            logger.warning("⚠️ Psychologische Integration nicht verfügbar - kein wellbeing_db")
     
-    def enhance_query_with_psychological_context(self, query: str, user_id: str, tool_type: Optional[str] = None) -> Tuple[str, Dict[str, Any]]:
+    def enhance_query_with_wellbeing_context(self, query: str, user_id: str, tool_type: Optional[str] = None) -> Tuple[str, Dict[str, Any]]:
         """
         Erweitert eine Anfrage um psychologischen Kontext - ONLY FÜR RAG/KNOWLEDGE TOOLS
         
@@ -138,9 +138,9 @@ class PsychologicalOrchestratorIntegration:
         try:
             # ✅ Primärer Pfad: persistent cached profile
             if self.profile_cache_manager:
-                enhanced_query, psychological_context = self._enhance_with_cached_profile(query, user_id, tool_type)
-                if psychological_context:
-                    return enhanced_query, psychological_context
+                enhanced_query, wellbeing_context = self._enhance_with_cached_profile(query, user_id, tool_type)
+                if wellbeing_context:
+                    return enhanced_query, wellbeing_context
 
                 # Kein verwertbares Profil im Cache-Pfad → dynamischer Fallback
                 logger.debug("⚠️ Cached profile path returned no context - falling back to dynamic loading")
@@ -191,7 +191,7 @@ class PsychologicalOrchestratorIntegration:
             logger.info(f"✅ Cached profile loaded for {user_id[:10]}... (confidence: {profile.overall_confidence:.2f}, Tool: {tool_type or 'RAG'})")
             
             # Build context from profile
-            psychological_context = {
+            wellbeing_context = {
                 'core_personality': profile.core_personality,
                 'current_state': profile.current_state,
                 'relationships': profile.relationships,  # ✅ Includes family (LLM-extracted, NO hardcode!)
@@ -206,7 +206,7 @@ class PsychologicalOrchestratorIntegration:
             enhanced_query = self._build_enhanced_query_from_cached_profile(query, profile)
             
             return enhanced_query, self._with_metadata(
-                psychological_context,
+                wellbeing_context,
                 source='persistent_cache',
                 is_degraded_mode=False,
             )
@@ -222,13 +222,13 @@ class PsychologicalOrchestratorIntegration:
         - Hardcoded keywords
         - Slower
         """
-        psychological_context = {}
+        wellbeing_context = {}
         
         # 1. LADE USER-PROFIL
         if self.user_insight_extractor:
             profile = self.user_insight_extractor.get_personality_profile(user_id)
             if profile:
-                psychological_context['profile'] = {
+                wellbeing_context['profile'] = {
                     'core_traits': profile.core_traits or [],
                     'primary_concerns': profile.primary_concerns or [],
                     'relationship_patterns': profile.relationship_patterns or [],
@@ -240,20 +240,20 @@ class PsychologicalOrchestratorIntegration:
         # 2. LADE FAMILIENDATEN AUS SESSIONS
         family_context = self._extract_family_context(user_id)
         if family_context:
-            psychological_context['family'] = family_context
+            wellbeing_context['family'] = family_context
             logger.info(f"👨‍👩‍👧‍👦 Familiendaten für {user_id[:10]}... geladen (Tool: {tool_type or 'RAG'})")
         
         # 3. LADE AKTUELLE SESSION-HISTORIE
         session_context = self._extract_recent_session_context(user_id)
         if session_context:
-            psychological_context['recent_sessions'] = session_context
+            wellbeing_context['recent_sessions'] = session_context
             logger.info(f"📝 Session-Kontext für {user_id[:10]}... geladen")
         
         # 4. ERWEITERE QUERY MIT PSYCHOLOGISCHEM KONTEXT
-        if psychological_context:
-            enhanced_query = self._build_psychologically_enhanced_query(query, psychological_context)
+        if wellbeing_context:
+            enhanced_query = self._build_psychologically_enhanced_query(query, wellbeing_context)
             return enhanced_query, self._with_metadata(
-                psychological_context,
+                wellbeing_context,
                 source='dynamic_fallback',
                 is_degraded_mode=True,
             )
@@ -262,7 +262,7 @@ class PsychologicalOrchestratorIntegration:
     
     def _extract_family_context(self, user_id: str) -> Dict[str, Any]:
         """Extrahiert Familiendaten aus der psychologischen Datenbank"""
-        if not self.psychological_db:
+        if not self.wellbeing_db:
             return {}
         
         try:
@@ -274,7 +274,7 @@ class PsychologicalOrchestratorIntegration:
             family_keywords = ['mama', 'mutter', 'vater', 'papa', 'dad', 'mom',
                              'cousine', 'cousin', 'familie', 'family', 'eltern']
             
-            with self.psychological_db.get_connection() as conn:
+            with self.wellbeing_db.get_connection() as conn:
                 # Finde Familie-relevante Interaktionen aus allen Sessions
                 cursor = conn.execute("""
                     SELECT si.content, si.content_encrypted, si.role, si.created_at
@@ -290,7 +290,7 @@ class PsychologicalOrchestratorIntegration:
                     content = row['content']
                     if row['content_encrypted']:
                         try:
-                            content = self.psychological_db._decrypt_data(row['content'])
+                            content = self.wellbeing_db._decrypt_data(row['content'])
                         except Exception as exc:
                             logger.debug(f"Failed decrypting family interaction content: {exc}")
                             continue
@@ -371,11 +371,11 @@ class PsychologicalOrchestratorIntegration:
     
     def _extract_recent_session_context(self, user_id: str) -> List[Dict[str, Any]]:
         """Extrahiert jüngsten Session-Kontext für bessere Kontinuität"""
-        if not self.psychological_db:
+        if not self.wellbeing_db:
             return []
         
         try:
-            with self.psychological_db.get_connection() as conn:
+            with self.wellbeing_db.get_connection() as conn:
                 # Hole letzte 3 Sessions mit ihren letzten Interaktionen
                 cursor = conn.execute("""
                     SELECT id, start_time, session_summary
@@ -403,7 +403,7 @@ class PsychologicalOrchestratorIntegration:
                         content = interaction['content']
                         if interaction['content_encrypted']:
                             try:
-                                content = self.psychological_db._decrypt_data(interaction['content'])
+                                content = self.wellbeing_db._decrypt_data(interaction['content'])
                             except Exception as exc:
                                 logger.debug(f"Failed decrypting session context interaction: {exc}")
                                 continue
@@ -421,7 +421,7 @@ class PsychologicalOrchestratorIntegration:
             logger.error(f"❌ Session-Kontext-Extraktion fehlgeschlagen: {e}")
             return []
     
-    def _build_psychologically_enhanced_query(self, original_query: str, psychological_context: Dict[str, Any]) -> str:
+    def _build_psychologically_enhanced_query(self, original_query: str, wellbeing_context: Dict[str, Any]) -> str:
         """
         Baut eine psychologisch erweiterte Anfrage
         
@@ -433,12 +433,12 @@ class PsychologicalOrchestratorIntegration:
         
         # 🔒 DATENSCHUTZ-WARNUNG: Psychologische Daten folgen (NUR für interne Verarbeitung!)
         # Füge psychologischen Kontext hinzu
-        if psychological_context:
+        if wellbeing_context:
             enhanced_parts.append("\n\n🔒 INTERNER PSYCHOLOGISCHER BENUTZER-KONTEXT (NICHT FÜR EXTERNE NUTZUNG):")
             
             # User-Profil
-            if 'profile' in psychological_context:
-                profile = psychological_context['profile']
+            if 'profile' in wellbeing_context:
+                profile = wellbeing_context['profile']
                 if profile.get('core_traits'):
                     enhanced_parts.append(f"Persönlichkeits-Traits: {', '.join(profile['core_traits'][:3])}")
                 if profile.get('primary_concerns'):
@@ -447,8 +447,8 @@ class PsychologicalOrchestratorIntegration:
                     enhanced_parts.append(f"Kommunikationsstil: {profile['communication_style']}")
             
             # Familie-Kontext
-            if 'family' in psychological_context:
-                family = psychological_context['family']
+            if 'family' in wellbeing_context:
+                family = wellbeing_context['family']
                 if family.get('entities', {}).get('family_members'):
                     members = ', '.join(family['entities']['family_members'])
                     enhanced_parts.append(f"Familie: {members}")
@@ -457,8 +457,8 @@ class PsychologicalOrchestratorIntegration:
                     enhanced_parts.append(f"Familienthemen: {concerns}")
             
             # Session-Kontinuität
-            if 'recent_sessions' in psychological_context:
-                sessions = psychological_context['recent_sessions'][:2]  # Max 2
+            if 'recent_sessions' in wellbeing_context:
+                sessions = wellbeing_context['recent_sessions'][:2]  # Max 2
                 if sessions:
                     enhanced_parts.append("Letzte Gesprächsthemen:")
                     for session in sessions:
@@ -522,9 +522,9 @@ class PsychologicalOrchestratorIntegration:
         
         return "\n".join(enhanced_parts)
     
-    def enhance_evidence_selection(self, evidence_sources: List[Any], psychological_context: Dict[str, Any]) -> List[Any]:
+    def enhance_evidence_selection(self, evidence_sources: List[Any], wellbeing_context: Dict[str, Any]) -> List[Any]:
         """Erweitert Evidence-Selection um psychologische Relevanz"""
-        if not psychological_context or not evidence_sources:
+        if not wellbeing_context or not evidence_sources:
             return evidence_sources
         
         try:
@@ -532,7 +532,7 @@ class PsychologicalOrchestratorIntegration:
             enhanced_sources = []
             
             for source in evidence_sources:
-                relevance_score = self._calculate_psychological_relevance(source, psychological_context)
+                relevance_score = self._calculate_psychological_relevance(source, wellbeing_context)
                 source.psychological_relevance = relevance_score
                 enhanced_sources.append(source)
             
@@ -548,7 +548,7 @@ class PsychologicalOrchestratorIntegration:
             logger.error(f"❌ Psychologische Evidence-Selection fehlgeschlagen: {e}")
             return evidence_sources
     
-    def _calculate_psychological_relevance(self, source: Any, psychological_context: Dict[str, Any]) -> float:
+    def _calculate_psychological_relevance(self, source: Any, wellbeing_context: Dict[str, Any]) -> float:
         """Berechnet psychologische Relevanz einer Evidence-Source"""
         try:
             relevance = 0.5  # Base score
@@ -558,14 +558,14 @@ class PsychologicalOrchestratorIntegration:
                 return relevance
             
             # Familie-Relevanz
-            if 'family' in psychological_context:
+            if 'family' in wellbeing_context:
                 family_keywords = ['familie', 'family', 'beziehung', 'relation', 'konflikt', 'eltern']
                 if any(keyword in source_content for keyword in family_keywords):
                     relevance += 0.3
             
             # Persönlichkeits-Relevanz
-            if 'profile' in psychological_context:
-                profile = psychological_context['profile']
+            if 'profile' in wellbeing_context:
+                profile = wellbeing_context['profile']
                 if profile.get('primary_concerns'):
                     for concern in profile['primary_concerns']:
                         if concern.lower() in source_content:
@@ -604,7 +604,7 @@ class PsychologicalOrchestratorIntegration:
         ✅ NEW: Invalidate cached profile when new KG triples are added
         Triggers profile regeneration on next access
         
-        Call this from psychological_db.store_kg_triple()
+        Call this from wellbeing_db.store_kg_triple()
         """
         if not self.profile_cache_manager:
             return
@@ -634,26 +634,26 @@ class PsychologicalOrchestratorIntegration:
             return None
 
 
-def integrate_psychological_orchestrator(orchestrator, psychological_db=None, user_insight_extractor=None):
+def integrate_wellbeing_orchestrator(orchestrator, wellbeing_db=None, user_insight_extractor=None):
     """
     Integriert psychologische Funktionalität in einen bestehenden Orchestrator
     
     Args:
         orchestrator: AgentOrchestrator Instanz
-        psychological_db: WellbeingDatabase Instanz
-        user_insight_extractor: PsychologicalUserInsightExtractor Instanz
+        wellbeing_db: WellbeingDatabase Instanz
+        user_insight_extractor: WellbeingUserInsightExtractor Instanz
         
     Returns:
-        PsychologicalOrchestratorIntegration Instanz
+        WellbeingOrchestratorIntegration Instanz
     """
-    integration = PsychologicalOrchestratorIntegration(
+    integration = WellbeingOrchestratorIntegration(
         orchestrator=orchestrator,
-        psychological_db=psychological_db,
+        wellbeing_db=wellbeing_db,
         user_insight_extractor=user_insight_extractor
     )
     
     # Erweitere Orchestrator um psychologische Methoden
-    orchestrator.psychological_integration = integration
+    orchestrator.wellbeing_integration = integration
     
     # Monkeypatch: Erweitere run_tools_and_summarize
     original_run_tools_and_summarize = orchestrator.run_tools_and_summarize
@@ -707,17 +707,17 @@ def integrate_psychological_orchestrator(orchestrator, psychological_db=None, us
         # 1. user_id verfügbar
         # 2. Integration aktiviert  
         # 3. KEINE externen Tools (Safe by Default!)
-        psych_context_enabled = get_psychological_context_enabled()
+        wellbeing_context_enabled = get_wellbeing_context_enabled()
 
         if (
             current_user_id
             and integration.enabled
-            and psych_context_enabled
+            and wellbeing_context_enabled
             and not has_external_tools
         ):
             try:
                 # Verwende RAG/Knowledge Tools - psychologische Daten erlaubt
-                enhanced_query, psychological_context = integration.enhance_query_with_psychological_context(
+                enhanced_query, wellbeing_context = integration.enhance_query_with_wellbeing_context(
                     query, current_user_id, tool_type='rag'
                 )
                 logger.info(f"🧠 Query psychologisch erweitert für User {current_user_id[:10]}... (RAG-Tools)")
@@ -728,8 +728,8 @@ def integrate_psychological_orchestrator(orchestrator, psychological_db=None, us
                 )
                 
                 # Erweitere Result um psychologischen Kontext
-                if hasattr(result, 'sources') and result.sources and psychological_context:
-                    result.sources = integration.enhance_evidence_selection(result.sources, psychological_context)
+                if hasattr(result, 'sources') and result.sources and wellbeing_context:
+                    result.sources = integration.enhance_evidence_selection(result.sources, wellbeing_context)
                 
                 return result
                 
@@ -741,7 +741,7 @@ def integrate_psychological_orchestrator(orchestrator, psychological_db=None, us
             # Externe Tools oder ohne user_id: KEINE psychologischen Daten verwenden
             if has_external_tools and current_user_id:
                 logger.info(f"🔒 DATENSCHUTZ: Externe Tools erkannt - psychologische Daten werden NICHT weitergegeben")
-            elif integration.enabled and not psych_context_enabled:
+            elif integration.enabled and not wellbeing_context_enabled:
                 logger.debug(
                     "Psychological context disabled for this request; running without enrichment"
                 )
@@ -757,4 +757,4 @@ def integrate_psychological_orchestrator(orchestrator, psychological_db=None, us
 
 if __name__ == "__main__":
     print("Psychologische Orchestrator-Integration")
-    print("Verwende integrate_psychological_orchestrator() um einen Orchestrator zu erweitern")
+    print("Verwende integrate_wellbeing_orchestrator() um einen Orchestrator zu erweitern")

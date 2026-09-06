@@ -64,22 +64,22 @@ class ActiveSessionRenderer:
             end_session_func()
             return  # Show only end dialog, not normal interface
         
-        st.subheader(_tr("wellbeing_ui.active.subheader", "💬 Wellbeing-Session: {id}...", id=st.session_state.psych_current_session[:8]))
+        st.subheader(_tr("wellbeing_ui.active.subheader", "💬 Wellbeing-Session: {id}...", id=st.session_state.wellbeing_current_session[:8]))
         
         # Session info with context status
         self._render_session_metrics()
 
         # Care goal progress (active session owner only)
         self.goal_progress_renderer.render(
-            session_id=st.session_state.psych_current_session,
-            current_user_name=str(st.session_state.get('psych_current_user', '')),
+            session_id=st.session_state.wellbeing_current_session,
+            current_user_name=str(st.session_state.get('wellbeing_current_user', '')),
         )
         
         # Chat interface
         st.markdown(_tr("wellbeing_ui.active.chat_header", "### 💭 Dein Wellbeing-Chat"))
         
         # Display psychological chat history
-        self._display_psychological_chat_history()
+        self._display_wellbeing_chat_history()
         
         # Chat input
         user_input = st.chat_input(
@@ -95,7 +95,7 @@ class ActiveSessionRenderer:
     
     def _render_session_metrics(self) -> None:
         """Render session metrics and status."""
-        session_id = str(st.session_state.get('psych_current_session', '')).strip()
+        session_id = str(st.session_state.get('wellbeing_current_session', '')).strip()
         if not session_id:
             return
 
@@ -135,7 +135,7 @@ class ActiveSessionRenderer:
             return
 
         messages = self.session_manager.get_session_context(
-            st.session_state.psych_current_session,
+            st.session_state.wellbeing_current_session,
             max_messages=50
         )
 
@@ -162,13 +162,13 @@ class ActiveSessionRenderer:
             )
         )
     
-    def _display_psychological_chat_history(self) -> None:
+    def _display_wellbeing_chat_history(self) -> None:
         """Display chat history for current psychological session."""
-        if not st.session_state.psych_current_session:
+        if not st.session_state.wellbeing_current_session:
             return
 
         messages = self.session_manager.get_session_context(
-            st.session_state.psych_current_session,
+            st.session_state.wellbeing_current_session,
             max_messages=20
         )
 
@@ -270,7 +270,7 @@ class ActiveSessionRenderer:
         
         with col1:
             if st.button(_tr("wellbeing_ui.active.pause_button", "⏸️ Session pausieren"), key="pause_psych_session"):
-                st.session_state.psych_enabled = False
+                st.session_state.wellbeing_enabled = False
                 st.success(_tr("wellbeing_ui.active.pause_success", "Session pausiert. Sie koennen jederzeit fortfahren."))
                 st.rerun()
         

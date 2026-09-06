@@ -10,7 +10,7 @@ Bündelt alle SOTA-Features für psychologische Unterstützung:
 #6  AllianceTracker           — Therapeutische Allianz-Tracking
 #7  TechniqueLibrary          — Evidenzbasierte Technik-Auswahl
 #8  OutcomeMonitor            — Outcome-Monitoring (Mikro-Assessments)
-#9  PsychoRAGBootstrapper     — Psychologie-spezifischer RAG-Korpus
+#9  WellbeingRAGBootstrapper     — Psychologie-spezifischer RAG-Korpus
 #10 EmotionInterventionMapper — Emotion→Intervention-Zuordnung
 #12 CaseFormulator            — Case Formulation (4P-Modell)
 #17 HomeworkManager           — Zwischen-Session-Aufgaben
@@ -1874,10 +1874,10 @@ class RuptureDetector:
 
 
 # ═══════════════════════════════════════════════════════════════════════
-# #9 — PsychoRAGBootstrapper: Psychologie-spezifischer RAG-Korpus
+# #9 — WellbeingRAGBootstrapper: Psychologie-spezifischer RAG-Korpus
 # ═══════════════════════════════════════════════════════════════════════
 
-class PsychoRAGBootstrapper:
+class WellbeingRAGBootstrapper:
     """
     Bootstraps einen psychologiespezifischen RAG-Korpus mit evidenzbasierten Inhalten.
     
@@ -2061,12 +2061,12 @@ Destruktive Muster vermeiden: Kritik, Verachtung, Mauern, Defensivität (Gottman
         """
         if not rag_manager:
             raise ValueError(
-                "PsychoRAGBootstrapper.bootstrap_into_rag: rag_manager is None"
+                "WellbeingRAGBootstrapper.bootstrap_into_rag: rag_manager is None"
             )
 
         if not hasattr(rag_manager, 'add_document'):
             raise TypeError(
-                f"PsychoRAGBootstrapper.bootstrap_into_rag: rag_manager "
+                f"WellbeingRAGBootstrapper.bootstrap_into_rag: rag_manager "
                 f"({type(rag_manager).__name__}) does not expose add_document(). "
                 f"Pass a UnifiedRagStore instance (e.g. via "
                 f"agent.tools.get_global_rag_store())."
@@ -2121,7 +2121,7 @@ class WellbeingPipeline:
         self.case_formulator = CaseFormulator(model_loader=model_loader)
         self.homework_manager = HomeworkManager(db=db)
         self.rupture_detector = RuptureDetector()
-        self.rag_bootstrapper = PsychoRAGBootstrapper()
+        self.rag_bootstrapper = WellbeingRAGBootstrapper()
 
         logger.info("✅ WellbeingPipeline initialisiert (13 SOTA-Komponenten)")
 

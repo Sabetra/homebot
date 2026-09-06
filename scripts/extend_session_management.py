@@ -433,8 +433,8 @@ class SessionManagerGUI(QMainWindow):
     def init_session_loader(self):
         """Initialisiert Session-Loader"""
         try:
-            from psychological_session_loader import PsychologicalSessionLoader
-            self.session_loader = PsychologicalSessionLoader()
+            from wellbeing_session_loader import WellbeingSessionLoader
+            self.session_loader = WellbeingSessionLoader()
             
             if self.session_loader.db:
                 self.statusBar().showMessage("✅ Session-Loader bereit")
@@ -578,7 +578,7 @@ if __name__ == "__main__":
         print("✓ session_manager_gui.py - Benutzerfreundliche GUI")
         
         print("\\n📋 Verwendung:")
-        print("1. python psychological_session_loader.py  # Test & Demo")
+        print("1. python wellbeing_session_loader.py  # Test & Demo")
         print("2. python session_manager_gui.py  # GUI-Interface")
         print("3. Im Bot: Sessions automatisch laden/wechseln")
         

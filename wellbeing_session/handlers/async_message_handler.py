@@ -52,12 +52,12 @@ class AsyncMessageHandler:
 
     @traced_async("handler.handle_message")
     @metered_async("handler.handle_message")
-    async def handle_psychological_message(
+    async def handle_wellbeing_message(
         self,
         user_message: str,
         ai_response: str,
         session_id: str,
-        psych_enabled: bool,
+        wellbeing_enabled: bool,
         build_context_func: Callable[..., Dict[str, Any]],
         format_context_func: Callable[[Dict[str, Any]], str],
     ) -> str:
@@ -67,14 +67,14 @@ class AsyncMessageHandler:
             user_message: User input text.
             ai_response: Standard AI response (pre-generated).
             session_id: Active session ID.
-            psych_enabled: Whether psych mode is active.
+            wellbeing_enabled: Whether psych mode is active.
             build_context_func: Sync context builder.
             format_context_func: Context formatter.
 
         Returns:
             Enhanced AI response with psychological context.
         """
-        if not psych_enabled or not session_id:
+        if not wellbeing_enabled or not session_id:
             return ai_response
 
         try:

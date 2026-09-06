@@ -43,7 +43,7 @@ class MessageHandler:
         self.chat_logic = chat_logic
         self.profile_cache = profile_cache
         
-    def handle_psychological_message(
+    def handle_wellbeing_message(
         self, 
         user_message: str, 
         ai_response: str,
@@ -62,11 +62,11 @@ class MessageHandler:
         Returns:
             Enhanced AI response with psychological context
         """
-        if not st.session_state.psych_enabled or not st.session_state.psych_current_session:
+        if not st.session_state.wellbeing_enabled or not st.session_state.wellbeing_current_session:
             return ai_response
         
         try:
-            session_id = st.session_state.psych_current_session
+            session_id = st.session_state.wellbeing_current_session
             
             # Analyze emotional markers
             emotional_markers = self.extract_emotional_markers(user_message)
@@ -85,8 +85,8 @@ class MessageHandler:
 
             session_id = user_write.session_id
             is_crisis = user_write.is_crisis
-            if st.session_state.psych_current_session != session_id:
-                st.session_state.psych_current_session = session_id
+            if st.session_state.wellbeing_current_session != session_id:
+                st.session_state.wellbeing_current_session = session_id
             
             # Get session summary
             session_summary = self.session_manager.get_session_summary(session_id)
@@ -178,8 +178,8 @@ class MessageHandler:
                 return enhanced_response
 
             session_id = assistant_write.session_id
-            if st.session_state.psych_current_session != session_id:
-                st.session_state.psych_current_session = session_id
+            if st.session_state.wellbeing_current_session != session_id:
+                st.session_state.wellbeing_current_session = session_id
             
             # Invalidate persistent profile after new interaction
             self._invalidate_profile_cache(session_id)

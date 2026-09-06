@@ -106,8 +106,8 @@ class SessionLifecycleManager:
         try:
             session_id = self.session_manager.create_session(user_name)
             
-            st.session_state.psych_current_session = session_id
-            st.session_state.psych_enabled = True
+            st.session_state.wellbeing_current_session = session_id
+            st.session_state.wellbeing_enabled = True
             
             st.success(_tr("wellbeing_ui.lifecycle.new_success", "✅ Neue Wellbeing-Session erstellt: {id}...", id=session_id[:8]))
             st.rerun()  # Never returns - raises exception to restart app
@@ -219,8 +219,8 @@ class SessionLifecycleManager:
                     self.session_manager.end_session(session_id)
                     
                     # Reset session state
-                    st.session_state.psych_current_session = None
-                    st.session_state.psych_enabled = False
+                    st.session_state.wellbeing_current_session = None
+                    st.session_state.wellbeing_enabled = False
                     st.session_state.show_insight_info = False
                     st.session_state.show_end_session_dialog = False
                     

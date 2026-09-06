@@ -3,9 +3,9 @@ import sqlite3
 import pytest
 
 from wellbeing.wellbeing_db import WellbeingDatabase
-from psychological_user_insight_extractor import (
+from wellbeing_user_insight_extractor import (
     PersonalityInsight,
-    PsychologicalUserInsightExtractor,
+    WellbeingUserInsightExtractor,
 )
 
 
@@ -288,7 +288,7 @@ def test_reextraction_does_not_reactivate_rejected_insight(tmp_path):
         )
         conn.commit()
 
-    extractor = PsychologicalUserInsightExtractor(psychological_db=db)
+    extractor = WellbeingUserInsightExtractor(wellbeing_db=db)
     insight = PersonalityInsight(
         user_id="user-a",
         session_id="session-a",

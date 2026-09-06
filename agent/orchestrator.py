@@ -972,7 +972,7 @@ class AgentOrchestrator:
         if intent == "finance":
             return "finance_tab"
         if intent == "psychological":
-            return "psych_tab"
+            return "wellbeing_tab"
         return "main_chat"
 
     def _is_tool_allowed_for_mode(self, tool_name: str) -> bool:

@@ -259,7 +259,7 @@ class TestFinanceWriteSafety:
     """Finance-Write/Admin-Tools dürfen NIEMALS in einen ReAct-Pool gelangen
     (Read-Only-Prinzip; Mutationen laufen nur über die Finanz-Oberfläche)."""
 
-    @pytest.mark.parametrize("tab_mode", ["main_chat", "finance_tab", "psych_tab"])
+    @pytest.mark.parametrize("tab_mode", ["main_chat", "finance_tab", "wellbeing_tab"])
     @pytest.mark.parametrize("query", ["Kontostand?", "Mein Budget bitte", "Hallo"])
     def test_write_tools_never_in_pool(self, tab_mode: str, query: str):
         stub = _PoolStub(FINANCE_REGISTRY)

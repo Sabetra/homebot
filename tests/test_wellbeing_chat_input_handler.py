@@ -16,7 +16,7 @@ class SessionState(dict):
 
 class FakeStreamlit:
     def __init__(self, session_id="session-old"):
-        self.session_state = SessionState(psych_current_session=session_id)
+        self.session_state = SessionState(wellbeing_current_session=session_id)
         self.errors = []
         self.rendered_markdown = []
         self.rerun_count = 0
@@ -88,9 +88,9 @@ def test_rebind_is_applied_before_generating_and_saving_response(monkeypatch):
         AddMessageResult.ok("session-new"),
     ])
 
-    handler.handle_psychological_chat_input("hello", lambda _message: "response")
+    handler.handle_wellbeing_chat_input("hello", lambda _message: "response")
 
-    assert fake_st.session_state.psych_current_session == "session-new"
+    assert fake_st.session_state.wellbeing_current_session == "session-new"
     assert [call[:2] for call in session_manager.calls] == [
         ("session-old", "user"),
         ("session-new", "assistant"),
@@ -112,7 +112,7 @@ def test_failed_user_write_stops_response_generation(monkeypatch):
         generated = True
         return "must not be generated"
 
-    handler.handle_psychological_chat_input("hello", generate)
+    handler.handle_wellbeing_chat_input("hello", generate)
 
     assert not generated
     assert len(session_manager.calls) == 1
@@ -128,7 +128,7 @@ def test_failed_assistant_write_displays_generated_response_without_false_rerun(
         AddMessageResult.failure("write failed", "session-old"),
     ])
 
-    handler.handle_psychological_chat_input("hello", lambda _message: "visible response")
+    handler.handle_wellbeing_chat_input("hello", lambda _message: "visible response")
 
     assert fake_st.errors
     assert fake_st.rendered_markdown == ["visible response"]
@@ -157,7 +157,7 @@ def test_acute_risk_is_accompanied_by_generated_response(monkeypatch):
         generated_messages.append(message)
         return "empathic crisis accompaniment"
 
-    handler.handle_psychological_chat_input("crisis", generate)
+    handler.handle_wellbeing_chat_input("crisis", generate)
 
     assert generated_messages == ["crisis"]
     assert session_manager.calls[1][1] == "assistant"

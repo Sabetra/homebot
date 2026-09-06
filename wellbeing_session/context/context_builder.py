@@ -57,7 +57,7 @@ class SessionManagerProtocol(Protocol):
 # MAIN CONTEXT BUILDER CLASS
 # ============================================================================
 
-class PsychologicalContextBuilder:
+class WellbeingContextBuilder:
     """
     Orchestrates building comprehensive user context for psychological sessions.
     
@@ -73,7 +73,7 @@ class PsychologicalContextBuilder:
         enable_monitoring: Whether to track build metrics
     
     Examples:
-        >>> builder = PsychologicalContextBuilder(session_manager)
+        >>> builder = WellbeingContextBuilder(session_manager)
         >>> request = ContextBuildRequest(
         ...     user_id="user_123",
         ...     current_session_id="session_456",
@@ -894,7 +894,7 @@ def create_context_builder(
     use_v2: bool = False,
     enable_monitoring: bool = True,
     v2_builder: Optional[Any] = None
-) -> PsychologicalContextBuilder:
+) -> WellbeingContextBuilder:
     """
     Factory function to create a context builder instance.
     
@@ -909,14 +909,14 @@ def create_context_builder(
         v2_builder: Pre-configured UserContextBuilder with providers
     
     Returns:
-        Configured PsychologicalContextBuilder instance
+        Configured WellbeingContextBuilder instance
     
     Examples:
         >>> from wellbeing_session.adapters import SessionManagerAdapter
         >>> session_manager = SessionManagerAdapter(...)
         >>> builder = create_context_builder(session_manager, use_v2=True)
     """
-    return PsychologicalContextBuilder(
+    return WellbeingContextBuilder(
         session_manager=session_manager,
         profile_cache=profile_cache,
         use_v2_by_default=use_v2,

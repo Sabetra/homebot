@@ -40,19 +40,19 @@ class ProfileCacheManager:
     - Thread-safe
     """
     
-    def __init__(self, psychological_db: Any, profile_synthesizer: Any,
+    def __init__(self, wellbeing_db: Any, profile_synthesizer: Any,
                  ttl_minutes: int = 30,
                  max_cache_size: int = 100) -> None:
         """
         Initialize profile cache manager
         
         Args:
-            psychological_db: WellbeingDatabase instance
+            wellbeing_db: WellbeingDatabase instance
             profile_synthesizer: ProfileSynthesizer instance
             ttl_minutes: Cache TTL in minutes
             max_cache_size: Maximum number of profiles in memory cache
         """
-        self.db = psychological_db
+        self.db = wellbeing_db
         self.synthesizer = profile_synthesizer
         self.ttl_minutes = ttl_minutes
         self.max_cache_size = max_cache_size
@@ -594,9 +594,9 @@ class ProfileCacheManager:
 
 
 # Factory function
-def create_profile_cache_manager(psychological_db: Any, profile_synthesizer: Any, ttl_minutes: int = 30, max_cache_size: int = 100) -> "ProfileCacheManager":
+def create_profile_cache_manager(wellbeing_db: Any, profile_synthesizer: Any, ttl_minutes: int = 30, max_cache_size: int = 100) -> "ProfileCacheManager":
     """Create ProfileCacheManager instance"""
-    return ProfileCacheManager(psychological_db, profile_synthesizer, ttl_minutes, max_cache_size)
+    return ProfileCacheManager(wellbeing_db, profile_synthesizer, ttl_minutes, max_cache_size)
 
 
 if __name__ == "__main__":

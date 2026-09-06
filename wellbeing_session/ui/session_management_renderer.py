@@ -73,7 +73,7 @@ class SessionManagementRenderer:
         self._render_session_buttons(user_name)
         
         # Current session info
-        if st.session_state.psych_current_session:
+        if st.session_state.wellbeing_current_session:
             self._display_current_session_info()
         
         # Session history
@@ -81,9 +81,9 @@ class SessionManagementRenderer:
         self._display_user_insights(user_name)
         
         # Explicit bool cast for type safety
-        psych_enabled = bool(st.session_state.psych_enabled) if hasattr(st.session_state, 'psych_enabled') else False
-        psych_current = bool(st.session_state.psych_current_session) if hasattr(st.session_state, 'psych_current_session') else False
-        return psych_enabled and psych_current
+        wellbeing_enabled = bool(st.session_state.wellbeing_enabled) if hasattr(st.session_state, 'wellbeing_enabled') else False
+        psych_current = bool(st.session_state.wellbeing_current_session) if hasattr(st.session_state, 'wellbeing_current_session') else False
+        return wellbeing_enabled and psych_current
     
     def _render_user_selection(self) -> Optional[str]:
         """
@@ -97,7 +97,7 @@ class SessionManagementRenderer:
         with col1:
             user_name = st.text_input(
                 _tr("wellbeing_ui.session.name_label", "👤 Ihr Name fuer diese Session:"),
-                value=st.session_state.psych_current_user,
+                value=st.session_state.wellbeing_current_user,
                 placeholder=_tr("wellbeing_ui.session.name_placeholder", "Geben Sie Ihren Namen ein..."),
                 help=_tr("wellbeing_ui.session.name_help", "Ihr Name wird verwendet, um Ihre Sessions zu verwalten und von anderen zu trennen."),
             )
@@ -109,8 +109,8 @@ class SessionManagementRenderer:
             st.caption(_tr("wellbeing_ui.session.privacy_no_cloud", "✅ Keine Cloud-Uebertragung"))
         
         # Handle user name change
-        if user_name and user_name != st.session_state.psych_current_user:
-            old_user_id = st.session_state.get('psych_current_user_id', '')
+        if user_name and user_name != st.session_state.wellbeing_current_user:
+            old_user_id = st.session_state.get('wellbeing_current_user_id', '')
             # ✅ SOTA: Invalidate cached profile for previous user BEFORE switching,
             # otherwise User B starts session with cached User A profile until TTL expires.
             if old_user_id and self._profile_cache is not None:
@@ -122,13 +122,13 @@ class SessionManagementRenderer:
                     logger.info(f"🔑 Profile cache invalidated on user switch (old={old_user_id[:12]}...)")
                 except Exception as exc:
                     logger.warning(f"⚠️ Profile cache invalidation on user switch failed: {exc}")
-            st.session_state.psych_current_user = user_name
-            st.session_state.psych_current_user_id = self._resolve_user_id(user_name)
-            st.session_state.psych_current_session = ""
+            st.session_state.wellbeing_current_user = user_name
+            st.session_state.wellbeing_current_user_id = self._resolve_user_id(user_name)
+            st.session_state.wellbeing_current_session = ""
             st.rerun()
 
-        if user_name and not st.session_state.get("psych_current_user_id"):
-            st.session_state.psych_current_user_id = self._resolve_user_id(user_name)
+        if user_name and not st.session_state.get("wellbeing_current_user_id"):
+            st.session_state.wellbeing_current_user_id = self._resolve_user_id(user_name)
         
         return user_name if user_name else None
     
@@ -150,7 +150,7 @@ class SessionManagementRenderer:
                 self._restore_session(user_name)
         
         with col3:
-            if st.session_state.psych_current_session:
+            if st.session_state.wellbeing_current_session:
                 if st.button(_tr("wellbeing_ui.session.end_button", "⏹️ Session beenden"), type="secondary"):
                     self._end_session()
     
@@ -159,9 +159,9 @@ class SessionManagementRenderer:
         try:
             # Force new session (no restoration)
             session_id = self.session_manager.create_session(user_name, force_new=True)
-            st.session_state.psych_current_user_id = self._resolve_user_id(user_name)
-            st.session_state.psych_current_session = session_id
-            st.session_state.psych_enabled = True
+            st.session_state.wellbeing_current_user_id = self._resolve_user_id(user_name)
+            st.session_state.wellbeing_current_session = session_id
+            st.session_state.wellbeing_enabled = True
             st.session_state.show_end_session_dialog = False
             st.success(_tr("wellbeing_ui.session.new_success", "✅ Neue Session gestartet: {id}...", id=session_id[:8]))
             st.rerun()
@@ -173,9 +173,9 @@ class SessionManagementRenderer:
         try:
             # Standard behavior: restore existing session
             session_id = self.session_manager.get_or_create_session(user_name, force_new=False)
-            st.session_state.psych_current_user_id = self._resolve_user_id(user_name)
-            st.session_state.psych_current_session = session_id
-            st.session_state.psych_enabled = True
+            st.session_state.wellbeing_current_user_id = self._resolve_user_id(user_name)
+            st.session_state.wellbeing_current_session = session_id
+            st.session_state.wellbeing_enabled = True
             st.session_state.show_end_session_dialog = False
             st.success(_tr("wellbeing_ui.session.restore_success", "✅ Session wiederhergestellt: {id}...", id=session_id[:8]))
             st.rerun()
@@ -189,7 +189,7 @@ class SessionManagementRenderer:
     
     def _display_current_session_info(self) -> None:
         """Display information about current session."""
-        session_id = st.session_state.psych_current_session
+        session_id = st.session_state.wellbeing_current_session
         
         try:
             summary = self.session_manager.get_session_summary(session_id)
@@ -197,7 +197,7 @@ class SessionManagementRenderer:
                 return
 
             if summary.get('user_id'):
-                st.session_state.psych_current_user_id = summary.get('user_id')
+                st.session_state.wellbeing_current_user_id = summary.get('user_id')
             
             st.markdown(_tr("wellbeing_ui.session.current_header", "### 📊 Aktuelle Session"))
             

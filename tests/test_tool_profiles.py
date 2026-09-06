@@ -36,8 +36,8 @@ class TestToolProfiles:
         assert isinstance(TOOL_PROFILES["finance_tab"], ToolProfile)
 
     def test_psych_tab_profile_exists(self):
-        assert "psych_tab" in TOOL_PROFILES
-        assert isinstance(TOOL_PROFILES["psych_tab"], ToolProfile)
+        assert "wellbeing_tab" in TOOL_PROFILES
+        assert isinstance(TOOL_PROFILES["wellbeing_tab"], ToolProfile)
 
     def test_main_chat_has_full_tools(self):
         profile = get_profile("main_chat")
@@ -59,11 +59,11 @@ class TestToolProfiles:
         assert "file_writer" not in profile.allowed_tools
 
     def test_psych_tab_no_fs_access(self):
-        assert has_fs_read("psych_tab") is False
-        assert has_fs_write("psych_tab") is False
+        assert has_fs_read("wellbeing_tab") is False
+        assert has_fs_write("wellbeing_tab") is False
 
     def test_psych_tab_only_rag(self):
-        profile = get_profile("psych_tab")
+        profile = get_profile("wellbeing_tab")
         assert "rag_search" in profile.allowed_tools
         assert len(profile.allowed_tools) == 1
 
@@ -80,9 +80,9 @@ class TestToolProfiles:
         assert is_tool_allowed("file_writer", "finance_tab") is False
 
     def test_is_tool_allowed_psych(self):
-        assert is_tool_allowed("rag_search", "psych_tab") is True
-        assert is_tool_allowed("file_reader", "psych_tab") is False
-        assert is_tool_allowed("web_search", "psych_tab") is False
+        assert is_tool_allowed("rag_search", "wellbeing_tab") is True
+        assert is_tool_allowed("file_reader", "wellbeing_tab") is False
+        assert is_tool_allowed("web_search", "wellbeing_tab") is False
 
     # ------------------------------------------------------------------
     # filter_tool_schemas Tests
@@ -95,7 +95,7 @@ class TestToolProfiles:
             {"function": {"name": "file_writer"}},
             {"function": {"name": "web_search"}},
         ]
-        filtered = filter_tool_schemas(schemas, "psych_tab")
+        filtered = filter_tool_schemas(schemas, "wellbeing_tab")
         assert len(filtered) == 1
         assert filtered[0]["function"]["name"] == "rag_search"
 

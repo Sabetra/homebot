@@ -62,7 +62,7 @@ def _make_validator_synthesizer() -> ProfileSynthesizer:
     class _DummyLoader:
         pass
 
-    return ProfileSynthesizer(psychological_db=_DummyDB(), model_loader=_DummyLoader())
+    return ProfileSynthesizer(wellbeing_db=_DummyDB(), model_loader=_DummyLoader())
 
 
 def evaluate_payload(

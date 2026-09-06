@@ -88,7 +88,7 @@ class PersonalityProfile:
         if not self.last_updated:
             self.last_updated = datetime.now(timezone.utc).isoformat()
 
-class PsychologicalUserInsightExtractor:
+class WellbeingUserInsightExtractor:
     """
     Psychologischer User-Insight-Extractor
     
@@ -99,26 +99,26 @@ class PsychologicalUserInsightExtractor:
     - Integration in WellbeingSessionManager (unified DB)
     """
     
-    def __init__(self, session_manager=None, psychological_db=None, chat_function=None):
+    def __init__(self, session_manager=None, wellbeing_db=None, chat_function=None):
         """
         Initialisiert den Extractor
         
         Args:
             session_manager: WellbeingSessionManager Instanz (NEU - preferred)
-            psychological_db: WellbeingDatabase Instanz (DEPRECATED - backward compatibility)
+            wellbeing_db: WellbeingDatabase Instanz (DEPRECATED - backward compatibility)
             chat_function: Funktion für LLM-Aufrufe
         """
-        # REFACTORED: Nutze session_manager wenn verfügbar, sonst fallback zu psychological_db
+        # REFACTORED: Nutze session_manager wenn verfügbar, sonst fallback zu wellbeing_db
         if session_manager:
             self.session_manager = session_manager
             self.db = self._resolve_db_from_session_manager(session_manager)
             logger.info("🔄 Using unified session_manager")
-        elif psychological_db:
-            self.db = psychological_db
+        elif wellbeing_db:
+            self.db = wellbeing_db
             self.session_manager = None
-            logger.warning("⚠️ Using deprecated psychological_db (consider migration)")
+            logger.warning("⚠️ Using deprecated wellbeing_db (consider migration)")
         else:
-            raise ValueError("Either session_manager or psychological_db must be provided")
+            raise ValueError("Either session_manager or wellbeing_db must be provided")
         
         self.chat_function = chat_function
         self.llm_available = chat_function is not None
@@ -560,7 +560,7 @@ Wichtig:
                 logger.info(f"✅ Profile geladen für {user_id} aus unified DB")
                 return profile
             
-            # FALLBACK: Alte psychological_db
+            # FALLBACK: Alte wellbeing_db
             if self.db:
                 with self.db.get_connection() as conn:
                     # Lade alle Einsichten des Users
@@ -829,17 +829,17 @@ Wichtig:
 
 
 # Factory-Funktion für Integration
-def create_psychological_user_extractor(psychological_db=None, session_manager=None, chat_function=None):
+def create_psychological_user_extractor(wellbeing_db=None, session_manager=None, chat_function=None):
     """
-    Erstellt PsychologicalUserInsightExtractor mit gegebenen Abhängigkeiten
+    Erstellt WellbeingUserInsightExtractor mit gegebenen Abhängigkeiten
     
     Args:
-        psychological_db: DEPRECATED - alte psychologische Datenbank
+        wellbeing_db: DEPRECATED - alte psychologische Datenbank
         session_manager: EMPFOHLEN - neue unified session manager
         chat_function: Optional LLM-Chat-Funktion
     """
-    return PsychologicalUserInsightExtractor(
-        psychological_db=psychological_db,
+    return WellbeingUserInsightExtractor(
+        wellbeing_db=wellbeing_db,
         session_manager=session_manager,
         chat_function=chat_function
     )

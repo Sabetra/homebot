@@ -13,16 +13,16 @@ from datetime import datetime
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 try:
-    from psychological_session_loader import PsychologicalSessionLoader
+    from wellbeing_session_loader import WellbeingSessionLoader
 except ImportError:
-    print("❌ PsychologicalSessionLoader nicht verfügbar")
+    print("❌ WellbeingSessionLoader nicht verfügbar")
     sys.exit(1)
 
 class SessionCLI:
     """Kommandozeilen-Interface für Session-Management"""
     
     def __init__(self):
-        self.loader = PsychologicalSessionLoader()
+        self.loader = WellbeingSessionLoader()
         self.current_session_id = None
     
     def run(self):

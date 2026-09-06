@@ -48,10 +48,10 @@ from utils.followup_question_extractor import FOLLOWUP_PERSPECTIVE_INSTRUCTION
 # NEU: Optimized Research Engine für beste Performance
 from agent.optimized_research_engine import create_optimized_research_engine, optimized_research
 # NEU: Psychologische Integration
-from utils.psychological_orchestrator_integration import (
-    integrate_psychological_orchestrator,
+from utils.wellbeing_orchestrator_integration import (
+    integrate_wellbeing_orchestrator,
     set_current_user_id,
-    set_psychological_context_enabled,
+    set_wellbeing_context_enabled,
 )
 from config.user_id_config import get_current_user_id
 # NEU: Structured Outputs (Phase 1 - Roadmap Implementation)
@@ -62,14 +62,14 @@ from wellbeing_session.context.query_intent_classifier import QueryIntent, Query
 # RC-3 FIX: LLM-basierter Intent Classifier (ersetzt reine Regex-Klassifikation)
 from wellbeing_session.context.llm_intent_classifier import classify_query_llm
 # CARE_SYSTEM_PROMPT_BASE: single source of truth for the care identity.
-# Used as fallback in psychological_chat() when ResponseGenerator is unavailable.
+# Used as fallback in wellbeing_chat() when ResponseGenerator is unavailable.
 from wellbeing_session.handlers.response_generator import (
     CARE_SYSTEM_PROMPT_BASE,
     _normalize_role_alternation,
 )
 from wellbeing_session.response_provenance import (
     build_psych_web_provenance_instruction,
-    finalize_psych_response_provenance,
+    finalize_wellbeing_response_provenance,
 )
 # SOTA Variant 4: Central, intent-aware, complexity-driven decomposition engine.
 # Single source of truth for sub-query generation across main and psycho paths.
@@ -265,8 +265,8 @@ class AgentChatbotLogic(ChatbotLogic):
         self._initialize_research_engines()
         
         # NEU: Psychologische Integration für session-übergreifende Familiendaten
-        self.psychological_integration = None
-        self._psych_integration_attempted = False
+        self.wellbeing_integration = None
+        self._wellbeing_integration_attempted = False
         
         # NEU: Response Cache für häufige Anfragen
         self.response_cache = {}
@@ -321,10 +321,10 @@ class AgentChatbotLogic(ChatbotLogic):
 
         # NEU: Psychologische Unterstützung wird in enhanced_streamlit_bot.py verwaltet
         # Kein eigenes Interface mehr - zu viele API-Inkompatibilitäten
-        # Das WellbeingSessionInterface wird zentral in st.session_state.psych_interface verwaltet
-        self.psychological_interface = None
+        # Das WellbeingSessionInterface wird zentral in st.session_state.wellbeing_interface verwaltet
+        self.wellbeing_support_interface = None
         # Alias für ältere Zugriffe
-        self.psycho_interface = None
+        self.wellbeing_interface = None
         print("ℹ️ Psychologisches Interface wird zentral in Streamlit verwaltet")
 
         # NEU: Tracking für psychologische Nachrichten-Prüfung
@@ -727,24 +727,24 @@ class AgentChatbotLogic(ChatbotLogic):
         self.response_cache.clear()
         print("🗑️ Response-Cache geleert")
     
-    def _initialize_psychological_integration(self):
+    def _initialize_wellbeing_integration(self):
         """Initialisiert die psychologische Integration für session-übergreifende Familiendaten"""
         try:
             if self.orchestrator:
                 # Importiere die psychologischen Komponenten
                 from wellbeing.wellbeing_db import WellbeingDatabase
-                from psychological_user_insight_extractor import PsychologicalUserInsightExtractor
+                from wellbeing_user_insight_extractor import WellbeingUserInsightExtractor
                 
                 # Initialisiere psychologische Datenbank
-                psychological_db = WellbeingDatabase()
+                wellbeing_db = WellbeingDatabase()
                 
                 # Initialisiere User Insight Extractor  
-                user_insight_extractor = PsychologicalUserInsightExtractor(psychological_db)
+                user_insight_extractor = WellbeingUserInsightExtractor(wellbeing_db)
                 
                 # Integriere in Orchestrator
-                self.psychological_integration = integrate_psychological_orchestrator(
+                self.wellbeing_integration = integrate_wellbeing_orchestrator(
                     orchestrator=self.orchestrator,
-                    psychological_db=psychological_db,
+                    wellbeing_db=wellbeing_db,
                     user_insight_extractor=user_insight_extractor
                 )
                 
@@ -757,9 +757,9 @@ class AgentChatbotLogic(ChatbotLogic):
                 
         except Exception as e:
             print(f"⚠️ Psychologische Integration fehlgeschlagen: {e}")
-            self.psychological_integration = None
+            self.wellbeing_integration = None
 
-    def _ensure_psychological_integration(self) -> None:
+    def _ensure_wellbeing_integration(self) -> None:
         """Lazy-init psych integration only when AGENT path really needs it.
 
         .. deprecated:: 2026-08-28
@@ -767,12 +767,12 @@ class AgentChatbotLogic(ChatbotLogic):
             (Privacy-Guard: normales Chattab erhält keine Psych-Tab-Daten).
             Bleibt nur für Rollback-Zwecke erhalten.
         """
-        if self._psych_integration_attempted:
+        if self._wellbeing_integration_attempted:
             return
-        self._psych_integration_attempted = True
-        self._initialize_psychological_integration()
+        self._wellbeing_integration_attempted = True
+        self._initialize_wellbeing_integration()
 
-    def _should_enable_psychological_integration(self, user_prompt: str) -> bool:
+    def _should_enable_wellbeing_integration(self, user_prompt: str) -> bool:
         """Gate psycho enrichment for AGENT requests using intent + explicit opt-in.
 
         .. deprecated:: 2026-08-28
@@ -819,7 +819,7 @@ class AgentChatbotLogic(ChatbotLogic):
             print(f"⚠️ User-ID nicht verfügbar: {e}")
             return "default_user"
     
-    def was_last_message_psychologisch_checked(self) -> bool:
+    def was_last_message_wellbeing_checked(self) -> bool:
         """Gibt zurück, ob die letzte Nachricht psychologisch geprüft wurde"""
         return getattr(self, '_last_message_checked', False)
     
@@ -1719,7 +1719,7 @@ class AgentChatbotLogic(ChatbotLogic):
         
         # === PSYCHOLOGISCHE UNTERSTÜTZUNG: Wird zentral in Streamlit verwaltet ===
         # Das WellbeingSessionInterface wird nicht mehr in agent_chatbot_logic initialisiert,
-        # sondern zentral in enhanced_streamlit_bot.py (st.session_state.psych_interface)
+        # sondern zentral in enhanced_streamlit_bot.py (st.session_state.wellbeing_interface)
         # Dort erfolgt auch das Routing zum Psychologie-Tab
         print(f"[DEBUG] Psychologisches Interface: Zentral in Streamlit verwaltet")
         
@@ -2699,11 +2699,11 @@ WICHTIG:
         Intent-Option `ENABLE_AGENT_PSYCH_INTEGRATION` ist im normalen Chat
         deaktiviert: Der Thread-Local-Schalter wird hier explizit auf False
         gesetzt, damit selbst ein andwo aktiver Orchestrator-Patch
-        (`integrate_psychological_orchestrator`) keine Psych-Daten in RAG-Queries
+        (`integrate_wellbeing_orchestrator`) keine Psych-Daten in RAG-Queries
         injizieren kann. Das Psych-Tab nutzt seinen eigenen Pfad
-        (`psychological_chat`) und bleibt davon unberührt.
+        (`wellbeing_chat`) und bleibt davon unberührt.
         """
-        set_psychological_context_enabled(False)
+        set_wellbeing_context_enabled(False)
 
         try:
             # Spezielle Behandlung für optimierte Research
@@ -2719,7 +2719,7 @@ WICHTIG:
             return self._standard_agent_chat(user_prompt, image_path, progress_callback, search_depth)
         finally:
             # Never leak request-level psych context to subsequent chats.
-            set_psychological_context_enabled(False)
+            set_wellbeing_context_enabled(False)
     def _build_current_time_context_block(self) -> str:
         """Erzeugt einen robusten, lokalzeit-basierten Zeitkontextblock für Prompts."""
         current_local = datetime.now().astimezone()
@@ -3205,43 +3205,43 @@ Entscheidung:"""
             print(f"❌ Error resetting URL processing cache: {e}")
         return False
 
-    def is_psychological_support_enabled(self) -> bool:
+    def is_wellbeing_support_enabled(self) -> bool:
         """
         Prüft ob psychologische Unterstützung aktiviert ist.
         Wrapper für die GUI-Kompatibilität.
         """
-        if not self.psychological_interface:
+        if not self.wellbeing_support_interface:
             return False
-        return self.psychological_interface.is_enabled()
+        return self.wellbeing_support_interface.is_enabled()
 
-    def enable_psychological_support(self, chat_function=None) -> bool:
+    def enable_wellbeing_support(self, chat_function=None) -> bool:
         """
         Aktiviert psychologische Unterstützung.
         Wrapper für die GUI-Kompatibilität.
         """
-        if not self.psychological_interface:
+        if not self.wellbeing_support_interface:
             return False
         
         # Verwende die eigene chat-Methode als Standard
         if chat_function is None:
             chat_function = self.chat
             
-        return self.psychological_interface.enable(chat_function)
+        return self.wellbeing_support_interface.enable(chat_function)
     
-    def disable_psychological_support(self) -> bool:
+    def disable_wellbeing_support(self) -> bool:
         """
         Deaktiviert psychologische Unterstützung.
         Wrapper für die GUI-Kompatibilität.
         """
-        if not self.psychological_interface:
+        if not self.wellbeing_support_interface:
             return False
             
-        return self.psychological_interface.disable()
+        return self.wellbeing_support_interface.disable()
 
 
-    def get_psychological_status(self) -> Dict[str, Any]:
+    def get_wellbeing_status(self) -> Dict[str, Any]:
         """Gibt detaillierte Informationen über den psychologischen Status zurück"""
-        if not self.psychological_interface:
+        if not self.wellbeing_support_interface:
             return {
                 "available": False,
                 "enabled": False,
@@ -3251,9 +3251,9 @@ Entscheidung:"""
         
         return {
             "available": True,
-            "enabled": self.psychological_interface.is_enabled(),
-            "last_checked": self.was_last_message_psychologisch_checked(),
-            "status": "Aktiv" if self.psychological_interface.is_enabled() else "Inaktiv"
+            "enabled": self.wellbeing_support_interface.is_enabled(),
+            "last_checked": self.was_last_message_wellbeing_checked(),
+            "status": "Aktiv" if self.wellbeing_support_interface.is_enabled() else "Inaktiv"
         }
 
     def _sanitize_query_for_web_search(self, query: str, user_prompt: str) -> str:
@@ -3269,11 +3269,11 @@ Entscheidung:"""
         """
         # Prüfe ob es eine psychologische Anfrage ist
         user_lower = user_prompt.lower()
-        is_psychological = any(word in user_lower for word in [
+        is_wellbeing_query = any(word in user_lower for word in [
             'psychologisch', 'depression', 'angst', 'stress', 'therapie', 'beratung',
             'gefühle', 'trauer', 'einsamkeit', 'sorgen', 'probleme', 'hilfe',
             'unterstützung', 'seelisch', 'mental', 'burnout', 'krise'
-        ]) or "PSYCHOLOGISCHER SUPPORT-MODUS" in user_prompt
+        ]) or "WELLBEING-SUPPORT-MODUS" in user_prompt
         
         # Prüfe auf explizite Erlaubnis für persönliche Daten
         explicit_permission = any(phrase in user_lower for phrase in [
@@ -3281,7 +3281,7 @@ Entscheidung:"""
             'suche meinen namen', 'finde mich', 'über meinen fall'
         ])
         
-        if is_psychological and not explicit_permission:
+        if is_wellbeing_query and not explicit_permission:
             # Entferne potentielle persönliche Informationen
             sanitized = query
             
@@ -3352,8 +3352,8 @@ Entscheidung:"""
                 self.hybrid_search_engine = None
             
             # Cleanup Psychological Integration
-            if hasattr(self, 'psychological_integration'):
-                self.psychological_integration = None
+            if hasattr(self, 'wellbeing_integration'):
+                self.wellbeing_integration = None
             
             # Cleanup Intent Classifier
             if hasattr(self, 'intent_classifier'):
@@ -3375,7 +3375,7 @@ Entscheidung:"""
         except Exception as e:
             print(f"⚠️ Fehler beim AgentChatbotLogic cleanup: {e}")
     
-    def psychological_chat(
+    def wellbeing_chat(
         self, 
         user_prompt: str, 
         session_context: Optional[Dict[str, Any]] = None,
@@ -3572,7 +3572,7 @@ Entscheidung:"""
                     kg_triples_sorted = []
                 
                 # NOTE: Family Entity Boost is now handled upstream in the context
-                # builders (PsychologicalContextBuilder._gather_knowledge_graph and
+                # builders (WellbeingContextBuilder._gather_knowledge_graph and
                 # SessionContextBuilder._load_kg_triples) via family_entity_boost.py.
                 # The KG triples in session_context already include family-boosted results.
                 
@@ -4093,7 +4093,7 @@ Entscheidung:"""
                 except Exception:
                     response_language = "de"
 
-                response, provenance_replaced = finalize_psych_response_provenance(
+                response, provenance_replaced = finalize_wellbeing_response_provenance(
                     str(response),
                     verified_web_urls=verified_web_urls,
                     regenerate=regenerate_with_provenance,
@@ -4124,10 +4124,10 @@ Entscheidung:"""
                     if _session_id:
                         from wellbeing_session.handlers.post_response_handler import PostResponseHandler
                         
-                        # Hole SessionManager über psych_interface (1 Level, nicht 4)
+                        # Hole SessionManager über wellbeing_interface (1 Level, nicht 4)
                         _sm = None
-                        if hasattr(self, 'psycho_interface') and self.psycho_interface:
-                            _sm = getattr(self.psycho_interface, 'session_manager', None)
+                        if hasattr(self, 'wellbeing_interface') and self.wellbeing_interface:
+                            _sm = getattr(self.wellbeing_interface, 'session_manager', None)
                         
                         if _sm:
                             handler = PostResponseHandler(session_manager=_sm)

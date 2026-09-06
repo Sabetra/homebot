@@ -135,7 +135,7 @@ def _failure_response(language: str) -> str:
     )
 
 
-def finalize_psych_response_provenance(
+def finalize_wellbeing_response_provenance(
     response: str,
     *,
     verified_web_urls: Iterable[str],
