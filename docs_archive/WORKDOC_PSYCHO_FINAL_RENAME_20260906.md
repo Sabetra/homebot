@@ -109,3 +109,85 @@ unrealistisch (Archive = Beweismittel). → V2' = V2 + dokumentierte Residuen.
 - `git grep -i psycho -- '*.py'` → nur begründete Residuen (s.o.)
 - pytest: 0 FAIL / 0 ERROR (vorher: 1547 passed, 9 failed, 69 xfailed)
 - i18n-JSON gültig + Parität (de/en/bg)
+
+## ABSCHLUSS 2026-09-06 (Session 3 — finale Residuen + Broken-Ref-Fixes)
+
+### Durchgeführte Änderungen (17 Dateien, 67 gezielte Ersetzungen, je mit
+Zähl-Verifikation; Backups in `~\homebot_backups\psycho_rename_20260906\`)
+
+**P0 — gebrochene Referenzen (Tests/Runtime hätten gecrasht):**
+- `agent_chatbot_logic.py` — Import + Call:
+  `build_psych_web_provenance_instruction` → `build_wellbeing_web_provenance_instruction`
+- `tests/test_wellbeing_response_provenance.py` — 10 Referenzen auf die neuen
+  Symbole `build_wellbeing_web_provenance_instruction` /
+  `validate_wellbeing_response_provenance`
+- `tests/test_profile_synthesis_evaluator.py` — `get_psycho_kg_faiss_manager`
+  → `get_wellbeing_kg_faiss_manager`
+- `tests/test_fk_recovery.py` — `SessionManagerAdapter(psych_manager=…)`
+  → `SessionManagerAdapter(wellbeing_manager=…)` (gefunden via Full-Suite,
+  nicht via Audit — Trunkierungs-Lektion)
+
+**P1 — aktive Symbole / Widget-Keys / Log-Tags:**
+- `welcome_renderer.py` `key="quick_start_psych"` → `quick_start_wellbeing`
+- `session_management_renderer.py` `psych_insight_scope_*` →
+  `wellbeing_insight_scope_*` + Local `psych_current` → `wellbeing_current`
+- `conversation_prompts.py` `'psychological_detection'` → `'wellbeing_detection'`
+- `wellbeing_user_insight_extractor.py` Local `psychological_prompt` →
+  `wellbeing_prompt`
+- `agent_chatbot_logic.py` 22× Log-Tag `PSYCHO-*` → `WELLBEING-*`
+- `response_generator.py` 3× Log-Tag `PSYCHO-*` → `WELLBEING-*`
+- Docstring-Branding: `async_message_handler.py`, `session_manager.py`,
+  `ui_tabs/wellbeing_tab.py`, `utils/smart_hints.py` ("Psycho-Tab" →
+  "Wellbeing-Tab", LLM-Kontext)
+
+**P2 — kosmetische Test-Renames (selbst-contained):**
+- `test_tool_profiles.py` (5), `test_wellbeing_session_interface_bootstrap.py`
+  (1), `test_role_alternation_wellbeing_chat.py` (8, Helper),
+  `test_wellbeing_db_maybe_decrypt.py` (8, Fixture `wellbeing_db`)
+
+### Ambigue Symbole — finale Entscheidung (ALLE BEHALTEN)
+
+| Symbol | Entscheidung | Begründung |
+|--------|-------------|-----------|
+| `TAB_PSYCHOLOGY` | BEHALTEN | `refactored_gui/` = Legacy-Modul außerhalb des aktiven Pfads; Rename bricht Legacy-UI-Vertrag ohne Nutzen |
+| `USE_PSYCHO_CHAT_V2` | BEHALTEN | Externe ENV-Vertrag (Operatoren-Skripte, D5-Cleanup-Kommentar); Rollback-Kontrakt |
+| `ENABLE_AGENT_PSYCH_INTEGRATION` | BEHALTEN | Externe ENV-Vertrag; explizit von `tests/test_wellbeing_gate_and_privacy.py` abgedeckt (5 Tests) |
+| `PSYCHO_KG_FAISS_EAGER_INIT`, `PSYCHO_DB_KEY` | BEHALTEN | Externe ENV-Verträge |
+
+Keine aktiven `psych_*`/`_psych_*`/`Psycho*`-Symbole mehr (Suspect-Scan über
+alle 473 Git-Grep-Hits: 0 Treffer für def/class/import/kwargs/session_state).
+
+### i18n-Strategie (final)
+
+- **Parität verifiziert:** 576/576/576 Keys (bg/de/en), 0 Abweichungen.
+- **Aktiv:** `gui.tabs.wellbeing` in allen 3 Locales;
+  `gui.psychology.not_available` aktiv genutzt (agent_chatbot_logic.py:827).
+- **Legacy-Keys BEHALTEN (Kompatibilität, alle 3 Locales paritätisch):**
+  `gui.psychology.*` (Block), `gui.sidebar.psychological`,
+  `prompts.psychological.*` (keine aktiven Caller),
+  `psychological_concept` (dynamischer Key aus persistierten KG-Daten).
+- `gui.tabs.psychological` existiert nicht mehr (bereits migriert).
+- Entscheidung gegen Löschung: Legacy-UI-Pfade außerhalb unserer Kontrolle;
+  Keys sind wertfrei und user-visible nur noch in Inaktiven.
+
+### Residuen-Abschluss (git grep, 2026-09-06)
+
+`git grep -nI -i psycho -- '*.py' 'i18n/locales/*.json'` → **473 Treffer**,
+sämtlich klassifiziert in: ENV-Verträge, persistierte Datenwerte
+(`domain='psych'`, `psych_<hash>`-IDs, `source_type='psychology'`,
+`psycho_corpus_sota`), Migration-Mappings, PII-Detektions-Keywords,
+Rechts-/Compliance-Texte, LLM-Prompt-Domainsprache (Therapeuten-Rolle),
+Kommentare/Docstrings, Test-Namen die ENV-Verträge dokumentieren,
+Temporäre Dateinamen in Tests. **Keine aktiven Symbole, keine Calls, keine
+Widget-Keys, keine Log-Tags mehr.**
+
+### Validierung (final)
+
+- `python -m py_compile` auf alle 17 geänderten Dateien: OK (Exit 0)
+- Gezielte Suite (8 Dateien): **71 passed**
+- Voll-Suite: **1137 passed in 111s, 0 failed, 0 errors** (Baseline gehalten)
+- Alter-Symbol-Scan (`build_psych_*`, `validate_psych_*`,
+  `get_psycho_kg_faiss_manager`, `psych_manager`, `quick_start_psych`,
+  `psych_insight_scope`, …): **0 verbleibende Referenzen**
+
+Status: **ERLEDIGT** · Workdoc wird nach `docs_archive/` verschoben.
