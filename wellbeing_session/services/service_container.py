@@ -364,12 +364,12 @@ class ServiceContainer:
         from wellbeing.session_manager import WellbeingSessionManager
         from wellbeing_session.adapters import SessionManagerAdapter
 
-        psych_manager = WellbeingSessionManager(
+        wellbeing_manager = WellbeingSessionManager(
             db=None,
             privacy_handler=None,
             model_loader=None,
         )
-        self.session_manager = SessionManagerAdapter(psych_manager)
+        self.session_manager = SessionManagerAdapter(wellbeing_manager)
         logger.info("🔄 ServiceContainer: SessionManager created")
 
     def _build_profile_cache(self) -> None:

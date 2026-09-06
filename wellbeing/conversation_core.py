@@ -1,10 +1,10 @@
 ﻿"""
-Therapeutischer Kern-Modul (SOTA 2025/2026)
+Wellbeing Kern-Modul (SOTA 2025/2026)
 ==========================================
 Bündelt alle SOTA-Features für psychologische Unterstützung:
 
-#1  PsychResponseValidator    — Post-Generation Antwort-Qualitätsprüfung
-#2  PsychGroundingChecker     — Grounding/Halluzinationsschutz im Psycho-Pfad
+#1  WellbeingResponseValidator — Post-Generation Antwort-Qualitätsprüfung
+#2  WellbeingGroundingChecker  — Grounding/Halluzinationsschutz im Wellbeing-Pfad
 #3  ScreeningInstruments      — Wellbeing-Selbstchecks: MoodCheck, CalmCheck (nicht-klinisch)
 #4  CumulativeRiskScorer      — Kumulative Risikobewertung über Turns/Sessions
 #6  AllianceTracker           — Therapeutische Allianz-Tracking
@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 
 
 # ═══════════════════════════════════════════════════════════════════════
-# #1 — PsychResponseValidator: Post-Generation Antwort-Qualitätsprüfung
+# #1 — WellbeingResponseValidator: Post-Generation Antwort-Qualitätsprüfung
 # ═══════════════════════════════════════════════════════════════════════
 
 @dataclass
@@ -47,7 +47,7 @@ class ValidationResult:
     suggestions: List[str]
 
 
-class PsychResponseValidator:
+class WellbeingResponseValidator:
     """
     Prüft LLM-Antworten BEVOR sie an den User gehen.
     
@@ -174,7 +174,7 @@ class PsychResponseValidator:
 
 
 # ═══════════════════════════════════════════════════════════════════════
-# #2 — PsychGroundingChecker: Grounding im Psycho-Pfad
+# #2 — WellbeingGroundingChecker: Grounding im Wellbeing-Pfad
 # ═══════════════════════════════════════════════════════════════════════
 
 @dataclass
@@ -186,7 +186,7 @@ class GroundingResult:
     evidence_used: List[str]
 
 
-class PsychGroundingChecker:
+class WellbeingGroundingChecker:
     """
     Leichtgewichtiger Grounding-Check für therapeutische Antworten.
     
@@ -1891,7 +1891,7 @@ class WellbeingRAGBootstrapper:
     verfügbarem psychologischem Grundwissen.
     """
 
-    PSYCHO_CORPUS: List[Dict[str, str]] = [
+    WELLBEING_CORPUS: List[Dict[str, str]] = [
         {
             'title': 'Was ist Angst? — Psychoedukation',
             'content': """Angst ist eine natürliche und überlebensnotwendige Emotion. Sie warnt uns vor Gefahren 
@@ -2041,7 +2041,7 @@ Destruktive Muster vermeiden: Kritik, Verachtung, Mauern, Defensivität (Gottman
 
     def get_corpus(self) -> List[Dict[str, str]]:
         """Gibt den psychologiespezifischen Korpus zurück."""
-        return self.PSYCHO_CORPUS
+        return self.WELLBEING_CORPUS
 
     def bootstrap_into_rag(self, rag_manager: Any) -> int:
         """
@@ -2073,7 +2073,7 @@ Destruktive Muster vermeiden: Kritik, Verachtung, Mauern, Defensivität (Gottman
             )
 
         added = 0
-        for doc in self.PSYCHO_CORPUS:
+        for doc in self.WELLBEING_CORPUS:
             rag_manager.add_document(
                 content=doc['content'],
                 metadata={
@@ -2088,7 +2088,7 @@ Destruktive Muster vermeiden: Kritik, Verachtung, Mauern, Defensivität (Gottman
             added += 1
 
         logger.info(
-            f"✅ Psycho-RAG-Korpus: {added}/{len(self.PSYCHO_CORPUS)} Dokumente "
+            f"✅ Wellbeing-RAG-Korpus: {added}/{len(self.WELLBEING_CORPUS)} Dokumente "
             f"in domain='psych' geladen"
         )
         return added
@@ -2110,8 +2110,8 @@ class WellbeingPipeline:
         db: Optional[Any] = None,
         model_loader: Optional[Any] = None
     ) -> None:
-        self.response_validator = PsychResponseValidator()
-        self.grounding_checker = PsychGroundingChecker()
+        self.response_validator = WellbeingResponseValidator()
+        self.grounding_checker = WellbeingGroundingChecker()
         self.risk_scorer = CumulativeRiskScorer()
         self.screening = ScreeningInstruments()
         self.alliance_tracker = AllianceTracker()

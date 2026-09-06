@@ -466,6 +466,3 @@ Erstelle nun die Zusammenfassung für die Patientenakte (in der 3. Person, KEINE
         except Exception:
             return "unbekannt"
     
-
-# Alias für Interface-Kompatibilität
-PsychologicalContextSummarizer = ContextSummarizer

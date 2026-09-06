@@ -251,7 +251,7 @@ class WellbeingOrchestratorIntegration:
         
         # 4. ERWEITERE QUERY MIT PSYCHOLOGISCHEM KONTEXT
         if wellbeing_context:
-            enhanced_query = self._build_psychologically_enhanced_query(query, wellbeing_context)
+            enhanced_query = self._build_wellbeing_enhanced_query(query, wellbeing_context)
             return enhanced_query, self._with_metadata(
                 wellbeing_context,
                 source='dynamic_fallback',
@@ -421,7 +421,7 @@ class WellbeingOrchestratorIntegration:
             logger.error(f"❌ Session-Kontext-Extraktion fehlgeschlagen: {e}")
             return []
     
-    def _build_psychologically_enhanced_query(self, original_query: str, wellbeing_context: Dict[str, Any]) -> str:
+    def _build_wellbeing_enhanced_query(self, original_query: str, wellbeing_context: Dict[str, Any]) -> str:
         """
         Baut eine psychologisch erweiterte Anfrage
         
@@ -532,7 +532,7 @@ class WellbeingOrchestratorIntegration:
             enhanced_sources = []
             
             for source in evidence_sources:
-                relevance_score = self._calculate_psychological_relevance(source, wellbeing_context)
+                relevance_score = self._calculate_wellbeing_relevance(source, wellbeing_context)
                 source.psychological_relevance = relevance_score
                 enhanced_sources.append(source)
             
@@ -548,7 +548,7 @@ class WellbeingOrchestratorIntegration:
             logger.error(f"❌ Psychologische Evidence-Selection fehlgeschlagen: {e}")
             return evidence_sources
     
-    def _calculate_psychological_relevance(self, source: Any, wellbeing_context: Dict[str, Any]) -> float:
+    def _calculate_wellbeing_relevance(self, source: Any, wellbeing_context: Dict[str, Any]) -> float:
         """Berechnet psychologische Relevanz einer Evidence-Source"""
         try:
             relevance = 0.5  # Base score

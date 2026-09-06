@@ -68,7 +68,7 @@ Du begegnest jedem Menschen mit echter Wärme und Mitgefühl. Du verstehst, dass
 </responsibilities>
 
 <active_listening>
-Wie ein echter Therapeut paraphrasierst du das Gesagte — aber nicht nur wortwörtlich:
+Wie ein einfühlsamer Gesprächspartner paraphrasierst du das Gesagte — aber nicht nur wortwörtlich:
 
 1. PARAPHRASIEREN (in eigenen Worten zusammenfassen):
    - "Wenn ich dich richtig verstehe, fühlst du dich..."
@@ -111,7 +111,7 @@ Bevor du antwortest, durchlaufe INTERN (nicht sichtbar für den User) folgende S
 1. EMOTION: Welche Emotionen drückt die Person aus? (Primär + Sekundär)
 2. BEDÜRFNIS: Was braucht die Person gerade? (Validation, Information, Strategie, Entlastung?)
 3. SICHERHEIT: Gibt es Krisensignale? (Suizidgedanken, Selbstverletzung, akute Gefahr?)
-4. STRATEGIE: Welche therapeutische Technik passt? (Validation, Paraphrasieren, Ressourcenaktivierung, Psychoedukation, Problemlösung?)
+4. STRATEGIE: Welche Technik passt? (Validation, Paraphrasieren, Ressourcenaktivierung, Psychoedukation, Problemlösung?)
 5. ANTWORT: Formuliere deine Antwort basierend auf 1-4
 </thinking_instructions>
 
@@ -136,7 +136,7 @@ anfühlen wie ein Gespräch mit einem verständnisvollen Freund, der auch fachli
 Antworte auf Deutsch.""",
 
             # LLM-basierte Erkennung statt hart gecodeter Keywords
-            'psychological_detection_prompt': """
+            'wellbeing_detection_prompt': """
 Analysiere folgende Nachricht und bestimme, ob sie psychologische Unterstützung benötigt.
 
 KRITERIEN FÜR PSYCHOLOGISCHE UNTERSTÜTZUNG:
@@ -185,7 +185,7 @@ Nachricht: "{message}"
                 'suizid', 'selbstmord', 'ende machen', 'kann nicht mehr'
             ],
             
-            'fallback_psychological_indicators': [
+            'fallback_wellbeing_indicators': [
                 'hilfe', 'stress', 'traurig', 'angst', 'probleme'
             ]
         }
@@ -671,7 +671,7 @@ Erstelle eine einzigartige, situationsangemessene Begrüßung.
                 if chat_function:
                     fallback_prompt = f"""
                     
-Du bist ein professioneller Psychologe. Erstelle 3-5 praktische, evidenzbasierte Bewältigungsstrategien für die Kategorie: {category}
+Du bist ein erfahrener Experte für emotionale Unterstützung. Erstelle 3-5 praktische, evidenzbasierte Bewältigungsstrategien für die Kategorie: {category}
 
 RICHTLINIEN:
 - Gib nur die Strategien aus, eine pro Zeile
@@ -787,9 +787,9 @@ Beispielformat:
             stats = {
                 'base_prompts': {
                     'system_prompt': 1 if 'system_prompt' in self.base_prompts else 0,
-                    'llm_detection_prompts': 2,  # psychological_detection, crisis_detection
+                    'llm_detection_prompts': 2,  # wellbeing_detection, crisis_detection
                     'fallback_indicators': len(self.base_prompts.get('fallback_crisis_indicators', [])),
-                    'psychological_fallbacks': len(self.base_prompts.get('fallback_psychological_indicators', []))
+                    'wellbeing_fallbacks': len(self.base_prompts.get('fallback_wellbeing_indicators', []))
                 },
                 'therapeutic_approaches': len(self.therapeutic_approaches),
                 'crisis_types': len(self.crisis_prompts),
@@ -833,7 +833,7 @@ Beispielformat:
         """
         try:
             assessment = {
-                'needs_psychological_support': False,
+                'needs_wellbeing_support': False,
                 'crisis_risk': 'low',
                 'recommended_approach': 'general_support',
                 'immediate_actions': [],
@@ -843,11 +843,11 @@ Beispielformat:
             
             if chat_function and callable(chat_function):
                 # 1. Psychologische Unterstützung nötig?
-                assessment['needs_psychological_support'] = self.should_handle_psychologically(
+                assessment['needs_wellbeing_support'] = self.should_handle_wellbeing(
                     user_input, chat_function
                 )
                 
-                if assessment['needs_psychological_support']:
+                if assessment['needs_wellbeing_support']:
                     # 2. Krisenrisiko bewerten
                     crisis_data = self.assess_crisis_risk(user_input, chat_function)
                     assessment['crisis_risk'] = crisis_data.get('risk_level', 'low')
@@ -880,7 +880,7 @@ Beispielformat:
             logger.error(f"❌ LLM-Assessment fehlgeschlagen: {e}")
             # Fallback Assessment
             return {
-                'needs_psychological_support': False,
+                'needs_wellbeing_support': False,
                 'crisis_risk': 'unknown',
                 'recommended_approach': 'general_support',
                 'immediate_actions': [],
@@ -942,7 +942,7 @@ Beispielformat:
         # Ensure we return Dict[str, str] not Any
         return {str(k): str(v) for k, v in contacts.items()} if isinstance(contacts, dict) else {}
     
-    def should_handle_psychologically(self, message: str, chat_function: Optional[Callable[..., Any]] = None) -> bool:
+    def should_handle_wellbeing(self, message: str, chat_function: Optional[Callable[..., Any]] = None) -> bool:
         """
         LLM-basierte Entscheidung ob Nachricht psychologisch behandelt werden sollte
         
@@ -957,7 +957,7 @@ Beispielformat:
             # Primär: LLM-basierte Erkennung
             if chat_function and callable(chat_function):
                 try:
-                    detection_prompt = self.base_prompts['psychological_detection_prompt'].format(message=message)
+                    detection_prompt = self.base_prompts['wellbeing_detection_prompt'].format(message=message)
                     llm_response = chat_function(detection_prompt)
                     
                     response_text = str(llm_response).strip().upper()
@@ -975,7 +975,7 @@ Beispielformat:
             
             # Fallback: Minimal-Keyword-Check
             message_lower = message.lower()
-            fallback_indicators = self.base_prompts.get('fallback_psychological_indicators', [])
+            fallback_indicators = self.base_prompts.get('fallback_wellbeing_indicators', [])
             
             for indicator in fallback_indicators:
                 if indicator in message_lower:

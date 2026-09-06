@@ -121,14 +121,14 @@ class SessionManagerAdapter:
         manager: Instance of WellbeingSessionManager
     """
 
-    def __init__(self, psych_manager: Any) -> None:
+    def __init__(self, wellbeing_manager: Any) -> None:
         """
         Initialize the adapter with a WellbeingSessionManager instance.
 
         Args:
-            psych_manager: WellbeingSessionManager instance
+            wellbeing_manager: WellbeingSessionManager instance
         """
-        self.manager = psych_manager
+        self.manager = wellbeing_manager
         self._current_session_id: Optional[str] = None
         self._session_lock = threading.Lock()  # Phase 4: Concurrency für Adapter
         logger.info("✅ SessionManagerAdapter initialisiert - Nutzt wellbeing_sessions Tabelle (51 Sessions!)")

@@ -223,19 +223,19 @@ class WellbeingDatabase:
         logger.info(f"✅ WellbeingDatabase initialisiert: {db_path}")
 
     def _ensure_kg_faiss_manager(self) -> None:
-        """Initialize psycho KG FAISS manager once on first semantic use."""
+        """Initialize wellbeing KG FAISS manager once on first semantic use."""
         if self._kg_faiss_bootstrapped:
             return
 
         self._kg_faiss_bootstrapped = True
         try:
-            from wellbeing.kg_faiss_manager import get_psycho_kg_faiss_manager
-            self.kg_faiss_manager = get_psycho_kg_faiss_manager(
+            from wellbeing.kg_faiss_manager import get_wellbeing_kg_faiss_manager
+            self.kg_faiss_manager = get_wellbeing_kg_faiss_manager(
                 db_path=self.db_path,
                 embedding_dim=1024,
                 db_instance=self,
             )
-            logger.info("✅ Psycho KG FAISS Manager initialisiert (lazy)")
+            logger.info("✅ Wellbeing KG FAISS Manager initialisiert (lazy)")
 
             try:
                 if self.kg_faiss_manager._index_cached() and not self.kg_faiss_manager._is_stale():
@@ -1309,9 +1309,9 @@ class WellbeingDatabase:
             conn.commit()
 
     # ──────────────────────────────────────────────────────────────────
-    #  ★ SOTA v4: Entity Resolution via Embedding Similarity (psycho DB)
+    #  ★ SOTA v4: Entity Resolution via Embedding Similarity (wellbeing DB)
     # ──────────────────────────────────────────────────────────────────
-    def _resolve_duplicate_psycho_entities(
+    def _resolve_duplicate_wellbeing_entities(
         self, conn: Any, similarity_threshold: float = 0.90
     ) -> Dict[str, Any]:
         """Semantic entity dedup via cosine similarity over kg_entities embeddings.
@@ -2339,12 +2339,12 @@ class WellbeingDatabase:
                 # ★ SOTA v4: Store entity embeddings for new triples
                 if interaction_triples_count > 0:
                     try:
-                        stored = self._store_psycho_entity_embeddings(conn, kg_triples)
+                        stored = self._store_wellbeing_entity_embeddings(conn, kg_triples)
                         # ★ SOTA v4: Auto entity resolution after new entities added
                         if stored > 0:
                             self.invalidate_entity_index()  # ★ force re-load on next search
                             try:
-                                self._resolve_duplicate_psycho_entities(
+                                self._resolve_duplicate_wellbeing_entities(
                                     conn, similarity_threshold=0.90
                                 )
                             except Exception as e_res:
@@ -2355,7 +2355,7 @@ class WellbeingDatabase:
         except Exception as e:
             logger.error(f"❌ KG-Erstellung für Interaktion {interaction_id} fehlgeschlagen: {e}")
 
-    def _store_psycho_entity_embeddings(
+    def _store_wellbeing_entity_embeddings(
         self, conn: Any, triples: List[Any]
     ) -> int:
         """

@@ -307,22 +307,22 @@ class WellbeingSessionInterface:
             # DB or model loader must not prevent the SessionInterface from
             # starting. Failures here are logged and degrade gracefully.
             try:
-                psych_db = None
+                wellbeing_db = None
                 sm = getattr(self.session_manager, '_manager', None) or self.session_manager
                 if hasattr(sm, 'db') and sm.db is not None:
-                    psych_db = sm.db
+                    wellbeing_db = sm.db
                 elif hasattr(sm, '_db') and sm._db is not None:
-                    psych_db = sm._db
+                    wellbeing_db = sm._db
 
                 self._wellbeing_pipeline = WellbeingPipeline(
-                    db=psych_db,
+                    db=wellbeing_db,
                     model_loader=None  # wird in set_model_loader() nachgerüstet
                 )
             except Exception as exc:
                 logger.warning("⚠️ WellbeingPipeline init failed: %s", exc)
                 self._wellbeing_pipeline = None
             if self._wellbeing_pipeline is not None:
-                logger.info("✅ WellbeingPipeline in SessionInterface initialisiert (PsychoRAG bootstrap deferred)")
+                logger.info("✅ WellbeingPipeline in SessionInterface initialisiert (WellbeingRAG bootstrap deferred)")
 
     def _normalize_cached_session_manager(self, cached_raw: Any) -> tuple[SessionManagerAdapter, bool]:
         """Return a valid SessionManagerAdapter and whether it was newly created.
@@ -345,15 +345,15 @@ class WellbeingSessionInterface:
                 type(cached_raw).__name__,
             )
 
-        psych_manager = WellbeingSessionManager(
+        wellbeing_manager = WellbeingSessionManager(
             db=None,
             privacy_handler=None,
             model_loader=None,
         )
-        return SessionManagerAdapter(psych_manager), True
+        return SessionManagerAdapter(wellbeing_manager), True
 
     def _ensure_wellbeing_rag_bootstrapped(self) -> None:
-        """Bootstrap the psych corpus into the shared RAG exactly once."""
+        """Bootstrap the wellbeing corpus into the shared RAG exactly once."""
         if self._wellbeing_rag_bootstrapped:
             return
         if self._wellbeing_pipeline is None:
@@ -365,14 +365,14 @@ class WellbeingSessionInterface:
         if rag_mgr is None:
             raise RuntimeError(
                 "Global UnifiedRagStore is not initialised — "
-                "PsychoRAG bootstrap cannot proceed."
+                "WellbeingRAG bootstrap cannot proceed."
             )
 
         self._wellbeing_pipeline.rag_bootstrapper.bootstrap_into_rag(
             rag_manager=rag_mgr
         )
         self._wellbeing_rag_bootstrapped = True
-        logger.info("✅ PsychoRAG bootstrap completed on first psych use")
+        logger.info("✅ WellbeingRAG bootstrap completed on first use")
 
     # ------------------------------------------------------------------
     # Late-binding setters
@@ -738,10 +738,10 @@ class WellbeingSessionInterface:
             logger.error(f"❌ Fehler bei Datenbereinigung: {e}")
             return 0
 
-    # Single source of truth for psych_* session-state defaults.
+    # Single source of truth for wellbeing_* session-state defaults.
     # Each entry: (key, default-factory). Using a factory keeps mutable
     # defaults isolated per Streamlit session.
-    _PSYCH_STATE_DEFAULTS: tuple[tuple[str, Any], ...] = (
+    _WELLBEING_STATE_DEFAULTS: tuple[tuple[str, Any], ...] = (
         ("wellbeing_current_user", ""),
         ("wellbeing_current_user_id", ""),
         ("wellbeing_current_session", ""),
@@ -749,21 +749,21 @@ class WellbeingSessionInterface:
     )
 
     def _ensure_session_state_defaults(self) -> None:
-        """Initialise required psych_* keys in st.session_state exactly once.
+        """Initialise required wellbeing_* keys in st.session_state exactly once.
 
         Streamlit ≥ 1.30 raises AttributeError for missing keys when accessed
         via attribute syntax (st.session_state.foo). The session-management
         renderer relies on attribute access for these keys, so they must be
         seeded before the first render. setdefault is idempotent across reruns.
         """
-        for key, default in self._PSYCH_STATE_DEFAULTS:
+        for key, default in self._WELLBEING_STATE_DEFAULTS:
             if key not in st.session_state:
                 st.session_state[key] = default
 
     def render_complete_interface(self):
         """Rendert die komplette Wellbeing-Benutzeroberfläche"""
 
-        # Streamlit-idiomatic single source of truth for psych_* session state.
+        # Streamlit-idiomatic single source of truth for wellbeing_* session state.
         # Must run before any renderer touches these keys -- the renderers use
         # direct attribute access (e.g. st.session_state.wellbeing_current_user)
         # which raises AttributeError on missing keys (Streamlit ≥ 1.30).
@@ -968,13 +968,13 @@ class WellbeingSessionInterface:
                     # Offene Hausaufgaben aus vorherigen Sessions prüfen
                     followup = self._wellbeing_pipeline.homework_manager.generate_followup_prompt(user_id)
                     if followup:
-                        st.session_state['_psych_homework_followup'] = followup
+                        st.session_state['_wellbeing_homework_followup'] = followup
                         logger.info("📋 Homework Follow-up für Session-Start vorbereitet")
 
                     # Screening-Vorschlag (periodisch, alle 14 Tage)
                     screening_suggestion = self._wellbeing_pipeline.screening.suggest_periodic_screening(user_id)
                     if screening_suggestion:
-                        st.session_state['_psych_screening_suggestion'] = screening_suggestion
+                        st.session_state['_wellbeing_screening_suggestion'] = screening_suggestion
                         logger.info("📊 Screening-Vorschlag für Session gesetzt: %s", screening_suggestion)
 
             st.success(f"✅ Neue Wellbeing-Session erstellt: {session_id[:8]}...")

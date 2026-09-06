@@ -1,4 +1,4 @@
-"""Request-local provenance validation for user-visible psychological responses."""
+"""Request-local provenance validation for user-visible wellbeing responses."""
 
 from __future__ import annotations
 
@@ -50,8 +50,8 @@ _RESEARCH_CLAIM_PATTERNS = (
 
 
 @dataclass(frozen=True)
-class PsychResponseProvenanceResult:
-    """Validation result for one generated psychological response."""
+class WellbeingResponseProvenanceResult:
+    """Validation result for one generated wellbeing response."""
 
     is_valid: bool
     unsupported_urls: tuple[str, ...]
@@ -67,11 +67,11 @@ def extract_external_urls(text: str) -> tuple[str, ...]:
     return tuple(dict.fromkeys(_normalize_url(match.group(0)) for match in _URL_PATTERN.finditer(text)))
 
 
-def validate_psych_response_provenance(
+def validate_wellbeing_response_provenance(
     response: str,
     *,
     verified_web_urls: Iterable[str],
-) -> PsychResponseProvenanceResult:
+) -> WellbeingResponseProvenanceResult:
     """Reject URLs and web-research claims not backed by this request's tool results."""
     allowed_urls = {
         normalized
@@ -83,14 +83,14 @@ def validate_psych_response_provenance(
     claims_web_research = any(pattern.search(response) for pattern in _RESEARCH_CLAIM_PATTERNS)
     unsupported_claim = claims_web_research and not allowed_urls
 
-    return PsychResponseProvenanceResult(
+    return WellbeingResponseProvenanceResult(
         is_valid=not unsupported_urls and not unsupported_claim,
         unsupported_urls=unsupported_urls,
         has_unsupported_research_claim=unsupported_claim,
     )
 
 
-def build_psych_web_provenance_instruction(verified_web_urls: Iterable[str]) -> str:
+def build_wellbeing_web_provenance_instruction(verified_web_urls: Iterable[str]) -> str:
     """Build a request-local system instruction from actual web tool output."""
     allowed_urls = tuple(
         dict.fromkeys(
@@ -144,7 +144,7 @@ def finalize_wellbeing_response_provenance(
 ) -> tuple[str, bool]:
     """Validate a draft, regenerate once on violation, then fail closed."""
     allowed_urls = tuple(verified_web_urls)
-    initial_result = validate_psych_response_provenance(
+    initial_result = validate_wellbeing_response_provenance(
         response,
         verified_web_urls=allowed_urls,
     )
@@ -160,13 +160,13 @@ def finalize_wellbeing_response_provenance(
         "\n\nKORREKTUR DES VERWORFENEN ENTWURFS (VERBINDLICH):\n"
         f"Der vorherige Entwurf enthielt: {', '.join(violations)}. "
         "Schreibe die Antwort vollständig neu. Diese Elemente nicht ausgeben."
-        + build_psych_web_provenance_instruction(allowed_urls)
+        + build_wellbeing_web_provenance_instruction(allowed_urls)
     )
     try:
         retry_response = regenerate(correction_instruction)
     except Exception:
         return _failure_response(language), True
-    retry_result = validate_psych_response_provenance(
+    retry_result = validate_wellbeing_response_provenance(
         retry_response,
         verified_web_urls=allowed_urls,
     )

@@ -278,7 +278,7 @@ class WellbeingUserInsightExtractor:
             return []
         
         # LLM-basierte Analyse
-        insights = self._analyze_with_psychological_llm(
+        insights = self._analyze_with_wellbeing_llm(
             user_id, session_id, user_messages, existing_profile
         )
         
@@ -289,7 +289,7 @@ class WellbeingUserInsightExtractor:
         
         return insights
     
-    def _analyze_with_psychological_llm(self, user_id: str, session_id: str, 
+    def _analyze_with_wellbeing_llm(self, user_id: str, session_id: str, 
                                       user_messages: List[str], 
                                       existing_profile: Optional[PersonalityProfile]) -> List[PersonalityInsight]:
         """LLM-basierte psychologische Analyse"""
@@ -829,7 +829,7 @@ Wichtig:
 
 
 # Factory-Funktion für Integration
-def create_psychological_user_extractor(wellbeing_db=None, session_manager=None, chat_function=None):
+def create_wellbeing_user_extractor(wellbeing_db=None, session_manager=None, chat_function=None):
     """
     Erstellt WellbeingUserInsightExtractor mit gegebenen Abhängigkeiten
     

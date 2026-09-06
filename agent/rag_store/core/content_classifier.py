@@ -484,7 +484,7 @@ class ContentClassifier:
         than ``_PROTOTYPE_REFRESH_GROWTH``.
         """
         with self._prototype_lock:
-            current_count = self._count_psych_chunks()
+            current_count = self._count_wellbeing_chunks()
             if current_count < self._MIN_PSYCH_CHUNKS:
                 if self._psych_prototype is not None:
                     # Corpus shrank? unusual, but invalidate.
@@ -510,7 +510,7 @@ class ContentClassifier:
                 )
             return self._psych_prototype is not None
 
-    def _count_psych_chunks(self) -> int:
+    def _count_wellbeing_chunks(self) -> int:
         conn = self._db.get_connection()
         try:
             cur = conn.cursor()
@@ -544,7 +544,7 @@ class ContentClassifier:
         if not rows:
             raise RuntimeError(
                 "ContentClassifier._build_prototype: no psych chunks found, "
-                "but _count_psych_chunks reported >0 — concurrent deletion?"
+                "but _count_wellbeing_chunks reported >0 — concurrent deletion?"
             )
 
         dim = self._embeddings.dimension

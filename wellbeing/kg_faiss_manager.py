@@ -1,5 +1,5 @@
 """
-Dedizierter FAISS Manager für Psycho-Tab KG-Triples
+Dedizierter FAISS Manager für Wellbeing-Tab KG-Triples
 ====================================================
 
 Separate Vector Search für psychologische Knowledge Graph Triples.
@@ -111,7 +111,7 @@ class WellbeingKGFAISSManager:
         db_instance: Any = None  # ⚠️ NEW: Accept existing DB instance to prevent circular init
     ) -> None:
         """
-        Initialisiert Psycho KG FAISS Manager.
+        Initialisiert Wellbeing KG FAISS Manager.
         
         Args:
             db_path: Pfad zur wellbeing_store.db
@@ -164,13 +164,13 @@ class WellbeingKGFAISSManager:
         """Automatisches Laden oder Bauen des Index."""
         if self._index_cached() and not self._is_stale():
             # Cached und aktuell → Laden
-            logger.info("📂 Loading cached Psycho KG FAISS index...")
+            logger.info("📂 Loading cached Wellbeing KG FAISS index...")
             if self.load_index():
                 logger.info(f"✅ Index loaded ({len(self.id_map):,} triples)")
                 return
         
         # Nicht cached oder veraltet → Bauen
-        logger.info("🔨 Building fresh Psycho KG FAISS index...")
+        logger.info("🔨 Building fresh Wellbeing KG FAISS index...")
         self.build_index()
     
     def _index_cached(self) -> bool:
@@ -618,7 +618,7 @@ class WellbeingKGFAISSManager:
 # Singleton Factory
 _wellbeing_kg_faiss_manager_instance = None
 
-def get_psycho_kg_faiss_manager(
+def get_wellbeing_kg_faiss_manager(
     db_path: str = "wellbeing_store.db",
     embedding_dim: int = 1024,
     db_instance: Any = None  # ⚠️ NEW: Accept DB instance to prevent circular init

@@ -84,7 +84,7 @@ class ActiveSessionRenderer:
         # Chat input
         user_input = st.chat_input(
             _tr("wellbeing_ui.active.chat_input", "Teilen Sie Ihre Gedanken und Gefuehle mit..."),
-            key="psych_chat_input"
+            key="wellbeing_chat_input"
         )
         
         if user_input:
@@ -269,7 +269,7 @@ class ActiveSessionRenderer:
         col1, col2, col3 = st.columns(3)
         
         with col1:
-            if st.button(_tr("wellbeing_ui.active.pause_button", "⏸️ Session pausieren"), key="pause_psych_session"):
+            if st.button(_tr("wellbeing_ui.active.pause_button", "⏸️ Session pausieren"), key="pause_wellbeing_session"):
                 st.session_state.wellbeing_enabled = False
                 st.success(_tr("wellbeing_ui.active.pause_success", "Session pausiert. Sie koennen jederzeit fortfahren."))
                 st.rerun()
@@ -279,7 +279,7 @@ class ActiveSessionRenderer:
                 show_session_notes_func()
         
         with col3:
-            if st.button(_tr("wellbeing_ui.active.end_button", "🛑 Session beenden"), key="end_psych_session"):
+            if st.button(_tr("wellbeing_ui.active.end_button", "🛑 Session beenden"), key="end_wellbeing_session"):
                 # Set flag for session end dialog
                 st.session_state.show_end_session_dialog = True
                 st.rerun()
