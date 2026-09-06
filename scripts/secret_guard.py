@@ -47,7 +47,7 @@ NAME_PATTERNS: tuple[tuple[re.Pattern, str], ...] = (
     (re.compile(r"\.(p12|pfx|pkcs12|keystore|jks|ppk|p7b)$", re.I),
      "keystore-file"),
     (re.compile(r"\.(pem|key)$", re.I), "crypto-file"),
-    (re.compile(r"^\.env(\..*)?$"), "env-file"),
+    (re.compile(r"(^|/)\.env(\..*)?$"), "env-file"),
     (re.compile(r"(^|/)secrets\.(ya?ml|json|toml)$", re.I), "secrets-file"),
     (re.compile(r"(^|/)(credentials|service-account[^/]*)\.json$"),
      "credential-file"),
@@ -61,7 +61,10 @@ ENV_EXAMPLE_RE = re.compile(r"\.env(\..*)?\.(example|sample|template|dist)$", re
 CONTENT_PATTERNS: tuple[tuple[re.Pattern, str], ...] = (
     (re.compile(r"-----BEGIN (?:RSA |EC |DSA |OPENSSH |ENCRYPTED |PGP )?"
                 r"PRIVATE KEY(?: BLOCK)?-----"), "private-key-material"),
-    (re.compile(r"b3BlbnNzaC1rZXktdjE"), "openssh-private-key"),
+    # Marker fuer OpenSSH-Private-Keys (base64 von "openssh-key-v1").
+    # WICHTIG: String bewusst gesplittet - das Guard darf beim Scan seiner
+    # eigenen Quelle nicht auf den eigenen Treffer-String treffen (Selbst-Scan).
+    (re.compile(r"b3BlbnNza" + r"C1rZXktdjE"), "openssh-private-key"),
     (re.compile(r"PuTTY-User-Key-File-(?:2|3)"), "putty-private-key"),
     (re.compile(r"\bAKIA[0-9A-Z]{16}\b"), "aws-access-key-id"),
     (re.compile(r"\bgh[pousr]_[A-Za-z0-9]{36,255}\b"), "github-pat"),
@@ -94,7 +97,10 @@ def _git(*args: str) -> tuple[str | None, str]:
 
 
 def staged_files() -> list[str]:
-    out, err = _git("diff", "--cached", "--name-only", "-z")
+    """Staged Dateien; Loeschungen (D) werden NICHT gescannt -
+    eine Loeschung entfernt Inhalt und kann kein neues Secret einfuehren."""
+    out, err = _git("diff", "--cached", "--name-only", "-z",
+                    "--diff-filter=ACMR")
     if out is None:
         raise RuntimeError(f"git diff --cached fehlgeschlagen: {err}")
     return [x for x in out.split("\0") if x]
@@ -111,7 +117,11 @@ def push_files(local: str, remote: str) -> list[str]:
     if all(c == "0" for c in remote):  # neue Branche: alles in local
         out, err = _git("ls-tree", "-r", "--name-only", "-z", local)
     else:
-        out, err = _git("diff", "--name-only", "-z", remote, local)
+        # Nur Dateien, die auf dem Remote neu/geaendert werden (ACMR).
+        # Loeschungen (D) nicht scannen: sie entfernen Inhalt vom Remote
+        # und koennen kein neues Secret einfuehren.
+        out, err = _git("diff", "--name-only", "-z",
+                        "--diff-filter=ACMR", remote, local)
     if out is None:
         raise RuntimeError(f"git diff/ls-tree fehlgeschlagen: {err}")
     return [x for x in out.split("\0") if x]
