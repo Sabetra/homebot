@@ -104,48 +104,71 @@ def extract_cve(
             candidates.append(alias.strip().upper())
     return candidates[0] if candidates else None
 
+def _kev_ransomware(kev_entry: Optional[Dict[str, Any]]) -> bool:
+    """True, wenn der KEV-Eintrag bekannte Ransomware-Nutzung flaggt."""
+    if not kev_entry:
+        return False
+    return (
+        kev_entry.get("ransomwareCampaign") is True
+        or kev_entry.get("knownRansomwareCampaignUse") == "Known"
+    )
+
+
 def compute_risk(
     severity: str,
-    kev: bool,
+    kev_entry: Optional[Dict[str, Any]],
     epss: Optional[float],
 ) -> Tuple[str, float, List[str]]:
     """
     Berechnet die risikobasierte Priorisierung (P0-P3) einer Schwachstelle.
 
     Modell (SOTA 2026: CISA KEV + EPSS + Severity):
-        P0  = aktiv ausgenutzt (CISA KEV)            -> SOFORT (0-24h)
-        P1  = kritische Severity ODER hohe EPSS       -> 7 Tage
-        P2  = hohe/mittlere Severity                  -> 30 Tage
-        P3  = alles andere                            -> Quartalszyklus
+        P0  = aktiv ausgenutzt (CISA KEV)                    -> SOFORT (0-24h)
+        P1  = kritische Severity ODER high + EPSS >= 0.3     -> 7 Tage
+        P2  = hohe/mittlere Severity                         -> 30 Tage
+        P3  = alles andere                                   -> Quartalszyklus
+
+    Score-Modell (hoeher = dringlicher):
+        critical=10, high=5, medium=2, low=1, unknown=0
+        + 5.0  bei CISA-KEV
+        + EPSS * 2.0  (Score 0..1)
 
     Args:
-        severity: "critical" | "high" | "medium" | "low" | "unknown"
-        kev:      True, wenn die CVE im CISA KEV-Katalog ist
-        epss:     EPSS-Score 0..1 oder None (unverfuegbar)
+        severity:  "critical" | "high" | "medium" | "low" | "unknown"
+        kev_entry: KEV-Eintrag (dict) oder None, wenn nicht im Katalog
+        epss:      EPSS-Score 0..1 oder None (unverfuegbar)
 
     Returns:
         (tier, score, reasons) - tier in {"P0","P1","P2","P3"}, score (float,
         hoeher = dringlicher), reasons (menschenlesbare Begruendung).
     """
-    sev = (severity or "unknown").lower()
-    sev_score = {"critical": 4, "high": 3, "medium": 2, "low": 1}.get(sev, 1)
-    score = float(sev_score)
-    reasons = [f"severity={sev}"]
+    sev = (severity or "unknown").strip().lower()
+    sev_base = {"critical": 10.0, "high": 5.0, "medium": 2.0, "low": 1.0}.get(sev, 0.0)
+    score = sev_base
+    reasons: List[str] = []
+    if sev in ("critical", "high", "medium", "low"):
+        reasons.append(sev)
 
+    kev = kev_entry is not None
     if kev:
         score += 5.0
-        reasons.append("CISA-KEV (aktiv ausgenutzt)")
+        reasons.append("CISA KEV (aktiv ausgenutzt)")
+        if _kev_ransomware(kev_entry):
+            reasons.append("bekannte Ransomware-Kampagne")
 
+    epss_clamped: Optional[float] = None
     if epss is not None:
-        clamped = max(0.0, min(1.0, float(epss)))
-        score += clamped * 3.0
-        reasons.append(f"EPSS={clamped:.3f}")
+        epss_clamped = max(0.0, min(1.0, float(epss)))
+        score += epss_clamped * 2.0
+        reasons.append(f"EPSS={epss_clamped:.3f}")
 
     if kev:
         tier = "P0"
-    elif sev_score == 4 or (epss is not None and epss >= 0.3):
+    elif sev == "critical":
         tier = "P1"
-    elif sev_score >= 2:
+    elif sev == "high" and epss_clamped is not None and epss_clamped >= 0.3:
+        tier = "P1"
+    elif sev in ("high", "medium"):
         tier = "P2"
     else:
         tier = "P3"
@@ -179,6 +202,10 @@ class KEVCatalog:
     Laedt den KEV-Feed (Cache + Fetch) und liefert Lookup-Funktionen:
         kev.is_kev("CVE-XXXX-YYYY") -> bool
         kev.entry("CVE-XXXX-YYYY")  -> dict | None
+        kev.available               -> bool (Daten geladen?)
+
+    Cache-Format (kev/kev_cache.json):
+        {"cached_at": ISO-Timestamp, "kev": {CVE-Id: Eintrag-Dict}}
     """
 
     def __init__(
@@ -189,10 +216,11 @@ class KEVCatalog:
         refresh: bool = False,
     ):
         self.cache_dir = Path(cache_dir)
-        self.cache_file = self.cache_dir / "kev" / "known_exploited_vulnerabilities.json"
+        self.cache_file = self.cache_dir / "kev" / "kev_cache.json"
         self.ttl = timedelta(hours=ttl_hours)
         self.offline = offline
         self.refresh = refresh
+        self.available = False
         self._by_cve: Dict[str, Dict[str, Any]] = {}
 
     # -- Lookup -------------------------------------------------------------
@@ -213,44 +241,67 @@ class KEVCatalog:
 
     def load(self) -> bool:
         """
-        Laedt KEV aus Cache oder (online) vom Feed.
+        Laedt KEV aus Cache oder (online) vom Feed (idempotent).
 
         Logik (konsistent mit dem OSV-Cache des Scanners):
-            1. Frischer Cache  -> nutzen, fertig.
+            1. Frischer Cache  -> nutzen, fertig (kein Netz).
             2. Cache fehlt/stale + ONLINE -> Fetch; Erfolg -> nutzen.
             3. Fetch fehlgeschlagen + staler Cache -> stalen Cache nutzen.
-            4. OFFLINE ohne Cache -> nicht verfuegbar (False).
+            4. OFFLINE oder Fetch-Fehler ohne Cache -> nicht verfuegbar.
 
         Returns:
             True, wenn KEV-Daten verfuegbar sind (fresh, fetched oder stale),
-            sonst False.
+            sonst False. Setzt gleichzeitig self.available.
         """
+        if self._by_cve:
+            # Bereits geladen (frueherer load()-Aufruf) - keine Wiederholung.
+            self.available = True
+            return True
+
         cached = self._read_cache()
         if cached is not None and self._fresh() and not self.refresh:
             self._apply(cached)
+            self.available = True
             return True
 
         if not self.offline:
             fetched = self._fetch()
             if fetched is not None:
                 self._apply(fetched)
+                self.available = True
                 return True
 
         if cached is not None:
             # Staler Cache als Fallback (online-Fetch fehlgeschlagen oder offline).
             self._apply(cached)
+            self.available = True
             return True
 
+        self.available = False
         return False
 
     # -- Intern -------------------------------------------------------------
 
     def _apply(self, data: Dict[str, Any]) -> None:
-        self._by_cve = {
-            entry["cveID"].strip().upper(): entry
-            for entry in (data.get("vulnerabilities") or [])
-            if isinstance(entry, dict) and entry.get("cveID")
-        }
+        """
+        Indexiert KEV-Eintraege nach CVE-Id (Groesse-agnostic, dedupliziert).
+
+        Unterstuetzt beide Formate:
+          - Feed : {"vulnerabilities": [Eintrag, ...]}
+          - Cache: {CVE-Id: Eintrag}
+        """
+        pairs: List[Tuple[str, Dict[str, Any]]] = []
+        if isinstance(data, dict):
+            vulns = data.get("vulnerabilities")
+            if isinstance(vulns, list):
+                for entry in vulns:
+                    if isinstance(entry, dict) and entry.get("cveID"):
+                        pairs.append((str(entry["cveID"]), entry))
+            else:
+                for key, entry in data.items():
+                    if isinstance(entry, dict):
+                        pairs.append((str(key), entry))
+        self._by_cve = {k.strip().upper(): e for k, e in pairs if k}
 
     def _fresh(self) -> bool:
         if not self.cache_file.exists():
@@ -267,16 +318,29 @@ class KEVCatalog:
             return None
         try:
             payload = json.loads(self.cache_file.read_text(encoding="utf-8"))
-            return payload.get("data")
+            kev = payload.get("kev")
+            return kev if isinstance(kev, dict) else None
         except (json.JSONDecodeError, OSError, TypeError):
             return None
 
     def _write_cache(self, data: Dict[str, Any]) -> None:
+        """Schreibt den KEV-Katalog als {CVE-Id: Eintrag}-Cache."""
+        by_cve: Dict[str, Dict[str, Any]] = {}
+        if isinstance(data, dict):
+            vulns = data.get("vulnerabilities")
+            if isinstance(vulns, list):
+                for entry in vulns:
+                    if isinstance(entry, dict) and entry.get("cveID"):
+                        by_cve[str(entry["cveID"]).strip().upper()] = entry
+            else:
+                for key, entry in data.items():
+                    if isinstance(entry, dict):
+                        by_cve[str(key).strip().upper()] = entry
         try:
             self.cache_file.parent.mkdir(parents=True, exist_ok=True)
             self.cache_file.write_text(
                 json.dumps(
-                    {"cached_at": datetime.now().isoformat(), "data": data},
+                    {"cached_at": datetime.now().isoformat(), "kev": by_cve},
                     ensure_ascii=False,
                 ),
                 encoding="utf-8",
@@ -285,7 +349,12 @@ class KEVCatalog:
             logger.debug(f"KEV-Cache-Write fehlgeschlagen: {e}")
 
     def _fetch(self) -> Optional[Dict[str, Any]]:
-        data = _http_get_json(KEV_URL, KEV_TIMEOUT_SECONDS)
+        """Holt den KEV-Feed (rohes Feed-Format) oder None bei jedem Fehler."""
+        try:
+            data = _http_get_json(KEV_URL, KEV_TIMEOUT_SECONDS)
+        except Exception as e:  # noqa: BLE001 - Netzwerkfehler abfangen, kein Crash
+            logger.debug(f"KEV-Fetch fehlgeschlagen: {e}")
+            return None
         if isinstance(data, dict) and data.get("vulnerabilities"):
             self._write_cache(data)
             return data
@@ -301,7 +370,14 @@ class EPSSClient:
 
         epss = EPSSClient(cache_dir, offline=off)
         scores = epss.get_scores(["CVE-2021-44228", ...])
-        # -> {"CVE-2021-44228": {"epss": 0.99999, "percentile": 1.0, "date": "..."}}
+        # -> {"CVE-2021-44228": 0.99999, ...}  (floats, nur gefundene CVEs)
+
+    Cache-Format (epss/epss_cache.json):
+        {"cached_at": ISO-Timestamp, "scores": {CVE-Id: float}, "date": str}
+
+    Attribute:
+        available  - True, wenn EPSS-Daten verfuegbar sind (Cache oder Fetch)
+        last_date  - Datenstand der EPSS-Scores (str) oder None
     """
 
     def __init__(
@@ -312,57 +388,90 @@ class EPSSClient:
         refresh: bool = False,
     ):
         self.cache_dir = Path(cache_dir)
-        self.cache_file = self.cache_dir / "epss" / "epss_scores.json"
+        self.cache_file = self.cache_dir / "epss" / "epss_cache.json"
         self.ttl = timedelta(hours=ttl_hours)
         self.offline = offline
         self.refresh = refresh
+        self.available = False
+        self.last_date: Optional[str] = None
 
-    def get_scores(self, cve_ids: List[str]) -> Dict[str, Dict[str, Any]]:
+    def get_scores(self, cve_ids: List[str]) -> Dict[str, float]:
         """
-        Liefert EPSS-Scores fuer die angegebenen CVE-Ids (Cache + API).
+        Liefert EPSS-Scores (floats) fuer die angegebenen CVE-Ids.
 
         Nur CVE-Ids werden beruecksichtigt (GHSA-/PYSEC-Ids werden ignoriert).
         Fehlende CVEs fehlen im Ergebnis (kein Erfinden, kein False-Negative).
+
+        Ein frischer Cache wird ohne Netzwerk genutzt; nur bei stale/fehlendem
+        Cache und ONLINE werden die fehlenden CVEs nachgeholt (in Chunks).
         """
-        cve_ids = [c.strip().upper() for c in cve_ids if c and c.strip() and is_cve(c)]
-        if not cve_ids:
+        cves = [
+            c.strip().upper()
+            for c in cve_ids
+            if c and c.strip() and is_cve(c)
+        ]
+        cves = list(dict.fromkeys(cves))  # dedupe, Reihenfolge erhalten
+        if not cves:
             return {}
 
-        cache = self._read_cache() or {}
-        result: Dict[str, Dict[str, Any]] = {}
-        missing: List[str] = []
-        for cve in dict.fromkeys(cve_ids):  # dedupe, Reihenfolge erhalten
+        cache, cache_date = self._read_cache()
+        cache = cache or {}
+        if cache_date:
+            self.last_date = cache_date
+
+        result: Dict[str, float] = {}
+        for cve in cves:
             if cve in cache:
-                result[cve] = cache[cve]
-            else:
-                missing.append(cve)
+                try:
+                    result[cve] = float(cache[cve])
+                except (TypeError, ValueError):
+                    continue
 
+        if self._fresh() and not self.refresh:
+            # Frischer Cache: fertig (kein Netzwerk, keine staler Daten).
+            self.available = bool(result)
+            return result
+
+        missing = [c for c in cves if c not in result]
         if missing and not self.offline:
-            fetched = self._fetch(missing)
+            fetched, fetch_date = self._fetch(missing)
+            if fetch_date:
+                self.last_date = fetch_date
+            for cve, value in fetched.items():
+                if cve not in result:
+                    result[cve] = value
             if fetched:
-                cache.update(fetched)
-                result.update(fetched)
-                self._write_cache(cache)
+                merged = dict(cache)
+                merged.update(fetched)
+                self._write_cache(merged, fetch_date or cache_date)
 
+        self.available = bool(result)
         return result
 
     # -- Intern -------------------------------------------------------------
 
-    def _read_cache(self) -> Optional[Dict[str, Dict[str, Any]]]:
+    def _read_cache(self) -> Tuple[Dict[str, Any], Optional[str]]:
         if not self.cache_file.exists():
-            return None
+            return {}, None
         try:
             payload = json.loads(self.cache_file.read_text(encoding="utf-8"))
-            return payload.get("scores")
+            scores = payload.get("scores")
+            scores = scores if isinstance(scores, dict) else {}
+            date = payload.get("date")
+            return scores, (date if isinstance(date, str) else None)
         except (json.JSONDecodeError, OSError, TypeError):
-            return None
+            return {}, None
 
-    def _write_cache(self, scores: Dict[str, Dict[str, Any]]) -> None:
+    def _write_cache(self, scores: Dict[str, float], date: Optional[str]) -> None:
         try:
             self.cache_file.parent.mkdir(parents=True, exist_ok=True)
             self.cache_file.write_text(
                 json.dumps(
-                    {"cached_at": datetime.now().isoformat(), "scores": scores},
+                    {
+                        "cached_at": datetime.now().isoformat(),
+                        "scores": scores,
+                        "date": date,
+                    },
                     ensure_ascii=False,
                 ),
                 encoding="utf-8",
@@ -370,37 +479,41 @@ class EPSSClient:
         except OSError as e:
             logger.debug(f"EPSS-Cache-Write fehlgeschlagen: {e}")
 
-    def _fetch(self, cve_ids: List[str]) -> Dict[str, Dict[str, Any]]:
+    def _fetch(
+        self, cve_ids: List[str]
+    ) -> Tuple[Dict[str, float], Optional[str]]:
         """
         Holt EPSS-Scores von der API (in Chunks von EPSS_CHUNK_SIZE).
 
         Returns:
-            {CVE: {"epss": float, "percentile": float, "date": str}}.
+            ({CVE: float}, Datenstand-Date) - leeres Dict bei Fehlern.
         """
-        out: Dict[str, Dict[str, Any]] = {}
+        out: Dict[str, float] = {}
+        latest_date: Optional[str] = None
         for i in range(0, len(cve_ids), EPSS_CHUNK_SIZE):
             chunk = cve_ids[i : i + EPSS_CHUNK_SIZE]
             url = f"{EPSS_URL}?cve={','.join(chunk)}"
-            data = _http_get_json(url, EPSS_TIMEOUT_SECONDS)
+            try:
+                data = _http_get_json(url, EPSS_TIMEOUT_SECONDS)
+            except Exception as e:  # noqa: BLE001 - Netzwerkfehler abfangen, kein Crash
+                logger.debug(f"EPSS-Fetch fehlgeschlagen: {e}")
+                break
             if isinstance(data, dict):
                 for row in data.get("data") or []:
                     cve = row.get("cve")
                     if not cve:
                         continue
                     try:
-                        epss = float(row.get("epss", 0.0))
-                        percentile = float(row.get("percentile", 0.0))
+                        out[cve.strip().upper()] = float(row.get("epss"))
                     except (TypeError, ValueError):
                         continue
-                    out[cve.strip().upper()] = {
-                        "epss": epss,
-                        "percentile": percentile,
-                        "date": row.get("date", ""),
-                    }
+                    date = row.get("date")
+                    if isinstance(date, str) and date > (latest_date or ""):
+                        latest_date = date
             # Rate-Limit-Abschirmung zwischen Chunks (letzter Chunk: kein Sleep).
             if i + EPSS_CHUNK_SIZE < len(cve_ids):
                 time.sleep(EPSS_CHUNK_DELAY_SECONDS)
-        return out
+        return out, latest_date
 
 # ============================================================================
 # ORCHESTRATOR
@@ -435,7 +548,7 @@ def prioritize(
              "epss_available": bool,
              "enriched": int, "total": int}
     """
-    kev_ok = kev.load()
+    kev.load()
     cve_ids = [v.cve_id for v in vulns if getattr(v, "cve_id", None)]
     epss_scores = epss.get_scores(cve_ids) if cve_ids else {}
 
@@ -444,40 +557,30 @@ def prioritize(
 
     for v in vulns:
         cve_id = getattr(v, "cve_id", None)
-        if not cve_id:
-            # Keine CVE (z.B. GHSA-only) -> keine KEV/EPSS, nur Severity-basiert.
-            v_kev = False
-            kev_entry = None
-            epss_row = None
-        else:
-            v_kev = kev.is_kev(cve_id) if kev_ok else False
-            kev_entry = kev.entry(cve_id) if kev_ok else None
-            epss_row = epss_scores.get(cve_id)
+        kev_entry = kev.entry(cve_id) if (kev.available and cve_id) else None
+        epss_val = epss_scores.get(cve_id) if cve_id else None
 
-        epss_val = epss_row["epss"] if epss_row else None
-        tier, score, reasons = compute_risk(v.severity, v_kev, epss_val)
+        tier, score, reasons = compute_risk(v.severity, kev_entry, epss_val)
 
         if _can_set(v, "kev"):
-            v.kev = v_kev
+            v.kev = kev_entry is not None
             v.kev_date_added = (kev_entry.get("dateAdded") if kev_entry else None)
-            v.kev_ransomware = bool(
-                kev_entry
-                and kev_entry.get("knownRansomwareCampaignUse") == "Known"
-            )
+            v.kev_ransomware = _kev_ransomware(kev_entry)
             v.epss = epss_val
-            v.epss_percentile = (epss_row["percentile"] if epss_row else None)
-            v.epss_date = (epss_row.get("date") if epss_row else None)
+            v.epss_percentile = None  # Cache speichert nur den Score (float)
+            v.epss_date = epss.last_date if epss_val is not None else None
             v.risk_tier = tier
             v.risk_score = score
             v.risk_reasons = reasons
-            enriched += 1
 
+        if kev_entry is not None or epss_val is not None:
+            enriched += 1
         tier_counts[tier] = tier_counts.get(tier, 0) + 1
 
     return {
         "tiers": tier_counts,
-        "kev_available": bool(kev_ok),
-        "epss_available": bool(epss_scores),
+        "kev_available": bool(kev.available),
+        "epss_available": bool(epss.available),
         "enriched": enriched,
         "total": len(vulns),
     }
