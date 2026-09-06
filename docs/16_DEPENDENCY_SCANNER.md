@@ -16,6 +16,9 @@ Seit 2026-09-05: **SOTA-Risiko-Priorisierung** — CISA KEV (Known Exploited Vul
 - **OSV-Schema** — Structured vulnerability data format
 - **CISA KEV-Feed** — "aktiv ausgenutzt"-Signal (P0-Tier, Ransomware-Flag)
 - **FIRST EPSS** — Exploit-Wahrscheinlichkeit (0–1) als kontinuierliches Risikosignal
+- **Code-Level Reachability** (2026-09-06) — statische AST-Import-Analyse +
+  `importlib.metadata`-Abhängigkeits-Closure: installiert, aber ungenutzte CVEs
+  werden nicht heraufgestuft (Details: §Reachability)
 
 Recherche: 2026-07-31 via DuckDuckGo; OSV-Refactor: 2026-09-05; KEV/EPSS-Enrichment: 2026-09-05/06
 (Recherche: safeguard.sh, devsecopsatlas.com, FIRST.org, CISA.gov)
@@ -32,6 +35,16 @@ Implementiert in `scripts/vuln_enrich.py` (Scanner-integration in `scan()`, best
 | **P1** | `critical` oder (`high` + EPSS ≥ 0.30) |
 | **P2** | `high` (EPSS < 0.30) oder `medium` |
 | **P3** | `low` oder unklassifizierte Schwachstelle |
+
+**Reachability-Regel** (2026-09-06, `prioritize()`): `reachable=False`
+(installiert, aber weder importiert noch als deklarierte Abhängigkeit
+eines importierten Packages erreichbar) → Tier wird um genau **eine Stufe
+herabgestuft** (P0→P1, P1→P2, P2→P3, P3→P3) — keine komplette Entfernung.
+`reachable=True`/`None` (unbestimmbar, z.B. nicht installiert) → unverändert.
+Begründung: ungenutzte Code-Pfade sind real (aber nicht absolut) schwerer
+angreifbar; ein False-Positive (falsches "unreachable") darf kein P0
+verschwinden lassen, aber ein P0→P1 ist vertretbar, weil KEV-CVEs bei
+tatsächlicher Nutzung sofort wieder P0 sind.
 
 **Risikoscore** (0–17, Report + JSON): Severity-Basis (`critical` 10 / `high` 5 / `medium` 2 / `low` 1 / `unknown` 0) + KEV +5 + EPSS × 2.
 
@@ -50,7 +63,48 @@ Implementiert in `scripts/vuln_enrich.py` (Scanner-integration in `scan()`, best
 - **Best-effort:** Enrichment-Fehler fallen nie auf den Scan zurück (`kev`/`epss` bleiben `null`/`False`, Scan + Exit-Codes unverändert)
 - `--no-enrich`: komplett deaktiviert (Alt-Verhalten, keine KEV/EPSS-Abfragen)
 
-**Report-Extension** (Console + JSON): `kev`, `kev_date_added`, `kev_ransomware`, `epss`, `risk_tier`, `risk_score` pro Vuln + `enrichment_stats` (total/enriched/kev_available/epss_available/tiers) im Scan-Report.
+**Report-Extension** (Console + JSON): `kev`, `kev_date_added`, `kev_ransomware`, `epss`, `risk_tier`, `risk_score`, `reachable` pro Vuln + `enrichment_stats` (total/enriched/kev_available/epss_available/tiers/reachability_available/reachable_true/reachable_false/reachable_unknown) im Scan-Report.
+
+## Reachability (Code-Level, 2026-09-06)
+
+Implementiert in `scripts/reachability.py` (`CodeReachability`),
+eingebunden in `scan()` (einmalige Analyse pro Scan, best-effort) und
+`vuln_enrich.prioritize()` (Tier-Herabstufung bei `reachable=False`).
+
+**Mechanik** (voll lokal, kein pip, kein Netzwerk, keine Ausführung des App-Code):
+
+1. **AST-Import-Sammlung** — alle `*.py` im Repo (venv/site-packages,
+   `.git`, `node_modules`, `.venv`, `venv*` ausgeschlossen), `utf-8-sig`
+   lesen (BOM-tolerant — BOM-Dateien im Repo würden sonst das AST-Parsing
+   brechen und Importe verlieren).
+2. **Distribution-Map** — `importlib.metadata.packages_distributions()`
+   (Module → installierte Distributionen, Python 3.12+), invertiert zu
+   Distribution → Module, PyPI-Name-Normierung (`-`/`_`/`.` äquivalent).
+3. **Reachability-Closure** — direkt importierte Distributionen + ihre
+   deklarierten Abhängigkeiten transitiv (BFS via
+   `importlib.metadata.requires()`, `Requires-Dist`-Parsen).
+   Wichtig: deckt **indirekte Nutzung** ab (z.B. `urllib3` via `requests`
+   — ohne Closure wäre `urllib3` falsch "unreachable" und wurde
+   herabgestuft, obwohl die App es über requests nutzt).
+
+**Semantik** (`is_reachable(dist)`):
+
+| Rückgabe | Bedeutung |
+|----------|-----------|
+| `True` | direkt importiert ODER deklarierte Abhängigkeit eines importierten (transitiv) |
+| `False` | installiert, aber in keiner der beiden Kategorien |
+| `None` | unbestimmbar (Distribution nicht installiert / Analyse fehlgeschlagen) |
+
+**Sicherheitsnetz:** jede Stufe ist best-effort — fehlende/fehlerhafte
+Metadaten, Parse-Fehler oder ein leerer Repo-Baum liefern `None`
+(= "unbestimmbar", Tier bleibt unverändert), nie ein falsches `False`.
+Fehler werden geloggt, brechen den Scan nie.
+
+**Einschränkung:** statische Analyse — `importlib`-Dynamik, `__import__`,
+Entry-Points, Plugins und Conditional-Imports werden nicht erkannt.
+Daher Herabstufung um genau eine Stufe (nicht komplett) und `None`
+bleibt immer "unbestimmbar" statt "sicher".
+
 
 ## Warum OSV statt pip-audit?
 
@@ -158,11 +212,12 @@ Exit-Codes: `0` = ok, `1` = Vulns gefunden (`--strict`), `2` = Scan-Fehler
 python -m pytest tests/test_dependency_vulnerability_scanner.py -v
 ```
 
-100 Tests (17 Klassen): Parser (10), Vulnerability-Modell (3), ScanResult (4),
+122 Tests (18 Klassen): Parser (10), Vulnerability-Modell (3), ScanResult (4),
 AdvisoryCache (6), ExtractSeverity (8), Heuristik (3), Reporter (6), OSV-Scan (5),
 OSV-Cache (2), to_concrete_version (6), OSV-Severity (7),
 **Enrichment (SOTA):** ComputeRisk (12), ExtractCve (7), KevCatalog (7),
-EpssClient (6), Prioritize (3), ScannerEnrichment (5).
+EpssClient (6), Prioritize (4), ScannerEnrichment (6),
+**Reachability:** ExtractImports (4), CodeReachability (8, inkl. Closure-Tests).
 
 ## CI/CD-Integration
 
@@ -189,7 +244,10 @@ EpssClient (6), Prioritize (3), ScannerEnrichment (5).
 - Version aus einem Bereich (z.B. `>=1.24,<2.0`) wird als **Untergrenze** geprüft (konservativ)
 - Enrichment ist **best-effort**: offline ohne Cache bzw. bei API-Ausfall bleiben `kev`/`epss`/`risk_tier` unbewertet (keine Fake-Daten); der Scan bleibt gültig
 - EPSS deckt nur CVEs ab, die FIRST kennt; KEV nur aktuell gelistete CVEs — Abwesenheit bedeutet nicht "nicht ausgenutzt"
-- Keine Reachability-Analyse (installierte, aber ungenutzte CVEs werden mitpriorisiert) — bekanntes, dokumentiertes Next-Step
+- Reachability ist **statisch** (AST + Metadaten): dynamische Imports,
+  `__import__`, Entry-Points und Plugins werden nicht erkannt — deshalb
+  Herabstufung nur um eine Stufe und `None` als "unbestimmbar"
+  (Details: §Reachability)
 
 ## Wartung
 

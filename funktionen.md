@@ -1328,12 +1328,12 @@ SOTA LangGraph-basierte StateGraph-Pipeline für psychologische Sessions mit 7 N
 |--------|--------|
 | **Zweck** | Privacy-preserving Security-Scan für Python-Dependencies + SOTA-Risiko-Priorisierung (P0–P3) |
 | **Engine** | OSV-API (Primary) + pip-audit (Zweitquelle) + Heuristik-Fallback |
-| **Enrichment** | CISA KEV + FIRST EPSS via `scripts/vuln_enrich.py` (best-effort, `--no-enrich` deaktiviert) |
+| **Enrichment** | CISA KEV + FIRST EPSS via `scripts/vuln_enrich.py` + Code-Level-Reachability via `scripts/reachability.py` (best-effort, `--no-enrich` deaktiviert KEV/EPSS/Reachability) |
 | **Input** | `requirements.txt` (oder custom via `-r`) |
-| **Output** | Console-Report (inkl. Risk-Tier) + JSON (`-o report.json`, inkl. `enrichment_stats`) |
+| **Output** | Console-Report (inkl. Risk-Tier + Reachability-Tag) + JSON (`-o report.json`, inkl. `enrichment_stats`) |
 | **Security** | `--strict` Exit-1 bei ANY Vulnerability (CI/CD-fähig) |
 | **Cache** | `data/vuln_cache/` (osv/, kev/, epss/), 24h TTL, `--refresh` zum manuellen Aktualisieren |
-| **Tests** | 100 Tests / 17 Klassen (`tests/test_dependency_vulnerability_scanner.py`) |
+| **Tests** | 122 Tests / 18 Klassen (`tests/test_dependency_vulnerability_scanner.py`) |
 | **RAG** | **Nicht** in RAG aufnehmen (Tool, kein Wissensdokument, Ergebnisse zeitabhängig) |
 
 ### Kern-Komponenten
@@ -1351,9 +1351,12 @@ SOTA LangGraph-basierte StateGraph-Pipeline für psychologische Sessions mit 7 N
 | 9 | `vuln_enrich.compute_risk()` | ~117 | Pure/deterministisches Tiering: P0=KEV, P1=critical/(high+EPSS≥0.3), P2=high/medium, P3=rest; Score 0–17 |
 | 10 | `vuln_enrich.KEVCatalog` | ~198 | CISA-KEV-Feed: Cache (`kev/kev_cache.json`), Offline/Refresh, case-insensitiver Lookup |
 | 11 | `vuln_enrich.EPSSClient` | ~373 | FIRST-EPSS: Batch (Chunk ≤100 CVEs), Cache (`epss/epss_cache.json`), `get_scores()` → `Dict[str, float]` |
-| 12 | `vuln_enrich.prioritize()` | ~550 | Orchestriert KEV+EPSS+`compute_risk` pro Vuln; robust gegen `__slots__`/Attribute-Fehler |
-| 13 | `ReportFormatter` | ~947 | Console-Report (inkl. P0–P3) + JSON-Report mit `enrichment_stats` |
-| 14 | `main()` | ~1061 | CLI-Entry-Point: `--strict`, `--offline`, `--refresh`, `--no-enrich`, `-r`, `-o` |
+| 12 | `vuln_enrich.prioritize()` | ~550 | Orchestriert KEV+EPSS+`compute_risk` pro Vuln; **Reachability-Regel:** `reachable=False` → Tier eine Stufe herab (P0→P1, …, P3→P3); robust gegen `__slots__`/Attribute-Fehler |
+| 13 | `reachability.extract_imports()` | ~60 | AST-Import-Sammlung einer `.py`-Datei (BOM-tolerant via `utf-8-sig`; Parse-Fehler → `set()`) |
+| 14 | `reachability._dist_requires()` | ~110 | Deklarierte Abhängigkeiten einer Distribution via `importlib.metadata.requires()` (Parsen von `Requires-Dist`) |
+| 15 | `reachability.CodeReachability` | ~200 | Repo-Scan: Import-Set + Distribution-Map (`packages_distributions()`) + **Abhängigkeits-Closure** (BFS); `is_reachable()` → `True`/`False`/`None` (unbestimmbar) |
+| 16 | `ReportFormatter` | ~947 | Console-Report (inkl. P0–P3 + `[unreachable]`-Tag) + JSON-Report mit `enrichment_stats` |
+| 17 | `main()` | ~1061 | CLI-Entry-Point: `--strict`, `--offline`, `--refresh`, `--no-enrich`, `-r`, `-o` |
 
 ### SOTA Features
 - OSV als Primary-Engine (direkter API-Call statt pip-audit-Subprocess, pypa/advisory-database als Zweitquelle)
