@@ -22,7 +22,7 @@ CISA KEV und FIRST EPSS-basierte P0–P3-Priorisierung in den OSV-Dependency-Sca
 | `scripts/vuln_enrich.py` (KEVCatalog, EPSSClient, compute_risk, prioritize) | Neue Datenquellen (NVD, OSV-GHSA) |
 | Scanner-Integration (best-effort in `scan()`, `--no-enrich`) | npm/NuGet/Cargo-Scans |
 | `scripts/reachability.py` (Code-Level Reachability, 2026-09-06 nachgefasst) | Dynamische/Plugin-Imports (statische Analyse-Grenze) |
-| Test-Suite: 122 Tests / 18 Klassen grün | UI-Anzeige der Tiers (Streamlit) |
+| Test-Suite: 123 Tests / 18 Klassen grün | UI-Anzeige der Tiers (Streamlit) |
 | Doku-Pflicht (Doc 16, funktionen.md §N, Worklog) | |
 
 ## Definition of Done
@@ -38,11 +38,11 @@ CISA KEV und FIRST EPSS-basierte P0–P3-Priorisierung in den OSV-Dependency-Sca
 | 7 | Report: `kev`, `epss`, `risk_tier`, `risk_score`, `enrichment_stats` (Console + JSON) | TestReportFormatter + Code | ✅ |
 | 8 | `--no-enrich`, `--offline`, `--refresh` greifen auch für KEV/EPSS | Tests + argparse | ✅ |
 | 9 | Doku-Pflicht: Doc 16, funktionen.md §N, Worklog | Inspektion | ✅ |
-| 10 | Reachability: `extract_imports()` (AST, BOM-tolerant) + `CodeReachability.is_reachable()` → True/False/None | TestExtractImports (4) + TestCodeReachability (8) | ✅ |
-| 11 | Abhängigkeits-Closure: indirekt genutzte Dists (z.B. `urllib3` via `requests`) nicht als unreachabel markiert | TestCodeReachability::test_dependency_closure_* (4) | ✅ |
-| 12 | `prioritize()`: `reachable=False` → Tier eine Stufe herab (P0→P1, P1→P2, P2→P3, P3→P3); True/None → unverändert | TestPrioritize (4) | ✅ |
+| 10 | Reachability: `extract_imports()` (AST, BOM-tolerant) + `CodeReachability.is_reachable()` → True/False/None | TestReachability (10, inkl. 4 extract_imports-Tests + BOM-Test, Semantik, Exclude, Stats, Idempotenz) | ✅ |
+| 11 | Abhängigkeits-Closure: indirekt genutzte Dists (z.B. `urllib3` via `requests`) nicht als unreachabel markiert | TestReachability::test_dependency_closure_counts_as_reachable + test_closure_ignores_uninstalled_deps | ✅ |
+| 12 | `compute_risk`/`prioritize`: `reachable=False` → Tier eine Stufe herab (P0→P1, P1→P2, P2→P3, P3→P3); True/None → unverändert | TestComputeRisk (6 Reachability-Tests) + TestPrioritize (3) | ✅ |
 | 13 | Scanner: `reachable`-Feld pro Vuln + `enrichment_stats`-Reachability-Keys; best-effort (Fehler → None, Scan intakt); `--no-enrich` deaktiviert | TestScannerEnrichment (6) | ✅ |
-| 14 | Report: `unreachable`-Tag (Console) + `kev_ransomware`-Assertion | TestReportFormatter | ✅ |
+| 14 | Report: `unreachable`-Tag (Console) + `kev_ransomware` im JSON-Report | TestScannerEnrichment::test_console_report_shows_unreachable_tag + TestReportFormatter::test_json_report_includes_kev_ransomware_flag | ✅ |
 
 ## Alternativen & Entscheidung
 
@@ -81,11 +81,11 @@ CISA KEV und FIRST EPSS-basierte P0–P3-Priorisierung in den OSV-Dependency-Sca
 | 7 | `docs/16_DEPENDENCY_SCANNER.md` | SOTA-Risiko-Priorisierung §, Architektur, Security, Privacy, Usage, Offline/Refresh, Tests, Limitationen | — |
 | 8 | `funktionen.md` | §N (Scanner) vollständig aktualisiert: Enrichment, Kern-Komponenten, SOTA | — |
 | 9 | `docs_archive/WORKLOG_KEV_EPSS_PRIORITY_ENRICHMENT_20260906.md` | dieser Worklog | — |
-| 10 | `scripts/reachability.py` (NEU) | `extract_imports()` (AST, **BOM-Fix `utf-8-sig`**), `_dist_requires()` (Requires-Dist-Parsing), `CodeReachability` (Import-Set + Distribution-Map + BFS-Closure), `is_reachable()` → True/False/None | 122 passed |
-| 11 | `scripts/vuln_enrich.py` | `prioritize()`: `reachable`-Parameter (Default None); `reachable=False` → Tier eine Stufe herab (P0→P1, …, P3→P3); Stats-Keys `reachable_true/false/unknown` | 122 passed |
-| 12 | `scripts/dependency_vulnerability_scanner.py` | `Vulnerability.reachable` (Slot + Default None + `to_dict`); `scan()` baut `CodeReachability` einmal (best-effort); `_enrich_vulns` übergibt `reachability`; `--no-enrich`: `reachability_available=False`, Counter=0; `unreachable`-Tag im Report | 122 passed |
-| 13 | `tests/test_dependency_vulnerability_scanner.py` | +`TestExtractImports` (4, inkl. BOM-File-Test), +`TestCodeReachability` (8, inkl. 4 Closure-Tests), Prioritize-Tests erweitert (4), ScannerEnrichment erweitert (6), Report-Test: `kev_ransomware` | 122 passed |
-| 14 | `docs/16_DEPENDENCY_SCANNER.md` | §Reachability, Tiering-Regel + Reachability-Regel, Report-Extension, Tests (122), Limitationen | — |
+| 10 | `scripts/reachability.py` (NEU) | `extract_imports()` (AST, **BOM-Fix `utf-8-sig`**), `_dist_requires()` (Requires-Dist-Parsing), `CodeReachability` (Import-Set + Distribution-Map + BFS-Closure), `is_reachable()` → True/False/None | 123 passed |
+| 11 | `scripts/vuln_enrich.py` | `compute_risk`/`prioritize()`: `reachable`-Parameter (Default None); `reachable=False` → Tier eine Stufe herab (P0→P1, …, P3→P3); Stats-Keys `reachable_true/false/unknown` | 123 passed |
+| 12 | `scripts/dependency_vulnerability_scanner.py` | `Vulnerability.reachable` (Slot + Default None + `to_dict`); `scan()` baut `CodeReachability` einmal (best-effort); `_enrich_vulns` übergibt `reachability`; `--no-enrich`: `reachability_available=False`, Counter=0; `unreachable`-Tag im Report | 123 passed |
+| 13 | `tests/test_dependency_vulnerability_scanner.py` | +`TestReachability` (10, inkl. BOM-Test + 2 Closure-Tests), TestComputeRisk +6 (Reachability), TestPrioritize +3, TestScannerEnrichment erweitert (u.a. test_reachability_downgrades_unreachable_package), TestReportFormatter::test_json_report_includes_kev_ransomware_flag | 123 passed |
+| 14 | `docs/16_DEPENDENCY_SCANNER.md` | §Reachability, Tiering-Regel + Reachability-Regel, Report-Extension, Tests (123), Limitationen | — |
 | 15 | `funktionen.md` | §N: Enrichment-Zeile, Komponenten 13–15 (reachability), ReportFormatter, SOTA-Feature | — |
 
 ## Rollback-Strategie
@@ -100,7 +100,7 @@ CISA KEV und FIRST EPSS-basierte P0–P3-Priorisierung in den OSV-Dependency-Sca
 | # | Risiko | Schweregrad | Maßnahme |
 |---|--------|-------------|----------|
 | 1 | Live-KEV/EPSS-Endpunkte noch nicht in Session validiert | niedrig (best-effort) | **gelöst 2026-09-06**: Live-Run OK |
-| 2 | `kev_ransomware`-Feld nicht in Test-Report-Assertion | sehr niedrig | **gelöst 2026-09-06**: Assertion in `test_report_includes_kev_epss_and_risk` |
+| 2 | `kev_ransomware`-Feld nicht in Test-Report-Assertion | sehr niedrig | **gelöst 2026-09-06**: Assertion in `TestReportFormatter::test_json_report_includes_kev_ransomware_flag` |
 | 3 | Statische Reachability erkennt dynamische Imports nicht (False-Positives "unreachable") | niedrig (nur Herabstufung um 1 Stufe) | Herabstufung begrenzt (P3 bleibt P3); `None` = unbestimmbar; dokumentiert in Doc 16 §Reachability |
 
 ## Offene Fragen
@@ -120,3 +120,4 @@ CISA KEV und FIRST EPSS-basierte P0–P3-Priorisierung in den OSV-Dependency-Sca
 | 4 | Live-Run `python scripts/dependency_vulnerability_scanner.py` (OSV+KEV+EPSS, 53 Packages) | 165 Vulns; enriched 164/165; P0=0 P1=19 P2=125 P3=21; Exit 0 | 2026-09-06 |
 | 5 | Live-Run `--strict` | Exit 1 (korrekt: Vulns gefunden) | 2026-09-06 |
 | 6 | Live-Run `--offline --no-enrich` (Cache-Treiber) | Scan aus Cache, Exit 0 | 2026-09-06 |
+| 7 | **FINAL** `pytest tests/test_dependency_vulnerability_scanner.py -q` (nach Reachability + Closure + BOM-Fix + `kev_ransomware`-Assertion) | **123 passed** (0 failed, 0 errors) | 2026-09-06 |
