@@ -59,7 +59,7 @@ tatsächlicher Nutzung sofort wieder P0 sind.
 
 - ONLINE: frischer Cache → nutzen; sonst Fetch → Cache; Fetch-Fehler → staler Cache (markiert)
 - `--offline`: KEIN Netzwerk — nur Cache, ohne Cache "nicht verfügbar" (keine Fake-Daten)
-- `--refresh`: TTL ignorieren, KEV/EPSS zwangsweise neu laden
+- `--refresh`: TTL ignorieren — KEV (gesamter Feed) und OSV werden zwangsweise neu geladen; EPSS: nur CVEs, die im Cache fehlen (bei vollständigem Cache **keine** Netzwerk-Abfrage)
 - **Best-effort:** Enrichment-Fehler fallen nie auf den Scan zurück (`kev`/`epss` bleiben `null`/`False`, Scan + Exit-Codes unverändert)
 - `--no-enrich`: komplett deaktiviert (Alt-Verhalten, keine KEV/EPSS-Abfragen)
 
@@ -201,7 +201,7 @@ python scripts/dependency_vulnerability_scanner.py --cache-dir C:\tmp\cache
 |-------|----------|-------|
 | Default | frischer Cache -> kein; sonst ja | 24h TTL, dann Refresh |
 | `--offline` | **nie** (OSV, KEV, EPSS) | frischen oder (markierten) Stale-Cache; ohne Cache -> Fehler |
-| `--refresh` | **immer** (OSV, KEV, EPSS) | Cache wird neu geschrieben |
+| `--refresh` | OSV, KEV: **immer**; EPSS: nur fehlende CVEs (sonst kein Request) | OSV/KEV-Cache wird neu geschrieben; EPSS-Cache nur bei neuen Einträgen |
 
 Exit-Codes: `0` = ok, `1` = Vulns gefunden (`--strict`), `2` = Scan-Fehler
 (z.B. offline ohne Cache oder Fallback auf Heuristik).

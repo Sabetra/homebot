@@ -2,7 +2,7 @@
 
 > **Erstellt:** 2026-09-06 (Abschluss-Worklog, Arbeit 2026-09-05/06)
 > **Erweitert:** 2026-09-06 (Code-Level Reachability + Abhängigkeits-Closure + BOM-Fix)
-> **Status:** ABGESCHLOSSEN (Reachability-Teil: Implementierung + Tests + Doku fertig; Review offen)
+> **Status:** ABGESCHLOSSEN (inkl. KEV/EPSS/OSV-Cache-Refresh; Review offen)
 > **Autor:** Cline-Agent-Session
 > **Reviewer:** (offen — siehe Offene Fragen)
 > **Kanonische Doku:** [docs/16_DEPENDENCY_SCANNER.md](../docs/16_DEPENDENCY_SCANNER.md) + `funktionen.md` §N
@@ -121,3 +121,22 @@ CISA KEV und FIRST EPSS-basierte P0–P3-Priorisierung in den OSV-Dependency-Sca
 | 5 | Live-Run `--strict` | Exit 1 (korrekt: Vulns gefunden) | 2026-09-06 |
 | 6 | Live-Run `--offline --no-enrich` (Cache-Treiber) | Scan aus Cache, Exit 0 | 2026-09-06 |
 | 7 | **FINAL** `pytest tests/test_dependency_vulnerability_scanner.py -q` (nach Reachability + Closure + BOM-Fix + `kev_ransomware`-Assertion) | **123 passed** (0 failed, 0 errors) | 2026-09-06 |
+
+## Cache-Refresh & finale Validierung (2026-09-06, ~11:30–11:50)
+
+| # | Schritt | Ergebnis |
+|---|---------|----------|
+| 1 | `--refresh` (Enrichment aktiv) | Exit 0; OSV-Package-Caches 11:37–11:38 neu; `kev_cache.json` (1,39 MB) 11:38 neu geladen |
+| 2 | EPSS-Abdeckung geprüft | 93 eindeutige CVEs im Scan = 93 im Cache (0 fehlend) |
+| 3 | EPSS-Vollrefetch erzwungen (Cache-Backup → `~\homebot_backups\epss_cache_20260906_pre_refetch.json`, Cache gelöscht, Scan mit Enrichment) | 93/93 CVEs in 1 EPSS-Chunk geholt; Cache 11:43 neu; EPSS-API-Datenstand **2026-09-05** (aktuellster verfügbarer Snapshot); Exit 0 |
+| 4 | Finaler Report (nach Refresh) | 165 Vulns; 164/165 enriched; `reachable`: True=160, False=0, None=5 (5 ohne CVE-Mapping); `kev=True`: 0; `kev_ransomware`-Feld bei 165/165 vorhanden; Tiers P0=0/P1=19/P2=125/P3=21 (wie vor dem Refresh — konsistent) |
+| 5 | Exit-Codes (final) | Default → **0**; `--strict` → **1**; `--offline --no-enrich` → **0** |
+| 6 | `py_compile` (vuln_enrich, reachability, Scanner, Tests) | alle OK |
+| 7 | **FINAL** `pytest tests/test_dependency_vulnerability_scanner.py -q` | **123 passed** (41.7 s) |
+| 8 | `git status --short` | clean (Auto-Save-Snapshots committen alle Änderungen) |
+
+**Verhaltens-Nuance (dokumentiert in Doc 16):** `--refresh` lädt KEV (gesamter Feed)
+und OSV immer neu; EPSS wird per-CVE geholt und **nur** bei fehlenden CVEs —
+bei vollständigem Cache bleibt `--refresh` bei EPSS ohne Netzwerk-Request
+und ohne Cache-Rewrite. Für einen erzwungenen EPSS-Vollrefetch: Cache-Datei
+`data/vuln_cache/epss/epss_cache.json` entfernen (Backup vorher!).
