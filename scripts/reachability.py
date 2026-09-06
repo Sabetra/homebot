@@ -12,18 +12,35 @@ Local-only, AST-basiert (keine Code-Ausführung):
   2. Mappt installierte Distributionen auf ihre top-level Module
      (importlib.metadata.packages_distributions(), Python 3.10+;
      löst z.B. pillow -> PIL, beautifulsoup4 -> bs4 korrekt auf).
-  3. Eine Distribution ist "reachable", wenn eines ihrer top-level
-     Module irgendwo im Repository importiert wird.
+  3. Eine Distribution ist "reachable", wenn
+     a) eines ihrer top-level Module im Repo-Code importiert wird, ODER
+     b) sie (transitiv) in den deklarierten Abhängigkeiten eines direkt
+        importierten Distribution liegt (Abhängigkeits-Closure über
+        importlib.metadata.requires — z.B. urllib3 via requests).
+
+Warum Closure (2026-09-06): Naive Direkt-Import-Analyse würde transitiv
+erreichbare Pakete (urllib3 via requests, click via streamlit) fälschlich
+herabstufen — bei einem Security-Tool eine gefährliche Fehlzuversicht.
+Die Closure ist die Standard-Approximation für Runtime-Reachability und
+bleibt vollständig lokal (nur lokale Metadaten, kein pip, kein Netzwerk).
 
 Semantik (is_reachable):
-  True   -> Modul wird im Repo-Code importiert (volle Priorität)
-  False  -> kein Import gefunden (Tier wird in compute_risk um 1 gesenkt)
+  True   -> im Reachability-Closure (Import oder deklarierte Abhängigkeit)
+  False  -> installiert, aber weder importiert noch in der Closure
+             (Tier wird in compute_risk um 1 gesenkt)
   None   -> unbestimmbar (Distribution nicht installiert / Analyse
              nicht verfügbar) -> KEINE Tier-Änderung (kein False-Negative)
 
+Einschränkungen (bewusste Trade-offs):
+  - Statisch: hinter try/except oder importlib.import_module() verborgene
+    Importe werden nicht gesehen.
+  - Deklarative (Metadata-) Abhängigkeiten, nicht der reale
+    Runtime-Importgraph — deklarative Abhängigkeiten zählen als reachable
+    (vorsorglich, Richtung False-Negative für Downgrades).
+
 Privacy:
   - Kein Netzwerk, keine Telemetrie, kein Code verlässt die Maschine.
-  - Nur lokale Datei-Lesungen (AST-Parsing).
+  - Nur lokale Datei-Lesungen (AST-Parsing) + lokale Metadaten.
 
 Best-effort:
   - Analyse-Fehler -> available=False, is_reachable() -> None.
@@ -55,10 +72,37 @@ DEFAULT_EXCLUDE_DIRS: frozenset = frozenset({
     "temp_scripts", "dead_code_archive",
 })
 
+# Namens-Normierung nach PEP 503 (für Distribution-Vergleiche)
+_NORMALIZE_RE = re.compile(r"[-_.]+")
+
+# Requirement-Name aus einer Requirement-String extrahieren
+# ("urllib3>=1.21", "pkg[extra] ; marker", "pkg (>=2)" -> Name)
+_REQ_NAME_RE = re.compile(r"^\s*([A-Za-z0-9][A-Za-z0-9._-]*)")
+
 
 def _normalize_name(name: str) -> str:
     """PyPI-kompatible Namens-Normierung (klein, -/_/. äquivalent)."""
     return re.sub(r"[-_.]+", "-", str(name or "")).lower()
+
+
+def _dist_requires(dist_name: str) -> List[str]:
+    """
+    Deklarierte Abhängigkeitsnamen (Distribution-Names) einer Distribution.
+
+    Best-effort: unbekannt/fehlerhaft -> leere Liste (kein Exception).
+    Verwendet importlib.metadata.requires() (lokal, kein pip, kein Netzwerk).
+    """
+    try:
+        dist = metadata.distribution(dist_name)
+        reqs = dist.requires or []
+    except Exception:  # noqa: BLE001 - best-effort, Closure bleibt nutzbar
+        return []
+    names: List[str] = []
+    for req in reqs:
+        m = _REQ_NAME_RE.match(str(req))
+        if m:
+            names.append(m.group(1))
+    return names
 
 
 def extract_imports(path: Path) -> Set[str]:
@@ -115,11 +159,19 @@ class CodeReachability:
         self.files_scanned = 0
         self.imported_modules: frozenset = frozenset()
         self._dist_map: Dict[str, List[str]] = {}  # normierte Distribution -> Module
+        self._reachable: Optional[Set[str]] = None  # Closure (normierte Dists)
     # -- Analyse ------------------------------------------------------------
 
     def build(self) -> bool:
         """
         Führt die Analyse durch (idempotent).
+
+        Steps:
+          1. Statische Import-Sammlung (AST, alle App-Code-Dateien).
+          2. Distribution-Map (importlib.metadata.packages_distributions).
+          3. Reachability-Closure: direkt importierte Distributionen +
+             ihre deklarierten Abhängigkeiten (transitiv, BFS) —
+             deckt z.B. urllib3 via requests ab.
 
         Returns:
             True, wenn die Analyse ausgeführt ist (available=True).
@@ -145,12 +197,39 @@ class CodeReachability:
         self.imported_modules = frozenset(imported)
         self.files_scanned = files
         self._dist_map = self._build_dist_map()
+        self._reachable = self._build_reachable_closure()
         self.available = True
         logger.debug(
             f"Reachability: {files} Dateien, {len(imported)} importierte Module, "
-            f"{len(self._dist_map)} Distributionen gemappt"
+            f"{len(self._dist_map)} Distributionen gemappt, "
+            f"{len(self._reachable)} reachable"
         )
         return True
+
+    def _build_reachable_closure(self) -> Set[str]:
+        """
+        Reachability-Closure (normierte Distributionen):
+        alle direkt importierten Distributionen + ihre deklarierten
+        Abhängigkeiten, transitiv (BFS). Nur installierte Distributionen
+        (aus _dist_map) sind Kandidaten.
+        """
+        direct = [
+            dist
+            for dist, modules in self._dist_map.items()
+            if any(module in self.imported_modules for module in modules)
+        ]
+        seen: Set[str] = set()
+        queue = list(direct)
+        while queue:
+            dist = queue.pop()
+            if dist in seen:
+                continue
+            seen.add(dist)
+            for dep in _dist_requires(dist):
+                dep_norm = _normalize_name(dep)
+                if dep_norm in self._dist_map and dep_norm not in seen:
+                    queue.append(dep_norm)
+        return seen
 
     def _build_dist_map(self) -> Dict[str, List[str]]:
         """
@@ -179,16 +258,17 @@ class CodeReachability:
         Erreichbarkeit einer Distribution (PyPI-Name) prüfen.
 
         Returns:
-            True   -> wird im Repo-Code importiert
-            False  -> Distribution bekannt, aber kein Import gefunden
+            True   -> im Reachability-Closure (direkt importiert oder
+                      deklarierte Abhängigkeit eines importierten Packages)
+            False  -> installiert, aber weder importiert noch in der Closure
             None   -> unbestimmbar (nicht installiert / Analyse fehlt)
         """
-        if not self.available or not distribution_name:
+        if not self.available or not distribution_name or self._reachable is None:
             return None
-        modules = self._dist_map.get(_normalize_name(distribution_name))
-        if not modules:
+        key = _normalize_name(distribution_name)
+        if key not in self._dist_map:
             return None
-        return any(module in self.imported_modules for module in modules)
+        return key in self._reachable
 
     # -- Statistik ----------------------------------------------------------
 
@@ -200,4 +280,5 @@ class CodeReachability:
             "files_scanned": self.files_scanned,
             "imported_modules": len(self.imported_modules),
             "mapped_distributions": len(self._dist_map),
+            "reachable_distributions": len(self._reachable or ()),
         }
