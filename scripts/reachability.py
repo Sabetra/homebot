@@ -64,7 +64,9 @@ def extract_imports(path: Path) -> Set[str]:
     (best-effort: leere Menge, kein Exception-Weiterreichen).
     """
     try:
-        source = path.read_text(encoding="utf-8", errors="replace")
+        # utf-8-sig: entfernt ggf. vorhandenes BOM (U+FEFF, Windows-Artefakt),
+        # sonst wuerfe ast.parse SyntaxError und die Imports gingen verloren.
+        source = path.read_text(encoding="utf-8-sig", errors="replace")
         tree = ast.parse(source)
     except (OSError, SyntaxError, ValueError) as e:
         logger.debug(f"extract_imports: {path} übersprungen: {e}")
