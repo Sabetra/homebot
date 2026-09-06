@@ -35,7 +35,7 @@ class TestToolProfiles:
         assert "finance_tab" in TOOL_PROFILES
         assert isinstance(TOOL_PROFILES["finance_tab"], ToolProfile)
 
-    def test_psych_tab_profile_exists(self):
+    def test_wellbeing_tab_profile_exists(self):
         assert "wellbeing_tab" in TOOL_PROFILES
         assert isinstance(TOOL_PROFILES["wellbeing_tab"], ToolProfile)
 
@@ -58,11 +58,11 @@ class TestToolProfiles:
         profile = get_profile("finance_tab")
         assert "file_writer" not in profile.allowed_tools
 
-    def test_psych_tab_no_fs_access(self):
+    def test_wellbeing_tab_no_fs_access(self):
         assert has_fs_read("wellbeing_tab") is False
         assert has_fs_write("wellbeing_tab") is False
 
-    def test_psych_tab_only_rag(self):
+    def test_wellbeing_tab_only_rag(self):
         profile = get_profile("wellbeing_tab")
         assert "rag_search" in profile.allowed_tools
         assert len(profile.allowed_tools) == 1
@@ -79,7 +79,7 @@ class TestToolProfiles:
         assert is_tool_allowed("rag_search", "finance_tab") is True
         assert is_tool_allowed("file_writer", "finance_tab") is False
 
-    def test_is_tool_allowed_psych(self):
+    def test_is_tool_allowed_wellbeing(self):
         assert is_tool_allowed("rag_search", "wellbeing_tab") is True
         assert is_tool_allowed("file_reader", "wellbeing_tab") is False
         assert is_tool_allowed("web_search", "wellbeing_tab") is False
@@ -88,7 +88,7 @@ class TestToolProfiles:
     # filter_tool_schemas Tests
     # ------------------------------------------------------------------
 
-    def test_filter_tool_schemas_psych(self):
+    def test_filter_tool_schemas_wellbeing(self):
         schemas = [
             {"function": {"name": "rag_search"}},
             {"function": {"name": "file_reader"}},

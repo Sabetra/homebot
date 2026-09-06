@@ -54,7 +54,7 @@ def _check_role_alternation(messages: List[Dict[str, str]]) -> bool:
     return True
 
 
-def _build_llm_messages_like_psych_chat(
+def _build_llm_messages_like_wellbeing_chat(
     system_prompt: str,
     session_history: List[Dict[str, str]],
     user_prompt: str,
@@ -115,7 +115,7 @@ class TestRoleAlternationPsychologicalChat:
             {'role': 'user', 'content': 'Und ich habe keine Motivation'},
         ]
         
-        messages = _build_llm_messages_like_psych_chat(
+        messages = _build_llm_messages_like_wellbeing_chat(
             system_prompt="Du bist ein Therapeut.",
             session_history=session_history,
             user_prompt="Können Sie mir helfen?",
@@ -140,7 +140,7 @@ class TestRoleAlternationPsychologicalChat:
             {'role': 'user', 'content': 'Seit Wochen schlaf ich schlecht'},
         ]
         
-        messages = _build_llm_messages_like_psych_chat(
+        messages = _build_llm_messages_like_wellbeing_chat(
             system_prompt="Du bist ein Therapeut.",
             session_history=session_history,
             user_prompt="Können Sie mir helfen?",
@@ -162,7 +162,7 @@ class TestRoleAlternationPsychologicalChat:
             {'role': 'assistant', 'content': 'Das ist ein wichtiges Signal.'},
         ]
         
-        messages = _build_llm_messages_like_psych_chat(
+        messages = _build_llm_messages_like_wellbeing_chat(
             system_prompt="Du bist ein Therapeut.",
             session_history=session_history,
             user_prompt="Können Sie mir helfen?",
@@ -176,7 +176,7 @@ class TestRoleAlternationPsychologicalChat:
         """
         Leere Session-History (erste Nachricht) sollte immer gültig sein.
         """
-        messages = _build_llm_messages_like_psych_chat(
+        messages = _build_llm_messages_like_wellbeing_chat(
             system_prompt="Du bist ein Therapeut.",
             session_history=[],
             user_prompt="Hallo, ich brauche Hilfe.",
@@ -197,7 +197,7 @@ class TestRoleAlternationPsychologicalChat:
             {'role': 'user', 'content': 'Vorherige Nachricht'},
         ]
         
-        messages = _build_llm_messages_like_psych_chat(
+        messages = _build_llm_messages_like_wellbeing_chat(
             system_prompt="Du bist ein Therapeut.",
             session_history=session_history,
             user_prompt="Aktuelle Nachricht.",
@@ -256,7 +256,7 @@ class TestRoleAlternationNormalizationFix:
             {'role': 'user', 'content': 'Und ich habe keine Motivation'},
         ]
         
-        messages = _build_llm_messages_like_psych_chat(
+        messages = _build_llm_messages_like_wellbeing_chat(
             system_prompt="Du bist ein Therapeut.",
             session_history=session_history,
             user_prompt="Können Sie mir helfen?",
@@ -282,7 +282,7 @@ class TestRoleAlternationNormalizationFix:
             {'role': 'user', 'content': 'Seit Wochen schlaf ich schlecht'},
         ]
         
-        messages = _build_llm_messages_like_psych_chat(
+        messages = _build_llm_messages_like_wellbeing_chat(
             system_prompt="Du bist ein Therapeut.",
             session_history=session_history,
             user_prompt="Können Sie mir helfen?",

@@ -53,7 +53,7 @@ class SmartHintGenerator:
 - Lade die relevante PDF im Seitenmenü hoch
 - Frage dann spezifisch: *"Was steht im PDF zu X?"*
 - Erwähne Seitenzahlen wenn bekannt: *"Laut Seite 5..."*
-- Nutze den **Psycho-Tab** für psychologische Fachkonzepte"""
+- Nutze den **Wellbeing-Tab** für psychologische Fachkonzepte"""
         },
         
         "unklar": {
@@ -70,7 +70,7 @@ class SmartHintGenerator:
 - Gib mir mehr Kontext (PDF, Link, etc.)
 - Weise mich explizit auf den Fehler hin
 - Frage nochmal mit mehr Details
-- Falls Fachkonzept: Nutze den **Psycho-Tab** mit aktivierter Knowledge-Graph-Suche"""
+- Falls Fachkonzept: Nutze den **Wellbeing-Tab** mit aktivierter Knowledge-Graph-Suche"""
         },
         
         "keine_quelle": {

@@ -120,7 +120,7 @@ def test_kg_faiss_manager_factory_injects_late_bound_db_instance(monkeypatch):
     monkeypatch.setattr(kg_manager, "_wellbeing_kg_faiss_manager_instance", singleton)
 
     sentinel_db = object()
-    factory_result = kg_manager.get_psycho_kg_faiss_manager(db_instance=sentinel_db)
+    factory_result = kg_manager.get_wellbeing_kg_faiss_manager(db_instance=sentinel_db)
 
     assert factory_result is singleton
     assert factory_result._db_instance is sentinel_db

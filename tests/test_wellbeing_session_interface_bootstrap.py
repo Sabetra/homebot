@@ -3,7 +3,7 @@ from types import SimpleNamespace
 import wellbeing_session_interface as psi_module
 
 
-def test_psych_rag_bootstrap_is_lazy_and_idempotent(monkeypatch):
+def test_wellbeing_rag_bootstrap_is_lazy_and_idempotent(monkeypatch):
     bootstrap_calls = []
 
     class FakeRagBootstrapper:

@@ -1,7 +1,7 @@
 from wellbeing_session.response_provenance import (
-    build_psych_web_provenance_instruction,
+    build_wellbeing_web_provenance_instruction,
     finalize_wellbeing_response_provenance,
-    validate_psych_response_provenance,
+    validate_wellbeing_response_provenance,
 )
 
 
@@ -12,7 +12,7 @@ def test_rejects_research_claim_and_urls_without_verified_web_sources() -> None:
         "und https://morgenroth.at/wise-mind/."
     )
 
-    result = validate_psych_response_provenance(response, verified_web_urls=())
+    result = validate_wellbeing_response_provenance(response, verified_web_urls=())
 
     assert result.is_valid is False
     assert result.has_unsupported_research_claim is True
@@ -26,7 +26,7 @@ def test_allows_only_exact_urls_from_request_local_web_results() -> None:
     verified_url = "https://example.org/verified-article"
     response = f"Die ergänzende Websuche ergab: [Quelle]({verified_url})."
 
-    result = validate_psych_response_provenance(
+    result = validate_wellbeing_response_provenance(
         response,
         verified_web_urls=(verified_url,),
     )
@@ -42,7 +42,7 @@ def test_rejects_unverified_url_even_when_other_web_source_was_verified() -> Non
         "außerdem https://invented.example/advice."
     )
 
-    result = validate_psych_response_provenance(
+    result = validate_wellbeing_response_provenance(
         response,
         verified_web_urls=("https://example.org/verified",),
     )
@@ -54,7 +54,7 @@ def test_rejects_unverified_url_even_when_other_web_source_was_verified() -> Non
 def test_regular_therapeutic_response_needs_no_web_provenance() -> None:
     response = "Es klingt, als ob beide Bedürfnisse gleichzeitig Raum brauchen."
 
-    result = validate_psych_response_provenance(response, verified_web_urls=())
+    result = validate_wellbeing_response_provenance(response, verified_web_urls=())
 
     assert result.is_valid is True
     assert result.has_unsupported_research_claim is False
@@ -62,7 +62,7 @@ def test_regular_therapeutic_response_needs_no_web_provenance() -> None:
 
 
 def test_no_source_prompt_explicitly_forbids_research_claims_and_urls() -> None:
-    instruction = build_psych_web_provenance_instruction(())
+    instruction = build_wellbeing_web_provenance_instruction(())
 
     assert "keine verifizierte Online-Recherche" in instruction
     assert "keine externen URLs" in instruction
@@ -126,7 +126,7 @@ def test_regeneration_error_fails_closed() -> None:
 
 
 def test_english_research_claim_without_url_is_rejected() -> None:
-    result = validate_psych_response_provenance(
+    result = validate_wellbeing_response_provenance(
         "According to my online research, this method is effective.",
         verified_web_urls=(),
     )
@@ -136,7 +136,7 @@ def test_english_research_claim_without_url_is_rejected() -> None:
 
 
 def test_positive_research_heading_without_url_is_rejected() -> None:
-    result = validate_psych_response_provenance(
+    result = validate_wellbeing_response_provenance(
         "Online-Recherche ergab mehrere wirksame Ansätze.",
         verified_web_urls=(),
     )
@@ -146,7 +146,7 @@ def test_positive_research_heading_without_url_is_rejected() -> None:
 
 
 def test_transparent_no_research_statement_is_allowed() -> None:
-    result = validate_psych_response_provenance(
+    result = validate_wellbeing_response_provenance(
         "Ich habe keine Online-Recherche durchgeführt und antworte aus allgemeinem Wissen.",
         verified_web_urls=(),
     )

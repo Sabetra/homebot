@@ -31,7 +31,7 @@ class _WarningCatcher(logging.Handler):
 
 
 @pytest.fixture
-def psych_db(tmp_path: pathlib.Path):
+def wellbeing_db(tmp_path: pathlib.Path):
     """Minimal WellbeingDatabase backed by a temp SQLite file."""
     db_path = str(tmp_path / "test_psych.db")
     db = WellbeingDatabase(db_path=db_path)
@@ -52,12 +52,12 @@ class TestMaybeDecryptNoWarning:
             "1. Schlafhygiene  2. Achtsamkeit  3. Bewegung",
         ],
     )
-    def test_plaintext_no_warning(self, psych_db, plaintext: str):
+    def test_plaintext_no_warning(self, wellbeing_db, plaintext: str):
         handler = _WarningCatcher()
         logger = logging.getLogger("wellbeing.wellbeing_db")
         logger.addHandler(handler)
         try:
-            result = psych_db._maybe_decrypt(plaintext)
+            result = wellbeing_db._maybe_decrypt(plaintext)
             # Plaintext should pass through unchanged
             assert result == plaintext
             # No WARNING about decryption failure
@@ -71,15 +71,15 @@ class TestMaybeDecryptNoWarning:
             logger.removeHandler(handler)
 
     # -- Encrypted data round-trips correctly --
-    def test_encrypted_roundtrip_no_warning(self, psych_db):
+    def test_encrypted_roundtrip_no_warning(self, wellbeing_db):
         original = "Geheimnis: Behandlungsinformation"
-        encrypted = psych_db._encrypt_data(original)
+        encrypted = wellbeing_db._encrypt_data(original)
         
         handler = _WarningCatcher()
         logger = logging.getLogger("wellbeing.wellbeing_db")
         logger.addHandler(handler)
         try:
-            result = psych_db._maybe_decrypt(encrypted)
+            result = wellbeing_db._maybe_decrypt(encrypted)
             assert result == original
             decrypt_warnings = [
                 w for w in handler.warnings if "Entschlüsselung fehlgeschlagen" in w
@@ -93,12 +93,12 @@ class TestMaybeDecryptNoWarning:
         "input_val",
         [None, "", 0],
     )
-    def test_edge_cases_no_warning(self, psych_db, input_val):
+    def test_edge_cases_no_warning(self, wellbeing_db, input_val):
         handler = _WarningCatcher()
         logger = logging.getLogger("wellbeing.wellbeing_db")
         logger.addHandler(handler)
         try:
-            result = psych_db._maybe_decrypt(input_val)
+            result = wellbeing_db._maybe_decrypt(input_val)
             # Should return as-is
             assert result == input_val
             decrypt_warnings = [

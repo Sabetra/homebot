@@ -67,7 +67,7 @@ class AsyncMessageHandler:
             user_message: User input text.
             ai_response: Standard AI response (pre-generated).
             session_id: Active session ID.
-            wellbeing_enabled: Whether psych mode is active.
+            wellbeing_enabled: Whether wellbeing mode is active.
             build_context_func: Sync context builder.
             format_context_func: Context formatter.
 

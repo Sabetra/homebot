@@ -422,7 +422,7 @@ Das sind wichtige Gedanken, die Sie mit mir teilen. Können Sie mir mehr darübe
                     break
             
             if care_system_prompt:
-                logger.info(f"✅ [PSYCHO-CHAT] Care-System-Prompt wird an wellbeing_chat übergeben ({len(care_system_prompt)} Zeichen)")
+                logger.info(f"✅ [WELLBEING-CHAT] Care-System-Prompt wird an wellbeing_chat übergeben ({len(care_system_prompt)} Zeichen)")
             
             # Use wellbeing_chat() with:
             # 1. session_context (KG, previous sessions, mood, goals, insights)
@@ -537,7 +537,7 @@ Das sind wichtige Gedanken, die Sie mit mir teilen. Können Sie mir mehr darübe
         """
         logger.warning(f"⚠️ Combined prompt zu groß")
         
-        # PSYCHO-AWARE REDUCTION: Keep context, reduce HISTORY!
+        # WELLBEING-AWARE REDUCTION: Keep context, reduce HISTORY!
         # Strategy: System prompt (with context!) + few messages
         
         system_msgs = [msg for msg in optimized_messages if msg.get('role') == 'system']
@@ -548,7 +548,7 @@ Das sind wichtige Gedanken, die Sie mit mir teilen. Können Sie mir mehr darübe
         emergency_messages = system_msgs + non_system_msgs[-8:]
         
         logger.info(
-            f"🧠 [PSYCHO-REDUCTION] System: {len(system_msgs)}, "
+            f"🧠 [WELLBEING-REDUCTION] System: {len(system_msgs)}, "
             f"History: {len(non_system_msgs[-8:])} Messages"
         )
         

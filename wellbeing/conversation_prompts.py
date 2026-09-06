@@ -798,7 +798,7 @@ Beispielformat:
                     'hardcoded_contacts': 1  # emergency_contacts
                 },
                 'llm_capabilities': {
-                    'psychological_detection': True,
+                    'wellbeing_detection': True,
                     'crisis_assessment': True,
                     'therapeutic_approach_selection': True,
                     'coping_strategy_generation': True,

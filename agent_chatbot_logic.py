@@ -68,7 +68,7 @@ from wellbeing_session.handlers.response_generator import (
     _normalize_role_alternation,
 )
 from wellbeing_session.response_provenance import (
-    build_psych_web_provenance_instruction,
+    build_wellbeing_web_provenance_instruction,
     finalize_wellbeing_response_provenance,
 )
 # SOTA Variant 4: Central, intent-aware, complexity-driven decomposition engine.
@@ -240,7 +240,7 @@ class AgentChatbotLogic(ChatbotLogic):
             f"(LLM verfügbar: {decomp_llm is not None})"
         )
 
-        # D5 CLEANUP: Psycho Chat V2 (State Machine) wurde nie aktiviert (USE_PSYCHO_CHAT_V2=False).
+        # D5 CLEANUP: Wellbeing-Chat V2 (State Machine) wurde nie aktiviert (USE_PSYCHO_CHAT_V2=False).
         # Entfernt: Dead-Code-Pfad eliminiert zugunsten des konsolidierten Pipelines.
         
         # NEU: Generischer Intent-Klassifikator statt hart codierte Keywords
@@ -3485,7 +3485,7 @@ Entscheidung:"""
             # Aktuelle User-Message hinzufügen
             llm_messages.append({'role': 'user', 'content': user_prompt})
             
-            print(f"🔍 [PSYCHO-CHAT] llm_messages: {len(llm_messages)} Messages "
+            print(f"🔍 [WELLBEING-CHAT] llm_messages: {len(llm_messages)} Messages "
                   f"(system + {len(llm_messages) - 2} history + user)")
             
             # RC-4: Token-Budgetierung ersetzt den alten context_manager.should_summarize()
@@ -3538,7 +3538,7 @@ Entscheidung:"""
                 persistent_profile = session_context.get('persistent_profile')  # Synthesized psychological profile
                 
                 # 🔍 DEBUG: Zeige was wir haben
-                print(f"🔍 [PSYCHO-CONTEXT-DEBUG] Session-Kontext Inhalt:")
+                print(f"🔍 [WELLBEING-CONTEXT-DEBUG] Session-Kontext Inhalt:")
                 print(f"   - user_id: {user_id}")
                 print(f"   - user_name: {user_name}")  # NEU
                 print(f"   - session_id: {session_id[:12] if session_id else 'None'}...")
@@ -3564,7 +3564,7 @@ Entscheidung:"""
                         reverse=True
                     )
                     # Log Top-5 Triples für Debugging
-                    print(f"🎯 [PSYCHO-CHAT] Top KG-Triples nach Relevanz (limit={kg_triple_limit}):")
+                    print(f"🎯 [WELLBEING-CHAT] Top KG-Triples nach Relevanz (limit={kg_triple_limit}):")
                     for i, triple in enumerate(kg_triples_sorted[:5], 1):
                         rel = triple.get('relevance_score', triple.get('combined_score', triple.get('confidence', 0.0)))
                         print(f"   {i}. {triple.get('subject', '')} → {triple.get('predicate', '')} → {triple.get('object', '')} (relevanz: {rel:.2f})")
@@ -3582,7 +3582,7 @@ Entscheidung:"""
                 # PRIO 0: Name für persönliche Ansprache (WICHTIG!)
                 if user_name and len(user_name.strip()) > 0:
                     context_parts.append(f"**WICHTIG - Persönliche Ansprache:** Die Person heißt {user_name}. Sprich sie mit ihrem Namen an, nicht als 'Benutzer', 'Klient' oder 'du'. Verwende den Namen natürlich im Gespräch (z.B. 'Hallo {user_name}', '{user_name}, ich verstehe...', 'Das klingt so, als ob du, {user_name},...').\n")
-                    print(f"✅ [PSYCHO-CHAT] Persönliche Ansprache: {user_name}")
+                    print(f"✅ [WELLBEING-CHAT] Persönliche Ansprache: {user_name}")
                 
                 # PRIO 0.5: Persistentes psychologisches Profil (holistische Persönlichkeitsübersicht)
                 if persistent_profile and isinstance(persistent_profile, dict):
@@ -3646,9 +3646,9 @@ Entscheidung:"""
                         profile_header += ":\n"
                         profile_text = profile_header + "\n".join(profile_parts) + "\n"
                         context_parts.append(profile_text)
-                        print(f"✅ [PSYCHO-CHAT] Persistentes Profil hinzugefügt ({len(profile_parts)} Abschnitte, Konfidenz: {profile_confidence:.0%})")
+                        print(f"✅ [WELLBEING-CHAT] Persistentes Profil hinzugefügt ({len(profile_parts)} Abschnitte, Konfidenz: {profile_confidence:.0%})")
                     else:
-                        print(f"⚠️ [PSYCHO-CHAT] Persistentes Profil vorhanden, aber alle Sektionen leer")
+                        print(f"⚠️ [WELLBEING-CHAT] Persistentes Profil vorhanden, aber alle Sektionen leer")
                 
                 # PRIO 1: Knowledge Graph (wichtigste Informationen über den Nutzer)
                 # Bereits nach Relevanz gefiltert durch search_knowledge_graph() in _build_session_context()
@@ -3663,12 +3663,12 @@ Entscheidung:"""
                         rel = triple.get('relevance_score', triple.get('combined_score', triple.get('confidence', 0.0)))
                         kg_text += f"- {subj} {pred} {obj} (Relevanz: {rel:.0%})\n"
                     context_parts.append(kg_text)
-                    print(f"✅ [PSYCHO-CHAT] KG-Kontext hinzugefügt: {min(len(kg_triples_sorted), kg_triple_limit)} Triples (limit={kg_triple_limit}, intent={query_intent.value})")
+                    print(f"✅ [WELLBEING-CHAT] KG-Kontext hinzugefügt: {min(len(kg_triples_sorted), kg_triple_limit)} Triples (limit={kg_triple_limit}, intent={query_intent.value})")
                 
                 # PRIO 2: Aktuelle Session-Zusammenfassung (immer relevant)
                 if session_summary and len(str(session_summary)) > 0:
                     context_parts.append(f"**Aktuelle Session-Zusammenfassung:**\n{session_summary}\n")
-                    print(f"✅ [PSYCHO-CHAT] Session-Summary hinzugefügt ({len(session_summary)} chars)")
+                    print(f"✅ [WELLBEING-CHAT] Session-Summary hinzugefügt ({len(session_summary)} chars)")
                 
                 # PRIO 3: Emotionaler Zustand & Progression (care-kritisch)
                 if mood:
@@ -3676,7 +3676,7 @@ Entscheidung:"""
                     if mood_progression:
                         mood_text += f"\n**Stimmungsverlauf (7 Tage):** {mood_progression}"
                     context_parts.append(mood_text + "\n")
-                    print(f"✅ [PSYCHO-CHAT] Mood-Kontext hinzugefügt")
+                    print(f"✅ [WELLBEING-CHAT] Mood-Kontext hinzugefügt")
                 
                 # PRIO 4: Care-Ziele (falls definiert)
                 if goals and len(str(goals)) > 0:
@@ -3685,13 +3685,13 @@ Entscheidung:"""
                     else:
                         goals_text = str(goals)[:200]  # Max 200 chars
                     context_parts.append(f"**Care-Ziele:** {goals_text}\n")
-                    print(f"✅ [PSYCHO-CHAT] Goals hinzugefügt")
+                    print(f"✅ [WELLBEING-CHAT] Goals hinzugefügt")
                 
                 # PRIO 5: User Insights (tiefere Muster - falls verfügbar)
                 if user_insights and len(str(user_insights)) > 0:
                     insights_text = str(user_insights)[:300]  # Begrenzt auf 300 chars
                     context_parts.append(f"**Erkannte Muster:**\n{insights_text}\n")
-                    print(f"✅ [PSYCHO-CHAT] User Insights hinzugefügt")
+                    print(f"✅ [WELLBEING-CHAT] User Insights hinzugefügt")
                 
                 # PRIO 6: Frühere Sessions (nur die letzten 3, kurze Zusammenfassungen)
                 if previous_sessions and len(previous_sessions) > 0:
@@ -3707,7 +3707,7 @@ Entscheidung:"""
                             if prev_goals:
                                 prev_text += f"  └─ Ziele: {prev_goals[:60]}...\n"
                     context_parts.append(prev_text)
-                    print(f"✅ [PSYCHO-CHAT] Previous Sessions hinzugefügt ({len(previous_sessions[:3])} Sessions)")
+                    print(f"✅ [WELLBEING-CHAT] Previous Sessions hinzugefügt ({len(previous_sessions[:3])} Sessions)")
                 
                 # Kombiniere alle Context-Parts mit expliziter Quellen-Trennung
                 if context_parts:
@@ -3736,7 +3736,7 @@ Entscheidung:"""
 **AKTUELLE ANFRAGE:**
 {user_prompt}"""
                     notify_progress("Kontext-Enrichment", f"✅ Kontext hinzugefügt: {len(context_block)} Zeichen")
-                    print(f"🧠 [PSYCHO-CHAT] Vollständiger Kontext integriert ({len(context_block)} chars, {len(context_parts)} Komponenten, intent={query_intent.value})")
+                    print(f"🧠 [WELLBEING-CHAT] Vollständiger Kontext integriert ({len(context_block)} chars, {len(context_parts)} Komponenten, intent={query_intent.value})")
             
             # === RAG-SUCHE UND LLM-ANTWORT ===
             # Branch B: Smart Query Classifier + Conditional RAG
@@ -3910,7 +3910,7 @@ Entscheidung:"""
 
                         if rag_results or web_results:
                             print(
-                                f"✅ [PSYCHO-RAG] {len(rag_results)} RAG-Chunks + "
+                                f"✅ [WELLBEING-RAG] {len(rag_results)} RAG-Chunks + "
                                 f"{len(web_results)} Web-Ergebnisse "
                                 f"(intent={effective_intent.value}, "
                                 f"sub_queries={len(factual_subqueries)}, "
@@ -3922,16 +3922,16 @@ Entscheidung:"""
                                 f"über {len(factual_subqueries)} Sub-Fragen",
                             )
                         else:
-                            print(f"⚠️ [PSYCHO-RAG] Keine RAG-Ergebnisse")
+                            print(f"⚠️ [WELLBEING-RAG] Keine RAG-Ergebnisse")
                             notify_progress("Keine RAG-Ergebnisse", "Reines LLM ohne RAG-Kontext")
 
                     except Exception as e:
-                        print(f"⚠️ [PSYCHO-RAG] RAG-Suche fehlgeschlagen: {e}")
+                        print(f"⚠️ [WELLBEING-RAG] RAG-Suche fehlgeschlagen: {e}")
                         import traceback
                         traceback.print_exc()
                         notify_progress("RAG-Fehler", f"RAG-Suche fehlgeschlagen, nutze reines LLM")
                 else:
-                    print(f"⚠️ [PSYCHO-RAG] Kein Orchestrator oder RAGManager verfügbar!")
+                    print(f"⚠️ [WELLBEING-RAG] Kein Orchestrator oder RAGManager verfügbar!")
                     notify_progress("Warnung", "Orchestrator nicht verfügbar - nutze reines LLM")
             
             # 3. Baue Prompt mit RAG-Evidenz und Session-Kontext
@@ -3951,7 +3951,7 @@ Entscheidung:"""
                     source = metadata.get('source', metadata.get('title', result.get('title', 'Unbekannt')))
                     if content.strip():
                         rag_context += f"{i}. [Relevanz: {score:.2f}, Quelle: {source}]\n{content}\n\n"
-                print(f"✅ [PSYCHO-RAG] RAG-Kontext aufbereitet ({len(rag_context)} chars)")
+                print(f"✅ [WELLBEING-RAG] RAG-Kontext aufbereitet ({len(rag_context)} chars)")
             
             # Web-Evidenz formatieren (falls vorhanden)
             web_context = ""
@@ -3963,14 +3963,14 @@ Entscheidung:"""
                     title = result.get('title', '')
                     if snippet.strip():
                         web_context += f"{i}. [{title}]({url})\n{snippet}\n\n"
-                print(f"✅ [PSYCHO-WEB] Web-Kontext aufbereitet ({len(web_context)} chars)")
+                print(f"✅ [WELLBEING-WEB] Web-Kontext aufbereitet ({len(web_context)} chars)")
 
             verified_web_urls = tuple(
                 str(result.get('url', '')).strip()
                 for result in web_results
                 if str(result.get('url', '')).strip()
             )
-            provenance_instruction = build_psych_web_provenance_instruction(
+            provenance_instruction = build_wellbeing_web_provenance_instruction(
                 verified_web_urls
             )
             for message in llm_messages:
@@ -4023,7 +4023,7 @@ Entscheidung:"""
                 # Kein zusätzlicher Kontext — User-Nachricht bleibt rein
                 llm_messages[-1]['content'] = user_prompt
             
-            print(f"🧠 [PSYCHO-PROMPT] Messages: {len(llm_messages)} "
+            print(f"🧠 [WELLBEING-PROMPT] Messages: {len(llm_messages)} "
                   f"(RAG/Web als System-Kontext, User-Nachricht unverändert)")
             
             # 4. LLM-Antwort generieren mit vollständigem Kontext
@@ -4108,11 +4108,11 @@ Entscheidung:"""
                 
                 # Message History NICHT aktualisieren! 
                 # (Psycho-Chat hat eigene DB-basierte Historie)
-                print(f"✅ [PSYCHO-LLM] Antwort generiert ({len(response)} chars)")
+                print(f"✅ [WELLBEING-LLM] Antwort generiert ({len(response)} chars)")
                 notify_progress("Antwort generiert", f"Care-Antwort erstellt ({len(response)} Zeichen)")
                 
             except Exception as e:
-                print(f"❌ [PSYCHO-LLM] Fehler bei LLM-Generation: {e}")
+                print(f"❌ [WELLBEING-LLM] Fehler bei LLM-Generation: {e}")
                 raise
             
             # === POST-RESPONSE: MOOD & GOAL TRACKING ===

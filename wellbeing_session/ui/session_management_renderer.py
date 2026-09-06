@@ -82,8 +82,8 @@ class SessionManagementRenderer:
         
         # Explicit bool cast for type safety
         wellbeing_enabled = bool(st.session_state.wellbeing_enabled) if hasattr(st.session_state, 'wellbeing_enabled') else False
-        psych_current = bool(st.session_state.wellbeing_current_session) if hasattr(st.session_state, 'wellbeing_current_session') else False
-        return wellbeing_enabled and psych_current
+        wellbeing_current = bool(st.session_state.wellbeing_current_session) if hasattr(st.session_state, 'wellbeing_current_session') else False
+        return wellbeing_enabled and wellbeing_current
     
     def _render_user_selection(self) -> Optional[str]:
         """
@@ -319,7 +319,7 @@ class SessionManagementRenderer:
             selected_label = st.selectbox(
                 _tr("wellbeing_ui.session.scope_label", "📂 Insight-Scope"),
                 options=list(session_options.keys()),
-                key=f"psych_insight_scope_{resolved_user_id}",
+                key=f"wellbeing_insight_scope_{resolved_user_id}",
                 help=_tr("wellbeing_ui.session.scope_help", "Filtert die gespeicherten Insights auf eine konkrete Session dieses Users."),
             )
             selected_session_id = session_options[selected_label]

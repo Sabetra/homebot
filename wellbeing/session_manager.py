@@ -1342,7 +1342,7 @@ class WellbeingSessionManager:
         """
         Hole vollständiges User-Profil mit Session-Historie
         
-        Diese Methode wird vom PsychologicalInterface verwendet, um
+        Diese Methode wird vom WellbeingSessionInterface verwendet, um
         historischen Kontext für den RAG-enhanced Prompt zu laden.
         
         Args:

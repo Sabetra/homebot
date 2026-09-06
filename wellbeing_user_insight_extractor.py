@@ -326,7 +326,7 @@ Sessions: {existing_profile.session_count}, Confidence: {existing_profile.confid
 AUFGABE: Analysiere die neuen Äußerungen und validiere/erweitere das Profil.
 """
         
-        psychological_prompt = f"""Du bist ein erfahrener Psychologe und Persönlichkeitsanalyst. Analysiere die folgenden Äußerungen einer Person tiefgreifend und extrahiere psychologische Einsichten.
+        wellbeing_prompt = f"""Du bist ein erfahrener Psychologe und Persönlichkeitsanalyst. Analysiere die folgenden Äußerungen einer Person tiefgreifend und extrahiere psychologische Einsichten.
 
 {profile_context}
 
@@ -379,7 +379,7 @@ Wichtig:
                 logger.warning("⚠️ Chat-Funktion nicht verfügbar")
                 return []
                 
-            response = self.chat_function(psychological_prompt)
+            response = self.chat_function(wellbeing_prompt)
             if not response:
                 logger.warning("⚠️ LLM gab keine Antwort zurück")
                 return []
