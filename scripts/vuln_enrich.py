@@ -499,7 +499,10 @@ class EPSSClient:
                 logger.debug(f"EPSS-Fetch fehlgeschlagen: {e}")
                 break
             if isinstance(data, dict):
-                for row in data.get("data") or []:
+                rows = data.get("data")
+                if not isinstance(rows, list):
+                    rows = data.get("results")
+                for row in rows or []:
                     cve = row.get("cve")
                     if not cve:
                         continue
