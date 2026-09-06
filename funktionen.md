@@ -1333,7 +1333,7 @@ SOTA LangGraph-basierte StateGraph-Pipeline für psychologische Sessions mit 7 N
 | **Output** | Console-Report (inkl. Risk-Tier + Reachability-Tag) + JSON (`-o report.json`, inkl. `enrichment_stats`) |
 | **Security** | `--strict` Exit-1 bei ANY Vulnerability (CI/CD-fähig) |
 | **Cache** | `data/vuln_cache/` (osv/, kev/, epss/), 24h TTL, `--refresh` zum manuellen Aktualisieren |
-| **Tests** | 122 Tests / 18 Klassen (`tests/test_dependency_vulnerability_scanner.py`) |
+| **Tests** | 123 Tests / 18 Klassen (`tests/test_dependency_vulnerability_scanner.py`) |
 | **RAG** | **Nicht** in RAG aufnehmen (Tool, kein Wissensdokument, Ergebnisse zeitabhängig) |
 
 ### Kern-Komponenten

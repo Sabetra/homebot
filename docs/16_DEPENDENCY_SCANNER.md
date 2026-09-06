@@ -212,12 +212,12 @@ Exit-Codes: `0` = ok, `1` = Vulns gefunden (`--strict`), `2` = Scan-Fehler
 python -m pytest tests/test_dependency_vulnerability_scanner.py -v
 ```
 
-122 Tests (18 Klassen): Parser (10), Vulnerability-Modell (3), ScanResult (4),
-AdvisoryCache (6), ExtractSeverity (8), Heuristik (3), Reporter (6), OSV-Scan (5),
+123 Tests (18 Klassen): Parser (10), Vulnerability-Modell (3), ScanResult (4),
+AdvisoryCache (6), ExtractSeverity (8), Heuristik (3), Reporter (7), OSV-Scan (5),
 OSV-Cache (2), to_concrete_version (6), OSV-Severity (7),
-**Enrichment (SOTA):** ComputeRisk (12), ExtractCve (7), KevCatalog (7),
-EpssClient (6), Prioritize (4), ScannerEnrichment (6),
-**Reachability:** ExtractImports (4), CodeReachability (8, inkl. Closure-Tests).
+**Enrichment (SOTA):** ComputeRisk (18, inkl. 6 Reachability-Tests), ExtractCve (7), KevCatalog (7),
+EpssClient (6), Prioritize (7, inkl. 3 Reachability-Tests), ScannerEnrichment (7),
+**Reachability:** TestReachability (10, inkl. BOM-Test + 2 Closure-Tests).
 
 ## CI/CD-Integration
 
