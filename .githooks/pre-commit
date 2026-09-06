@@ -72,6 +72,23 @@ if [ -z "$PYTHON" ]; then
     exit 1
 fi
 
+# Secret/Key-Gate (fail-closed, ~1 s): blockt Secrets/Private Keys, die im
+# Staging-Bereich liegen. Stdlib-only (keine Dependencies). Die Autosave-
+# Pfade (HOMEBOT_AUTOSAVE=1) verlassen den Hook oben; deren Absicherung
+# lebt in scripts/autosave_snapshot.ps1.
+# --no-verify ueberspringt dieses Gate, aber NICHT das pre-push-Gate:
+# Secrets werden beim Push trotzdem blockiert.
+"$PYTHON" scripts/secret_guard.py --staged
+GUARD_STATUS=$?
+if [ $GUARD_STATUS -ne 0 ]; then
+    echo "" >&2
+    echo "pre-commit: SECRET-GATE ROT - Commit blockiert." >&2
+    echo "pre-commit: Entferne die geflaggteten Dateien aus dem Staging-Bereich:" >&2
+    echo "pre-commit:   git restore --staged <pfad>" >&2
+    echo "pre-commit: (Bei echtem Secret: Datei loeschen/Key rotieren, NICHT --no-verify.)" >&2
+    exit $GUARD_STATUS
+fi
+
 echo "pre-commit: deterministisches Release-Gate laeuft (ca. 65 s)..."
 echo "pre-commit: ueberspringen mit  git commit --no-verify"
 

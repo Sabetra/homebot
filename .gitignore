@@ -92,6 +92,39 @@ credentials.json
 *.key
 *.db.key
 
+# --- Secret-/Key-Guard L1 (2026-09-07): spiegelt scripts/secret_guard.py ---
+# Private Keys (OpenSSH & Co.); *.pub-Dateien sind oeffentlich und bleiben
+# bewusst erlaubt.
+id_rsa
+id_dsa
+id_ecdsa
+id_ed25519
+id_ed448
+id_*.old
+authorized_keys
+.netrc
+# Keystores / Zertifikats-Container
+*.p12
+*.pfx
+*.pkcs12
+*.jks
+*.keystore
+*.ppk
+*.p7b
+*.pem
+# .env-Varianten; Vorlagen (*.example u. a.) sind Doku und bleiben erlaubt.
+.env.*
+!.env.example
+!.env.sample
+!.env.template
+!.env.dist
+# secrets.*-Varianten
+secrets.yml
+secrets.json
+secrets.toml
+# Service-Account-Keys (GCP & Co.)
+service-account*.json
+
 # Test outputs
 test_output/
 output/

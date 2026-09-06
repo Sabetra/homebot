@@ -67,6 +67,61 @@ try {
         exit 0
     }
 
+    # --- L2 Secret/Key-Guard (2026-09-07, fail-closed) -----------------------
+    # Der Autosave ueberspringt das pre-commit-Gate (HOMEBOT_AUTOSAVE=1) und
+    # muss sich daher selbst absichern. Verhalten:
+    #   exit 0: alles sauber -> weiter
+    #   exit 1: geflaggte Pfade (stdout) werden UNSTAGED (Dateien bleiben in
+    #           der Arbeitsbaeume), der Rest wird committet. Jeder Durchlauf
+    #           meldet neu -> dauerhafte Erinnerung, bis der Mensch es loest.
+    #   exit 2: Guard-Fehler -> fail-closed, kein Commit (ungescannter
+    #           Content darf keine Historie erreichen).
+    #   kein Python / kein Guard-Skript: ebenfalls fail-closed (kein Commit).
+    $guardScript = Join-Path $RepoRoot 'scripts\secret_guard.py'
+    if (-not (Test-Path $guardScript)) {
+        Write-AutosaveLog "FEHLER: scripts\secret_guard.py fehlt (fail-closed, kein Commit)"
+        exit 1
+    }
+    $guardPy = $env:HOMEBOT_PYTHON
+    if (-not $guardPy -or -not (Test-Path $guardPy)) { $guardPy = $null }
+    if (-not $guardPy) {
+        foreach ($cand in @(
+                (Join-Path $RepoRoot 'venv_bot_20260802\Scripts\python.exe'),
+                (Join-Path $RepoRoot '.venv\Scripts\python.exe'),
+                (Join-Path $RepoRoot 'venv\Scripts\python.exe'),
+                (Join-Path $RepoRoot 'venv_mistral_gguf\Scripts\python.exe'))) {
+            if (Test-Path $cand) { $guardPy = $cand; break }
+        }
+    }
+    if (-not $guardPy -or -not (Test-Path $guardPy)) {
+        Write-AutosaveLog "FEHLER: Secret-Guard: kein Python-Interpreter (fail-closed, kein Commit)"
+        exit 1
+    }
+
+    $guardLines = @(& $guardPy $guardScript '--staged' 2>&1)
+    $guardExit  = $LASTEXITCODE
+    $flagged    = @($guardLines | Where-Object { $_ -is [string] })
+    $guardErr   = @($guardLines | Where-Object {
+                        $_ -is [System.Management.Automation.ErrorRecord] } |
+                   ForEach-Object { $_.ToString() })
+
+    if ($guardExit -ge 2) {
+        Write-AutosaveLog ("FEHLER: Secret-Guard: interner Fehler (fail-closed, kein Commit): {0}" -f ($guardErr -join ' | '))
+        exit 1
+    }
+    if ($guardExit -eq 1) {
+        foreach ($p in $flagged) {
+            git -C $RepoRoot restore --staged -- $p
+            Write-AutosaveLog ("Secret-Guard: ungestaged (bleibt in der Arbeitsbaeume): {0}" -f $p)
+        }
+        # Ist nach dem Unstage noch etwas zu committen?
+        git -C $RepoRoot diff --cached --quiet
+        if ($LASTEXITCODE -eq 0) {
+            Write-AutosaveLog "Secret-Guard: alle Aenderungen geflaggt -> kein Commit in diesem Durchlauf"
+            exit 0
+        }
+    }
+
     $stamp   = Get-Date -Format 'yyyy-MM-dd HH:mm'
     $changed = (git -C $RepoRoot diff --cached --name-only | Measure-Object -Line).Lines
 

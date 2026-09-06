@@ -10,7 +10,9 @@ Prüft, dass das Repository öffentlich gemacht werden kann:
        Erlaubt bleiben generische Platzhalter wie ``C:\\Users\\<user>``.
     2. Sensitive tracked Dateien: ``settings.json``, ``monitoring/``,
        ``.continue/``, ``data/``, ``*.db``, ``*.key``, ``.env*``, Venvs.
-    3. Secret-Patterns im tracked Inhalt (API-Keys, Private Keys).
+    3. Secret-/Key-Guard-Audit (scripts/secret_guard.py, --tracked):
+       Name- und Inhalts-Regeln (API-Keys, Private Keys, .env, Keystores).
+       Gleiche Quelle wie die Git-Hooks; Fail-closed (Guard-Fehler blockt).
     4. Fehlende Release-Pflicht-Dateien (LICENSE, README, CoC, CHANGELOG,
        AGENTS).
 
@@ -28,6 +30,7 @@ Exit 0 = grün, Exit 1 = rot.
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import subprocess
 import sys
@@ -134,6 +137,40 @@ def main() -> int:
             if pat.search(posix):
                 fails.append(f"SENSITIVE DATEI TRACKED: {posix}")
                 break
+
+    # L4: Secret/Key-Guard (scripts/secret_guard.py) - vollstaendige
+    # Name-/Inhalts-Regeln, gleiche Quelle wie die Git-Hooks. Fail-closed:
+    # Guard-Fehler (oder unlesbare Ausgabe) zahlt als FAIL.
+    guard_script = REPO_ROOT / "scripts" / "secret_guard.py"
+    if guard_script.is_file():
+        try:
+            guard = subprocess.run(
+                [sys.executable, str(guard_script), "--tracked", "--json"],
+                cwd=REPO_ROOT, capture_output=True, text=True,
+                encoding="utf-8", errors="replace",
+            )
+        except (OSError, ValueError) as exc:
+            fails.append(f"SECRET-GUARD FEHLER (fail-closed): {exc}")
+        else:
+            if guard.returncode == 0:
+                pass  # sauber
+            elif guard.returncode == 1:
+                try:
+                    data = json.loads(guard.stdout)
+                    for item in data.get("flagged", []):
+                        fails.append(
+                            "SECRET-GUARD {path} ({reasons})".format(
+                                path=item.get("path", "?"),
+                                reasons=", ".join(item.get("reasons", [])) or "?")
+                        )
+                except (ValueError, TypeError, AttributeError) as exc:
+                    fails.append(f"SECRET-GUARD PARSE-FEHLER (fail-closed): {exc}")
+            else:
+                fails.append(
+                    "SECRET-GUARD FEHLER exit {rc} (fail-closed)".format(
+                        rc=guard.returncode))
+    else:
+        fails.append("SECRET-GUARD FEHLT: scripts/secret_guard.py nicht gefunden")
 
     # Inhalts-Checks (Pfade + Secrets).
     for f in files:
