@@ -9,7 +9,8 @@
       "Wikipedia: List of most-subscribed YouTube channels (2026-06)",
       "top10grid.com/top-10-youtube-channels-science-education-2026 (2026)",
       "blog.podbrief.io/best-science-channels-on-youtube (2026-03)",
-      "AI Explained: patreon.com/AIExplained + aiexplainedopodcast.buzzsprout.com (2026-09-07)"
+      "AI Explained: patreon.com/AIExplained + aiexplainedopodcast.buzzsprout.com (2026-09-07)",
+      "Coding-Support-Erweiterung (2026-09-07, User-OK): UC-IDs via yt-dlp Tab-/Video-Extraktion; Sam Witteveen + Corey Schafer: Handle-Auflösung ergab SQUATTER-Kanäle ('samwitteveen' 22 Fol., 'Coreyschafer' desc='what?') — echte UC-IDs ausschließlich über Original-Videos verifiziert (PTuGGdDuyPI / bD05uGo_sVI)"
     ],
     "updated_at": "2026-09-07"
   },
@@ -30,6 +31,23 @@
     { "name": "AI Explained", "handle": "channel/UCNJ1Ymd5yFuUPtn21xtRbbw", "category": "ai", "channel_id": "UCNJ1Ymd5yFuUPtn21xtRbbw", "resolved_channel_name": "AI Explained", "follower_count": 446000, "verification": { "date": "2026-09-07", "method": "Zwei unabhaengige offizielle Quellen + Beschreibung-Cross-Reference (yt-dlp)", "sources": [ "Offizielle Patreon (patreon.com/AIExplained, 'AI Insiders network') verlinkt channel/UCNJ1Ymd5yFuUPtn21xtRbbw", "Offizieller Podcast (aiexplainedopodcast.buzzsprout.com) — identischer Tagline 'author of Simple Bench'" ], "cross_check": "Kanal-Beschreibung referenziert patreon.com/AIExplained + Simple Bench + 'AI Insiders'; 446K Abonnenten; alter Handle @aiexplained-official ist ungültig (404) — nie als Schlüssel verwenden" } },
     { "name": "Fireship", "handle": "@fireship", "category": "programming", "channel_id": "UCsBjURrPoezykLs9EqgamOA" },
     { "name": "The Coding Train", "handle": "channel/UCvjgXvBlbQiydffZU7m1_aw", "category": "programming", "channel_id": "UCvjgXvBlbQiydffZU7m1_aw" },
-    { "name": "Computerphile", "handle": "@Computerphile", "category": "computer-science", "channel_id": "UC9-y-6csu5WGm29I7JiwpnA" }
+    { "name": "Computerphile", "handle": "@Computerphile", "category": "computer-science", "channel_id": "UC9-y-6csu5WGm29I7JiwpnA" },
+
+    { "_section": "Coding-Support-Erweiterung (2026-09-07): offizielle API-/Tooling-Kanäle + praktische LLM-/Python-Channels für den Programmier-Workflow (API-Calls, Library-Features, Fehler, Performance)" },
+    { "name": "OpenAI", "handle": "@OpenAI", "category": "official-llm-api", "channel_id": "UCXZCJLdBC09xxGZ6gcdrc6A", "resolved_channel_name": "OpenAI", "follower_count": 2040000 },
+    { "name": "Anthropic", "handle": "channel/UCrDwWp7EBBv4NwvScIpBDOA", "category": "official-llm-api", "channel_id": "UCrDwWp7EBBv4NwvScIpBDOA", "resolved_channel_name": "Anthropic", "verification": { "date": "2026-09-07", "method": "Video-Extraktion (om2lIWXLLN4 'Building Anthropic'); separater 2. Kanal 'Anthropic and Claude' NICHT aufgenommen" } },
+    { "name": "GitHub", "handle": "@github", "category": "official-dev-platform", "channel_id": "UC7c3Kb6jYCRj4JOHHZTxKsQ", "resolved_channel_name": "GitHub", "follower_count": 681000 },
+    { "name": "JetBrains", "handle": "@JetBrains", "category": "official-tooling", "channel_id": "UC5l-om5K5sUqv1w9IUROosQ", "resolved_channel_name": "JetBrains", "follower_count": 63000 },
+    { "name": "Microsoft Developer", "handle": "@MicrosoftDeveloper", "category": "official-ide-cloud", "channel_id": "UCsMica-v34Irf9KVTh6xx-g", "resolved_channel_name": "Microsoft Developer", "follower_count": 695000 },
+    { "name": "Google for Developers", "handle": "@googledevelopers", "category": "official-apis", "channel_id": "UC_x5XG1OV2P6uZZ5FSM9Ttw", "resolved_channel_name": "Google for Developers", "follower_count": 2670000 },
+    { "name": "Hugging Face", "handle": "@huggingface", "category": "official-models", "channel_id": "UCHlNU7kIZhRgSbhHvFoy72w", "resolved_channel_name": "Hugging Face", "follower_count": 144000 },
+    { "name": "Sam Witteveen", "handle": "channel/UC55ODQSvARtgSyc8ThfiepQ", "category": "local-llm-inference", "channel_id": "UC55ODQSvARtgSyc8ThfiepQ", "resolved_channel_name": "Sam Witteveen", "verification": { "date": "2026-09-07", "method": "Video-Extraktion (PTuGGdDuyPI 'Qwen3.8-27B & How to Serve it Fast'); ACHTUNG: Handle @SamWitteveen gehört zu Squatter-Kanal 'samwitteveen' (22 Fol.) — NIE als Auflösung nutzen" } },
+    { "name": "AI Jason", "handle": "channel/UCrXSVX9a1mj8l0CMLwKgMVw", "category": "local-llm-practical", "channel_id": "UCrXSVX9a1mj8l0CMLwKgMVw", "resolved_channel_name": "AI Jason", "verification": { "date": "2026-09-07", "method": "Video-Extraktion (u5Vcrwpzoz8 'Local Agentic RAG w/ llama3')" } },
+    { "name": "Matthew Berman", "handle": "channel/UCawZsQWqfGSbCI5yjkdVkTA", "category": "ai-engineering", "channel_id": "UCawZsQWqfGSbCI5yjkdVkTA", "resolved_channel_name": "Matthew Berman", "verification": { "date": "2026-09-07", "method": "Video-Extraktion (2w7ZdceZT-g 'The Most Important Chart In AI Right Now')" } },
+    { "name": "ThePrimeagen", "handle": "@ThePrimeagen", "category": "performance-devops", "channel_id": "UC8ENHE5xdFSwx71u3fDH5Xw", "resolved_channel_name": "ThePrimeagen", "follower_count": 550000 },
+    { "name": "Corey Schafer", "handle": "channel/UCCezIgC97PvUuR4_gbFUs5g", "category": "python", "channel_id": "UCCezIgC97PvUuR4_gbFUs5g", "resolved_channel_name": "Corey Schafer", "verification": { "date": "2026-09-07", "method": "Video-Extraktion (bD05uGo_sVI); ACHTUNG: Handle @CoreySchafer gehört zu Squatter-Kanal 'Coreyschafer' (desc='what?') — NIE als Auflösung nutzen" } },
+    { "name": "ArjanCodes", "handle": "@arjancodes", "category": "python", "channel_id": "UCVhQ2NnY5Rskt6UjCUkJ_DA", "resolved_channel_name": "ArjanCodes", "follower_count": 340000 },
+    { "name": "freeCodeCamp", "handle": "@freecodecamp", "category": "tutorials", "channel_id": "UC8butISFwT-Wl7EV0hUK0BQ", "resolved_channel_name": "freeCodeCamp.org", "follower_count": 11900000 },
+    { "name": "Raspberry Pi", "handle": "@raspberrypi", "category": "local-ai-hardware", "channel_id": "UCFIjVWFZ__KhtTXHDJ7vgng", "resolved_channel_name": "Raspberry Pi", "follower_count": 181000 }
   ]
 }
