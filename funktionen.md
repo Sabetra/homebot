@@ -1850,3 +1850,49 @@ Evictierte `file_reader`-Ergebnisse werden jetzt gezielt per `offset`/`limit` na
 - Reasoning-Erkennung ist Dateiname-Heuristik (konservativ); bei unbekannten Reasoning-Architekturen kann `thinking` zu niedrig ausfallen — UI-Override bleibt der Ausweg.
 - Effort-Closed-Sets sind pro Architektur manuell gepflegt (aktuell nur `qwen35` verifiziert); neue Architekturen in `_EFFORT_SETS` ergänzen.
 
+
+## Z. Video-Ingestion & Trusted-Channel-Gate (2026-09-07)
+
+Lokale YouTube-Ingestion **nur für explizit erlaubte Channels**: UC-Channel-ID
+ist der einzige Trust-Schlüssel (Name/Handle sind änderbar und spoofbar).
+Fail-Closed: jede Fehlerquelle (Timeout, DNS, YouTube-Bruch, fehlende
+Allowlist) = Ablehnung, **niemals** Freigabe.
+
+### Kern-Komponenten
+
+| Komponente | Datei | Funktion |
+|------------|-------|----------|
+| Allowlist | `config/trusted_channels.json` | 17 Channels, `channel_id` (UC…) + Quellen-Nachweis; `status: approved` erforderlich |
+| Gate-CLI | `scripts/verify_trusted_channels.py` | `resolve` (UC-Auflösung per `extract_flat`), `check` (Integrität), `verify <URL>` (Fail-Closed-Prüfung); `verify_video(url) -> (erlaubt, channel_id, name|Fehler)` |
+| Pipeline | `scripts/ingest_video.py` | Gate → Metadaten → Subtitles (SRT/VTT-Parser, OpenCV-Frame-Extraktion) → `subtitles.json` + `metadata.json` + `frames/` + `manifest.json`; Exit 2 bei Gate-Verletzung |
+| Tests | `tests/test_ingest_video_safety.py` | 16 offline-Tests: Injektions-/PII-Flagging, VTT-/SRT-Parsen, Frame-Limits, Gate-Fail-Closed (offline) |
+
+### Design-Prinzipien
+
+- **UC-ID als Single Source of Truth:** `CHANNEL_ID_RE = ^UC[0-9A-Za-z_-]{22}$`;
+  Name-Konsistenz ist nur eine Zusatz-Sicherung, nie ein Freigabe-Kriterium.
+- **Fail-Closed:** `verify_video()` fängt alle Exceptions und liefert
+  `(False, …)`; leere Allowlist = Abweisung; `ingest_video.py` stoppt
+  vor Download/Extraktion (Exit 2).
+- **Subtitles = untrusted data:** `subtitles.json` trägt eine
+  Sicherheits-Envelope (`DATA_ONLY_NEVER_INSTRUCTIONS`), jede Zeile wird
+  gegen Injektions-Muster (imperative Prompt-Phrasen DE/EN) und PII-Muster
+  (E-Mail, Telefon, IBAN, Account-IDs) gecheckt — **flag-only**, nie
+  Block, nie Ausführung.
+- **Kein ffmpeg-Dependency:** Frame-Extraktion via OpenCV
+  (`cv2.VideoCapture`, `cv2.imwrite`); Skala 480p, ≤12 Frames.
+- **yt-dlp==2026.8.19** (pinned, Unlicense, 0 Runtime-Deps):
+  `extract_info` nur (kein Video-Download), `extract_flat=True` bei
+  Channel-URLs (sonst hängen Voll-Enumerations).
+- **Keine Cloud-/LLM-Abhängigkeit im Gate-Pfad:** rein deterministisch.
+
+### Grenzen / Next-Steps
+
+- YouTube kann PO-Token/Prompt-Walls erzwingen (Release-Zyklen nötig —
+  pinned Version + Update-Rhythmus dokumentiert).
+- Audio-Transkription (Whisper) bewusst **nicht** im Scope; nur vorhandene
+  Subtitles werden genutzt.
+- Scanner: bestehende P1-Findinge (u. a. `pillow==12.0.0`) sind
+  dokumentiert akzeptiert — `yt-dlp` ist scanner-sauber
+  (Workdoc §Scanner-Policy).
+
