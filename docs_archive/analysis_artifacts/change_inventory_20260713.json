@@ -1,0 +1,566 @@
+﻿{
+    "generated_at":  "2026-07-13T23:19:39+02:00",
+    "repository_root":  "./",
+    "totals":  {
+                   "all":  87
+               },
+    "counts_by_status":  [
+                             {
+                                 "status":  "modified",
+                                 "count":  34
+                             },
+                             {
+                                 "status":  "deleted",
+                                 "count":  12
+                             },
+                             {
+                                 "status":  "untracked",
+                                 "count":  41
+                             }
+                         ],
+    "counts_by_bucket":  [
+                             {
+                                 "bucket":  "preexisting_or_external",
+                                 "count":  82
+                             },
+                             {
+                                 "bucket":  "agent_last_delta",
+                                 "count":  5
+                             }
+                         ],
+    "bucket_definition":  {
+                              "agent_last_delta":  "Files created/modified in the most recent assistant refactor pass.",
+                              "preexisting_or_external":  "Everything else currently changed/untracked in the workspace."
+                          },
+    "agent_last_delta_paths":  [
+                                   "agent/orchestrator.py",
+                                   "agent/orchestrator.py.bak_20260713_refactor_phase1",
+                                   "docs/SOTA_WORKLOG_20260713.md",
+                                   "docs/SOTA_WORKLOG_20260713.md.bak_20260713_refactor_phase1",
+                                   "funktionen.md"
+                               ],
+    "items":  [
+                  {
+                      "path":  ".bm25s_index/_bm25_meta.json",
+                      "status":  "modified",
+                      "xy":  " M",
+                      "bucket":  "preexisting_or_external"
+                  },
+                  {
+                      "path":  ".bm25s_index/_chunk_ids.json",
+                      "status":  "modified",
+                      "xy":  " M",
+                      "bucket":  "preexisting_or_external"
+                  },
+                  {
+                      "path":  ".bm25s_index/data.csc.index.npy",
+                      "status":  "modified",
+                      "xy":  " M",
+                      "bucket":  "preexisting_or_external"
+                  },
+                  {
+                      "path":  ".bm25s_index/indices.csc.index.npy",
+                      "status":  "modified",
+                      "xy":  " M",
+                      "bucket":  "preexisting_or_external"
+                  },
+                  {
+                      "path":  ".bm25s_index/indptr.csc.index.npy",
+                      "status":  "modified",
+                      "xy":  " M",
+                      "bucket":  "preexisting_or_external"
+                  },
+                  {
+                      "path":  ".bm25s_index/params.index.json",
+                      "status":  "modified",
+                      "xy":  " M",
+                      "bucket":  "preexisting_or_external"
+                  },
+                  {
+                      "path":  ".bm25s_index/vocab.index.json",
+                      "status":  "modified",
+                      "xy":  " M",
+                      "bucket":  "preexisting_or_external"
+                  },
+                  {
+                      "path":  "ARCHITECTURE.md",
+                      "status":  "modified",
+                      "xy":  " M",
+                      "bucket":  "preexisting_or_external"
+                  },
+                  {
+                      "path":  "CLEANUP.md",
+                      "status":  "deleted",
+                      "xy":  " D",
+                      "bucket":  "preexisting_or_external"
+                  },
+                  {
+                      "path":  "DEVELOPER_QUICK_START.md",
+                      "status":  "modified",
+                      "xy":  " M",
+                      "bucket":  "preexisting_or_external"
+                  },
+                  {
+                      "path":  "README.md",
+                      "status":  "modified",
+                      "xy":  " M",
+                      "bucket":  "preexisting_or_external"
+                  },
+                  {
+                      "path":  "SOTA_IMPLEMENTATION_PROGRESS.md",
+                      "status":  "deleted",
+                      "xy":  " D",
+                      "bucket":  "preexisting_or_external"
+                  },
+                  {
+                      "path":  "agent/change_detector.py",
+                      "status":  "modified",
+                      "xy":  " M",
+                      "bucket":  "preexisting_or_external"
+                  },
+                  {
+                      "path":  "agent/orchestrator.py",
+                      "status":  "modified",
+                      "xy":  " M",
+                      "bucket":  "agent_last_delta"
+                  },
+                  {
+                      "path":  "agent/response_builder.py",
+                      "status":  "modified",
+                      "xy":  " M",
+                      "bucket":  "preexisting_or_external"
+                  },
+                  {
+                      "path":  "agent/strixkat_eval.py",
+                      "status":  "modified",
+                      "xy":  " M",
+                      "bucket":  "preexisting_or_external"
+                  },
+                  {
+                      "path":  "agent/verification_manager.py",
+                      "status":  "modified",
+                      "xy":  " M",
+                      "bucket":  "preexisting_or_external"
+                  },
+                  {
+                      "path":  "agent_chatbot_logic.py",
+                      "status":  "modified",
+                      "xy":  " M",
+                      "bucket":  "preexisting_or_external"
+                  },
+                  {
+                      "path":  "docs/DOCUMENTATION_AUDIT_REPORT_2026-06-24.md",
+                      "status":  "deleted",
+                      "xy":  " D",
+                      "bucket":  "preexisting_or_external"
+                  },
+                  {
+                      "path":  "docs/DOCUMENTATION_AUDIT_USER_CHANGE_SUMMARY.md",
+                      "status":  "deleted",
+                      "xy":  " D",
+                      "bucket":  "preexisting_or_external"
+                  },
+                  {
+                      "path":  "docs/I18N_BULGARIAN_COMPLETE_ANALYSIS.md",
+                      "status":  "deleted",
+                      "xy":  " D",
+                      "bucket":  "preexisting_or_external"
+                  },
+                  {
+                      "path":  "docs/I18N_BULGARIAN_IMPLEMENTATION.md",
+                      "status":  "deleted",
+                      "xy":  " D",
+                      "bucket":  "preexisting_or_external"
+                  },
+                  {
+                      "path":  "docs/README.md",
+                      "status":  "modified",
+                      "xy":  " M",
+                      "bucket":  "preexisting_or_external"
+                  },
+                  {
+                      "path":  "docs/SOTA_IMPLEMENTATION_TRACKER.md",
+                      "status":  "deleted",
+                      "xy":  " D",
+                      "bucket":  "preexisting_or_external"
+                  },
+                  {
+                      "path":  "docs/SOTA_RAG_QUALITY_PIPELINE.md",
+                      "status":  "deleted",
+                      "xy":  " D",
+                      "bucket":  "preexisting_or_external"
+                  },
+                  {
+                      "path":  "docs/SOTA_ROADMAP.md",
+                      "status":  "deleted",
+                      "xy":  " D",
+                      "bucket":  "preexisting_or_external"
+                  },
+                  {
+                      "path":  "docs/finance_optimization_roadmap.md",
+                      "status":  "deleted",
+                      "xy":  " D",
+                      "bucket":  "preexisting_or_external"
+                  },
+                  {
+                      "path":  "docs/finance_prompt_inventory.md",
+                      "status":  "deleted",
+                      "xy":  " D",
+                      "bucket":  "preexisting_or_external"
+                  },
+                  {
+                      "path":  "docs/finance_user_change_summary.md",
+                      "status":  "deleted",
+                      "xy":  " D",
+                      "bucket":  "preexisting_or_external"
+                  },
+                  {
+                      "path":  "enhanced_streamlit_bot.py",
+                      "status":  "modified",
+                      "xy":  " M",
+                      "bucket":  "preexisting_or_external"
+                  },
+                  {
+                      "path":  "finance/tab.py",
+                      "status":  "modified",
+                      "xy":  " M",
+                      "bucket":  "preexisting_or_external"
+                  },
+                  {
+                      "path":  "i18n/__init__.py",
+                      "status":  "modified",
+                      "xy":  " M",
+                      "bucket":  "preexisting_or_external"
+                  },
+                  {
+                      "path":  "i18n/i18n_manager.py",
+                      "status":  "modified",
+                      "xy":  " M",
+                      "bucket":  "preexisting_or_external"
+                  },
+                  {
+                      "path":  "i18n/locales/bg.json",
+                      "status":  "modified",
+                      "xy":  " M",
+                      "bucket":  "preexisting_or_external"
+                  },
+                  {
+                      "path":  "i18n/locales/de.json",
+                      "status":  "modified",
+                      "xy":  " M",
+                      "bucket":  "preexisting_or_external"
+                  },
+                  {
+                      "path":  "i18n/locales/en.json",
+                      "status":  "modified",
+                      "xy":  " M",
+                      "bucket":  "preexisting_or_external"
+                  },
+                  {
+                      "path":  "kg_dashboard.py",
+                      "status":  "modified",
+                      "xy":  " M",
+                      "bucket":  "preexisting_or_external"
+                  },
+                  {
+                      "path":  "models_pydantic_v2.py",
+                      "status":  "modified",
+                      "xy":  " M",
+                      "bucket":  "preexisting_or_external"
+                  },
+                  {
+                      "path":  "psychological_session/handlers/chat_input_handler.py",
+                      "status":  "modified",
+                      "xy":  " M",
+                      "bucket":  "preexisting_or_external"
+                  },
+                  {
+                      "path":  "psychological_session/handlers/response_generator.py",
+                      "status":  "modified",
+                      "xy":  " M",
+                      "bucket":  "preexisting_or_external"
+                  },
+                  {
+                      "path":  "psychological_session/lifecycle/session_lifecycle_manager.py",
+                      "status":  "modified",
+                      "xy":  " M",
+                      "bucket":  "preexisting_or_external"
+                  },
+                  {
+                      "path":  "psychological_session/services/session_end_service.py",
+                      "status":  "modified",
+                      "xy":  " M",
+                      "bucket":  "preexisting_or_external"
+                  },
+                  {
+                      "path":  "psychological_session/ui/active_session_renderer.py",
+                      "status":  "modified",
+                      "xy":  " M",
+                      "bucket":  "preexisting_or_external"
+                  },
+                  {
+                      "path":  "psychological_session/ui/goal_progress_renderer.py",
+                      "status":  "modified",
+                      "xy":  " M",
+                      "bucket":  "preexisting_or_external"
+                  },
+                  {
+                      "path":  "psychological_session/ui/session_management_renderer.py",
+                      "status":  "modified",
+                      "xy":  " M",
+                      "bucket":  "preexisting_or_external"
+                  },
+                  {
+                      "path":  "psychological_session/ui/welcome_renderer.py",
+                      "status":  "modified",
+                      "xy":  " M",
+                      "bucket":  "preexisting_or_external"
+                  },
+                  {
+                      "path":  "agent/orchestrator.py.backup_20260713_llm_fix",
+                      "status":  "untracked",
+                      "xy":  "??",
+                      "bucket":  "preexisting_or_external"
+                  },
+                  {
+                      "path":  "agent/orchestrator.py.backup_20260713_sota_integration",
+                      "status":  "untracked",
+                      "xy":  "??",
+                      "bucket":  "preexisting_or_external"
+                  },
+                  {
+                      "path":  "agent/orchestrator.py.bak_20260713_refactor_phase1",
+                      "status":  "untracked",
+                      "xy":  "??",
+                      "bucket":  "agent_last_delta"
+                  },
+                  {
+                      "path":  "agent/response_builder.py.bak_20260712",
+                      "status":  "untracked",
+                      "xy":  "??",
+                      "bucket":  "preexisting_or_external"
+                  },
+                  {
+                      "path":  "agent/sota_pipeline.py.bak_20260713_sota_integration",
+                      "status":  "untracked",
+                      "xy":  "??",
+                      "bucket":  "preexisting_or_external"
+                  },
+                  {
+                      "path":  "agent/verification_manager.py.backup_20260713_llm_fix",
+                      "status":  "untracked",
+                      "xy":  "??",
+                      "bucket":  "preexisting_or_external"
+                  },
+                  {
+                      "path":  "agent/verification_manager.py.bak_20260713_error_fix",
+                      "status":  "untracked",
+                      "xy":  "??",
+                      "bucket":  "preexisting_or_external"
+                  },
+                  {
+                      "path":  "agent/verification_manager.py.bak_20260713_llm_decompose_fix",
+                      "status":  "untracked",
+                      "xy":  "??",
+                      "bucket":  "preexisting_or_external"
+                  },
+                  {
+                      "path":  "agent_chatbot_logic.py.bak_20260712_tool_context_fix",
+                      "status":  "untracked",
+                      "xy":  "??",
+                      "bucket":  "preexisting_or_external"
+                  },
+                  {
+                      "path":  "docs/00_CONTEXT_MASTER.md",
+                      "status":  "untracked",
+                      "xy":  "??",
+                      "bucket":  "preexisting_or_external"
+                  },
+                  {
+                      "path":  "docs/01_ARCHITECTURE_DEEP_DIVE.md",
+                      "status":  "untracked",
+                      "xy":  "??",
+                      "bucket":  "preexisting_or_external"
+                  },
+                  {
+                      "path":  "docs/02_SOTA_ROADMAP.md",
+                      "status":  "untracked",
+                      "xy":  "??",
+                      "bucket":  "preexisting_or_external"
+                  },
+                  {
+                      "path":  "docs/03_FINANCE_MODULE.md",
+                      "status":  "untracked",
+                      "xy":  "??",
+                      "bucket":  "preexisting_or_external"
+                  },
+                  {
+                      "path":  "docs/04_I18N_GUIDE.md",
+                      "status":  "untracked",
+                      "xy":  "??",
+                      "bucket":  "preexisting_or_external"
+                  },
+                  {
+                      "path":  "docs/05_DEVELOPER_GUIDE.md",
+                      "status":  "untracked",
+                      "xy":  "??",
+                      "bucket":  "preexisting_or_external"
+                  },
+                  {
+                      "path":  "docs/06_CONTEXT_ENGINEERING_SOTA.md",
+                      "status":  "untracked",
+                      "xy":  "??",
+                      "bucket":  "preexisting_or_external"
+                  },
+                  {
+                      "path":  "docs/09_archived/",
+                      "status":  "untracked",
+                      "xy":  "??",
+                      "bucket":  "preexisting_or_external"
+                  },
+                  {
+                      "path":  "docs/SOTA_WORKLOG_20260713.md",
+                      "status":  "untracked",
+                      "xy":  "??",
+                      "bucket":  "agent_last_delta"
+                  },
+                  {
+                      "path":  "docs/SOTA_WORKLOG_20260713.md.bak_20260713_refactor_phase1",
+                      "status":  "untracked",
+                      "xy":  "??",
+                      "bucket":  "agent_last_delta"
+                  },
+                  {
+                      "path":  "enhanced_streamlit_bot.py.bak_20260712",
+                      "status":  "untracked",
+                      "xy":  "??",
+                      "bucket":  "preexisting_or_external"
+                  },
+                  {
+                      "path":  "enhanced_streamlit_bot.py.bak_20260712_012711",
+                      "status":  "untracked",
+                      "xy":  "??",
+                      "bucket":  "preexisting_or_external"
+                  },
+                  {
+                      "path":  "finance/tab.py.bak_20260712_finance_longtail",
+                      "status":  "untracked",
+                      "xy":  "??",
+                      "bucket":  "preexisting_or_external"
+                  },
+                  {
+                      "path":  "finance/tab.py.bak_20260712_phase2",
+                      "status":  "untracked",
+                      "xy":  "??",
+                      "bucket":  "preexisting_or_external"
+                  },
+                  {
+                      "path":  "funktionen.md",
+                      "status":  "untracked",
+                      "xy":  "??",
+                      "bucket":  "agent_last_delta"
+                  },
+                  {
+                      "path":  "i18n/__init__.py.bak_20260712",
+                      "status":  "untracked",
+                      "xy":  "??",
+                      "bucket":  "preexisting_or_external"
+                  },
+                  {
+                      "path":  "i18n/i18n_manager.py.bak_20260711",
+                      "status":  "untracked",
+                      "xy":  "??",
+                      "bucket":  "preexisting_or_external"
+                  },
+                  {
+                      "path":  "i18n/i18n_manager.py.bak_20260712",
+                      "status":  "untracked",
+                      "xy":  "??",
+                      "bucket":  "preexisting_or_external"
+                  },
+                  {
+                      "path":  "i18n/locale_negotiator.py",
+                      "status":  "untracked",
+                      "xy":  "??",
+                      "bucket":  "preexisting_or_external"
+                  },
+                  {
+                      "path":  "i18n/locales/bg.json.bak_20260712",
+                      "status":  "untracked",
+                      "xy":  "??",
+                      "bucket":  "preexisting_or_external"
+                  },
+                  {
+                      "path":  "i18n/locales/bg.json.bak_20260712_finance_longtail",
+                      "status":  "untracked",
+                      "xy":  "??",
+                      "bucket":  "preexisting_or_external"
+                  },
+                  {
+                      "path":  "i18n/locales/bg.json.bak_20260712_phase2",
+                      "status":  "untracked",
+                      "xy":  "??",
+                      "bucket":  "preexisting_or_external"
+                  },
+                  {
+                      "path":  "i18n/locales/de.json.bak_20260712",
+                      "status":  "untracked",
+                      "xy":  "??",
+                      "bucket":  "preexisting_or_external"
+                  },
+                  {
+                      "path":  "i18n/locales/de.json.bak_20260712_finance_longtail",
+                      "status":  "untracked",
+                      "xy":  "??",
+                      "bucket":  "preexisting_or_external"
+                  },
+                  {
+                      "path":  "i18n/locales/de.json.bak_20260712_phase2",
+                      "status":  "untracked",
+                      "xy":  "??",
+                      "bucket":  "preexisting_or_external"
+                  },
+                  {
+                      "path":  "i18n/locales/en.json.bak_20260712",
+                      "status":  "untracked",
+                      "xy":  "??",
+                      "bucket":  "preexisting_or_external"
+                  },
+                  {
+                      "path":  "i18n/locales/en.json.bak_20260712_finance_longtail",
+                      "status":  "untracked",
+                      "xy":  "??",
+                      "bucket":  "preexisting_or_external"
+                  },
+                  {
+                      "path":  "i18n/locales/en.json.bak_20260712_phase2",
+                      "status":  "untracked",
+                      "xy":  "??",
+                      "bucket":  "preexisting_or_external"
+                  },
+                  {
+                      "path":  "kg_dashboard.py.bak_20260712_phase2",
+                      "status":  "untracked",
+                      "xy":  "??",
+                      "bucket":  "preexisting_or_external"
+                  },
+                  {
+                      "path":  "psychological_session/handlers/response_generator.py.bak_20260712",
+                      "status":  "untracked",
+                      "xy":  "??",
+                      "bucket":  "preexisting_or_external"
+                  },
+                  {
+                      "path":  "start_private_with_finance.ps1",
+                      "status":  "untracked",
+                      "xy":  "??",
+                      "bucket":  "preexisting_or_external"
+                  },
+                  {
+                      "path":  "start_public_no_finance.ps1",
+                      "status":  "untracked",
+                      "xy":  "??",
+                      "bucket":  "preexisting_or_external"
+                  }
+              ]
+}

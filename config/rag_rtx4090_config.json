@@ -1,0 +1,32 @@
+{
+  "embedding": {
+    "batch_size": 512,
+    "use_gpu": true,
+    "max_length": 8192,
+    "use_mixed_precision": true
+  },
+  "chunking": {
+    "chunk_size": 2048,
+    "overlap_size": 256,
+    "parallel_processing": true,
+    "num_workers": 24
+  },
+  "pdf_processing": {
+    "memory_limit_mb": 49152,
+    "parallel_extractions": 16,
+    "use_ocr_gpu": true,
+    "batch_ocr": true
+  },
+  "knowledge_graph": {
+    "batch_size": 64,
+    "use_gpu_for_inference": true,
+    "max_entities_per_batch": 256,
+    "parallel_extraction": true
+  },
+  "database": {
+    "batch_insert_size": 1000,
+    "use_bulk_operations": true,
+    "connection_pool_size": 32,
+    "enable_wal_mode": true
+  }
+}

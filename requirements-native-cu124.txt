@@ -1,0 +1,6 @@
+# Validated RTX 4090 / CUDA 12.4 binary baseline for Windows and Python 3.12.
+# Install this file before requirements.txt so PyPI cannot select CPU wheels.
+--index-url https://download.pytorch.org/whl/cu124
+
+torch==2.6.0+cu124
+torchvision==0.21.0+cu124

@@ -1,0 +1,26 @@
+{
+  "2025-01-27_10:30:00": {
+    "type": "response_feedback",
+    "rating": 4,
+    "content": "Die Antwort war sehr hilfreich und detailliert!",
+    "category": "positive"
+  },
+  "2025-01-27_10:32:00": {
+    "type": "response_feedback",
+    "rating": 2,
+    "content": "Die Antwort war zu technisch und schwer verständlich.",
+    "category": "negative"
+  },
+  "2025-01-27_10:35:00": {
+    "type": "general_feedback",
+    "rating": 5,
+    "content": "Großartige Arbeit! Das System funktioniert perfekt.",
+    "category": "positive"
+  },
+  "2025-01-27_10:40:00": {
+    "type": "bug_report",
+    "rating": 1,
+    "content": "Die GUI friert manchmal ein beim Laden großer Dokumente.",
+    "category": "negative"
+  }
+}

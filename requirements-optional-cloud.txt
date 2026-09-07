@@ -1,0 +1,5 @@
+# Optional cloud OCR integration. Not part of the local-first runtime.
+-r requirements.txt
+
+azure-cognitiveservices-vision-computervision>=0.9.1,<0.10
+msrest>=0.7.1,<0.8

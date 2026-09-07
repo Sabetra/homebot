@@ -1,0 +1,34 @@
+﻿{
+    "generated_at":  "2026-07-13T23:20:30+02:00",
+    "focus_files":  [
+                        "agent/orchestrator.py",
+                        "agent/sota_pipeline.py",
+                        "agent/change_detector.py",
+                        "agent/verification_manager.py",
+                        "agent/multimodal_rag.py",
+                        "agent/strixkat_eval.py"
+                    ],
+    "changed_focus_items":  [
+                                {
+                                    "path":  "agent/change_detector.py",
+                                    "status":  "modified",
+                                    "xy":  " M"
+                                },
+                                {
+                                    "path":  "agent/orchestrator.py",
+                                    "status":  "modified",
+                                    "xy":  " M"
+                                },
+                                {
+                                    "path":  "agent/strixkat_eval.py",
+                                    "status":  "modified",
+                                    "xy":  " M"
+                                },
+                                {
+                                    "path":  "agent/verification_manager.py",
+                                    "status":  "modified",
+                                    "xy":  " M"
+                                }
+                            ],
+    "total_changed_focus_items":  4
+}

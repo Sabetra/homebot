@@ -1,0 +1,163 @@
+#!/bin/sh
+#
+# Pre-Commit-Gate (portabel, maschinenunabhängig)
+#
+# Fuehrt vor jedem *bewussten* Commit das deterministische Release-Gate aus
+# (pytest + Profile-Fixture, ohne Modellladen, ca. 65 s).
+#
+# WICHTIG - Autosave wird nie blockiert:
+#   scripts/autosave_snapshot.ps1 setzt HOMEBOT_AUTOSAVE=1. Das Sicherheitsnetz
+#   muss auch einen kaputten Zwischenstand sichern koennen; genau dafuer ist
+#   es da. Ein Gate, das den Snapshot verhindert, wuerde den Schutz aushebeln.
+#
+# Bewusst umgehen (Ausnahmefall):
+#   git commit --no-verify -m "..."
+#
+# Aktiviert ueber:  git config core.hooksPath .githooks
+#
+# Python-Aufloesung (in dieser Reihenfolge):
+#   1. $HOMEBOT_PYTHON (explizit, muss existieren)
+#   2. Erste Venv, die pytest importen kann (Gate-Voraussetzung) -
+#      Reihenfolge: Produktionsvenv (venv_bot_20260802), .venv, venv,
+#      Legacy (venv_mistral_gguf); Windows + Linux.
+#      So waehlt der Hook keine unausgebaute Venv (z. B. .venv ohne
+#      aiosqlite), die das Gate mit Fehlschlaegen lahmlegen wuerde.
+#   3. Erste vorhandene Venv (Fallback)
+#   4. python aus dem PATH
+
+if [ "$HOMEBOT_AUTOSAVE" = "1" ]; then
+    exit 0
+fi
+
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+
+# Signing-Readiness (fail-closed, ~1-2 s, 2026-09-07):
+# commit.gpgsign=true signiert ueber `ssh-keygen -Y sign`. Der ED25519-Key ist
+# mit einer Passphrase verschluesselt (Fingerprint unveraendert: SHA256:nyRYo...).
+# Zwei nicht-interaktive Entsperrpfade (keine TTY-Prompts, keine Haenge):
+#   a) ssh-agent (Key bereits geladen oder hier idempotent nachgeladen;
+#      Passphrase aus dem Windows-DPAPI-Store, nie Klartext auf Disk)
+#   b) SSH_ASKPASS -> scripts/signing_askpass.cmd (liest denselben DPAPI-Store);
+#      als User-Env gesetzt (setx) zusammen mit SSH_ASKPASS_REQUIRE=force.
+# Bewusste Commits: fail-closed - kein unsigniertes Commit, kein Silent-Fallback.
+# Der Autosave-Pfad (HOMEBOT_AUTOSAVE=1) verlaesst den Hook oben; dort regelt
+# scripts/autosave_snapshot.ps1 das Laden und den No-GPG-Fallback selbst
+# (Sicherheitsnetz wird nie blockiert).
+# System-OpenSSH ist PINNED: Git-for-Windows-Builds erhalten am Agent-Pipe
+# 'Device or resource busy' (MSYS-Pipe-Handling); der System-Build verbindet
+# zuverlaessig (inkl. Default-Pipe-Fallback).
+if [ -z "$HOMEBOT_AUTOSAVE" ]; then
+    SIGNING_KEY="$(git config user.signingkey 2>/dev/null | tr '\\' '/')"
+    if [ -n "$SIGNING_KEY" ] && [ -f "$SIGNING_KEY.pub" ]; then
+        SYS_SSH="C:/Windows/System32/OpenSSH"
+        if [ ! -f "$SYS_SSH/ssh-add.exe" ] || [ ! -f "$SYS_SSH/ssh-keygen.exe" ]; then
+            echo "pre-commit: SIGNING-GATE ROT - System-OpenSSH fehlt (C:\\Windows\\System32\\OpenSSH)." >&2
+            exit 1
+        fi
+        SIGN_FP="$("$SYS_SSH/ssh-keygen.exe" -lf "$SIGNING_KEY.pub" 2>/dev/null | cut -d' ' -f2)"
+        # 1) Best-effort: Key in den ssh-agent laden (idempotent, DPAPI-Store).
+        #    Scheitert hier nicht hart: Pfad (b) ueber SSH_ASKPASS reicht fuer
+        #    das Signieren - der Check in Schritt 2 ist massgeblich.
+        if [ -n "$SIGN_FP" ] && ! "$SYS_SSH/ssh-add.exe" -l 2>/dev/null | grep -qF "$SIGN_FP"; then
+            echo "pre-commit: Signing-Key fehlt im ssh-agent - lade ihn (DPAPI-Store)..." >&2
+            powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$REPO_ROOT/scripts/load_signing_key.ps1" >&2
+        fi
+        # 2) Fail-closed-Check: signing MUSS nicht-interaktiv moeglich sein
+        #    (Agent ODER SSH_ASKPASS). stdin=/dev/null => kein TTY-Prompt, kein Hang.
+        if ! "$SYS_SSH/ssh-keygen.exe" -y -f "$SIGNING_KEY" </dev/null >/dev/null 2>&1; then
+            echo "pre-commit: SIGNING-GATE ROT - Signing-Key ist nicht nicht-interaktiv entsperrbar." >&2
+            echo "pre-commit: Erwartet: ssh-agent geladen ODER" >&2
+            echo "pre-commit:   SSH_ASKPASS=$REPO_ROOT/scripts/signing_askpass.cmd" >&2
+            echo "pre-commit:   SSH_ASKPASS_REQUIRE=force  (beides: setx, neue Session)" >&2
+            exit 1
+        fi
+    fi
+fi
+
+PYTHON=""
+if [ -n "$HOMEBOT_PYTHON" ] && [ -x "$HOMEBOT_PYTHON" ]; then
+    PYTHON="$HOMEBOT_PYTHON"
+else
+    # Pass 1: erste Venv mit pytest (Gate-Voraussetzung)
+    for cand in \
+        "$REPO_ROOT/venv_bot_20260802/Scripts/python.exe" \
+        "$REPO_ROOT/.venv/Scripts/python.exe" \
+        "$REPO_ROOT/venv/Scripts/python.exe" \
+        "$REPO_ROOT/venv_bot_20260802/bin/python" \
+        "$REPO_ROOT/.venv/bin/python" \
+        "$REPO_ROOT/venv/bin/python" \
+        "$REPO_ROOT/venv_mistral_gguf/Scripts/python.exe"; do
+        if [ -x "$cand" ] && "$cand" -c "import pytest" >/dev/null 2>&1; then
+            PYTHON="$cand"
+            break
+        fi
+    done
+    # Pass 2: erste vorhandene Venv (Fallback)
+    if [ -z "$PYTHON" ]; then
+        for cand in \
+            "$REPO_ROOT/venv_bot_20260802/Scripts/python.exe" \
+            "$REPO_ROOT/.venv/Scripts/python.exe" \
+            "$REPO_ROOT/venv/Scripts/python.exe" \
+            "$REPO_ROOT/venv_bot_20260802/bin/python" \
+            "$REPO_ROOT/.venv/bin/python" \
+            "$REPO_ROOT/venv/bin/python" \
+            "$REPO_ROOT/venv_mistral_gguf/Scripts/python.exe"; do
+            if [ -x "$cand" ]; then PYTHON="$cand"; break; fi
+        done
+    fi
+fi
+if [ -z "$PYTHON" ]; then
+    PYTHON="$(command -v python 2>/dev/null || true)"
+fi
+if [ -z "$PYTHON" ]; then
+    echo "pre-commit: kein Python-Interpreter gefunden - Gate uebersprungen." >&2
+    echo "pre-commit: HOMEBOT_PYTHON setzen oder venv anlegen (.venv/ bzw. venv/)." >&2
+    exit 1
+fi
+
+# Secret/Key-Gate (fail-closed, ~1 s): blockt Secrets/Private Keys, die im
+# Staging-Bereich liegen. Stdlib-only (keine Dependencies). Die Autosave-
+# Pfade (HOMEBOT_AUTOSAVE=1) verlassen den Hook oben; deren Absicherung
+# lebt in scripts/autosave_snapshot.ps1.
+# --no-verify ueberspringt dieses Gate, aber NICHT das pre-push-Gate:
+# Secrets werden beim Push trotzdem blockiert.
+"$PYTHON" scripts/secret_guard.py --staged
+GUARD_STATUS=$?
+if [ $GUARD_STATUS -ne 0 ]; then
+    echo "" >&2
+    echo "pre-commit: SECRET-GATE ROT - Commit blockiert." >&2
+    echo "pre-commit: Entferne die geflaggteten Dateien aus dem Staging-Bereich:" >&2
+    echo "pre-commit:   git restore --staged <pfad>" >&2
+    echo "pre-commit: (Bei echtem Secret: Datei loeschen/Key rotieren, NICHT --no-verify.)" >&2
+    exit $GUARD_STATUS
+fi
+
+echo "pre-commit: deterministisches Release-Gate laeuft (ca. 65 s)..."
+echo "pre-commit: ueberspringen mit  git commit --no-verify"
+
+# Lizenz-Gate (fail-fast, ~1 s): LICENSES.md-Frische + AGPL-Policy.
+# Strict-Modus: unknown/needs-review im Runtime-Scope blockt den Commit.
+# Bei Roete: "python scripts/generate_licenses.py" ausfuehren und neu committen.
+"$PYTHON" scripts/check_licenses.py --strict
+LICENSE_STATUS=$?
+if [ $LICENSE_STATUS -ne 0 ]; then
+    echo "" >&2
+    echo "pre-commit: LICENSE-GATE ROT - Commit abgebrochen." >&2
+    echo "pre-commit: Aktion: python scripts/generate_licenses.py" >&2
+    exit $LICENSE_STATUS
+fi
+
+"$PYTHON" scripts/run_release_quality_gate.py --mode deterministic
+STATUS=$?
+
+if [ $STATUS -ne 0 ]; then
+    echo "" >&2
+    echo "pre-commit: GATE ROT - Commit abgebrochen." >&2
+    echo "pre-commit: Bericht unter monitoring/release_quality/" >&2
+    echo "pre-commit: Der Arbeitsstand ist trotzdem sicher - der Autosave-" >&2
+    echo "pre-commit: Watcher snapshottet unabhaengig von diesem Gate." >&2
+    exit $STATUS
+fi
+
+echo "pre-commit: Gate gruen."
+exit 0

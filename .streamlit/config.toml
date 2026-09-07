@@ -1,0 +1,30 @@
+[browser]
+gatherUsageStats = false
+serverAddress = "localhost"
+serverPort = 8501
+
+[server]
+port = 8501
+enableCORS = false
+enableXsrfProtection = false
+maxUploadSize = 2000
+headless = true
+# Erhöhe WebSocket Message Size für große Model-Operationen
+maxMessageSize = 200
+# Erhöhe WebSocket Timeout
+enableWebsocketCompression = true
+
+[runner]
+# Verhindere Timeouts bei langen Operationen
+magicEnabled = true
+fastReruns = false
+
+[client]
+# "developer" = volle Toolbar inkl. "Source file changed → Rerun / Always rerun"
+# Banner. "minimal" hat dieses Banner unterdrückt, deshalb musste der Bot
+# bei Code-Änderungen jedes Mal manuell neu gestartet werden.
+toolbarMode = "developer"
+showErrorDetails = true
+
+[logger]
+level = "info"
