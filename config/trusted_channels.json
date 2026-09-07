@@ -8,27 +8,28 @@
     "seed_sources": [
       "Wikipedia: List of most-subscribed YouTube channels (2026-06)",
       "top10grid.com/top-10-youtube-channels-science-education-2026 (2026)",
-      "blog.podbrief.io/best-science-channels-on-youtube (2026-03)"
+      "blog.podbrief.io/best-science-channels-on-youtube (2026-03)",
+      "AI Explained: patreon.com/AIExplained + aiexplainedopodcast.buzzsprout.com (2026-09-07)"
     ],
     "updated_at": "2026-09-07"
   },
   "channels": [
-    { "name": "Kurzgesagt – In a Nutshell", "handle": "@Kurzgesagt", "category": "science", "channel_id": null },
-    { "name": "Veritasium", "handle": "@Veritasium", "category": "science", "channel_id": null },
-    { "name": "Mark Rober", "handle": "@markrober", "category": "science-engineering", "channel_id": null },
-    { "name": "3Blue1Brown", "handle": "@3blue1brown", "category": "math", "channel_id": null },
-    { "name": "PBS Space Time", "handle": "@pbsspacetime", "category": "physics", "channel_id": null },
-    { "name": "SmarterEveryDay", "handle": "@smartereveryday", "category": "engineering", "channel_id": null },
-    { "name": "Practical Engineering", "handle": "@practicalengineering", "category": "engineering", "channel_id": null },
-    { "name": "Khan Academy", "handle": "@KhanAcademy", "category": "education", "channel_id": null },
-    { "name": "TED-Ed", "handle": "@TED-Ed", "category": "education", "channel_id": null },
-    { "name": "NASA", "handle": "@NASA", "category": "space-institutional", "channel_id": null },
-    { "name": "NVIDIA", "handle": "@nvidia", "category": "tech-ai", "channel_id": null },
-    { "name": "Google DeepMind", "handle": "@deepmind", "category": "ai", "channel_id": null },
-    { "name": "Two Minute Papers", "handle": "@TwoMinutePapers", "category": "ai-news", "channel_id": null },
-    { "name": "AI Explained", "handle": "@aiexplainedoff", "category": "ai", "channel_id": null },
-    { "name": "Fireship", "handle": "@fireship", "category": "programming", "channel_id": null },
-    { "name": "The Coding Train", "handle": "@codingtrain", "category": "programming", "channel_id": null },
-    { "name": "Computerphile", "handle": "@Computerphile", "category": "computer-science", "channel_id": null }
+    { "name": "Kurzgesagt – In a Nutshell", "handle": "@Kurzgesagt", "category": "science", "channel_id": "UCsXVk37bltHxD1rDPwtNM8Q" },
+    { "name": "Veritasium", "handle": "@Veritasium", "category": "science", "channel_id": "UCHnyfMqiRRG1u-2MsSQLbXA" },
+    { "name": "Mark Rober", "handle": "@markrober", "category": "science-engineering", "channel_id": "UCY1kMZp36IQSyNx_9h4mpCg" },
+    { "name": "3Blue1Brown", "handle": "@3blue1brown", "category": "math", "channel_id": "UCYO_jab_esuFRV4b17AJtAw" },
+    { "name": "PBS Space Time", "handle": "@pbsspacetime", "category": "physics", "channel_id": "UC7_gcs09iThXybpVgjHZ_7g" },
+    { "name": "SmarterEveryDay", "handle": "@smartereveryday", "category": "engineering", "channel_id": "UC6107grRI4m0o2-emgoDnAA" },
+    { "name": "Practical Engineering", "handle": "PracticalEngineeringChannel", "category": "engineering", "channel_id": "UCMOqf8ab-42UUQIdVoKwjlQ" },
+    { "name": "Khan Academy", "handle": "@KhanAcademy", "category": "education", "channel_id": "UC4a-Gbdw7vOaccHmFo40b9g" },
+    { "name": "TED-Ed", "handle": "@TED-Ed", "category": "education", "channel_id": "UCsooa4yRKGN_zEE8iknghZA" },
+    { "name": "NASA", "handle": "@NASA", "category": "space-institutional", "channel_id": "UCLA_DiR1FfKNvjuUpBHmylQ" },
+    { "name": "NVIDIA", "handle": "@nvidia", "category": "tech-ai", "channel_id": "UCHuiy8bXnmK5nisYHUd1J5g" },
+    { "name": "Google DeepMind", "handle": "@deepmind", "category": "ai", "channel_id": "UCP7jMXSY2xbc3KCAE0MHQ-A" },
+    { "name": "Two Minute Papers", "handle": "channel/UC-BK9V7tvzrxAvJf3mp1oaQ", "category": "ai-news", "channel_id": "UC-BK9V7tvzrxAvJf3mp1oaQ" },
+    { "name": "AI Explained", "handle": "channel/UCNJ1Ymd5yFuUPtn21xtRbbw", "category": "ai", "channel_id": "UCNJ1Ymd5yFuUPtn21xtRbbw", "resolved_channel_name": "AI Explained", "follower_count": 446000, "verification": { "date": "2026-09-07", "method": "Zwei unabhaengige offizielle Quellen + Beschreibung-Cross-Reference (yt-dlp)", "sources": [ "Offizielle Patreon (patreon.com/AIExplained, 'AI Insiders network') verlinkt channel/UCNJ1Ymd5yFuUPtn21xtRbbw", "Offizieller Podcast (aiexplainedopodcast.buzzsprout.com) — identischer Tagline 'author of Simple Bench'" ], "cross_check": "Kanal-Beschreibung referenziert patreon.com/AIExplained + Simple Bench + 'AI Insiders'; 446K Abonnenten; alter Handle @aiexplained-official ist ungültig (404) — nie als Schlüssel verwenden" } },
+    { "name": "Fireship", "handle": "@fireship", "category": "programming", "channel_id": "UCsBjURrPoezykLs9EqgamOA" },
+    { "name": "The Coding Train", "handle": "channel/UCvjgXvBlbQiydffZU7m1_aw", "category": "programming", "channel_id": "UCvjgXvBlbQiydffZU7m1_aw" },
+    { "name": "Computerphile", "handle": "@Computerphile", "category": "computer-science", "channel_id": "UC9-y-6csu5WGm29I7JiwpnA" }
   ]
 }
