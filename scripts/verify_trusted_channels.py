@@ -41,11 +41,19 @@ def _ydl_opts() -> dict:
     }
 
 
-def _extract_info(url: str) -> dict:
-    """Extrahiert Metadaten für eine YouTube-URL (Video ODER Channel)."""
+def _extract_info(url: str, extract_flat: bool = False) -> dict:
+    """Extrahiert Metadaten für eine YouTube-URL (Video ODER Channel).
+
+    extract_flat=True: nur Top-Level-Playlist-/Channel-Info — WICHTIG für
+    Channel-URLs, da yt-dlp sonst JEDES Video des Channels extrahiert
+    (Kurzgesagt: 249 Videos + 137 Shorts => Stunden statt Sekunden).
+    """
     import yt_dlp
 
-    with yt_dlp.YoutubeDL(_ydl_opts()) as ydl:
+    opts = _ydl_opts()
+    if extract_flat:
+        opts["extract_flat"] = "in_playlist"
+    with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(url, download=False)
     return info or {}
 
@@ -89,7 +97,7 @@ def resolve_missing() -> int:
             continue
         url = f"https://www.youtube.com/{handle.lstrip('@')}"
         try:
-            info = _extract_info(url)
+            info = _extract_info(url, extract_flat=True)
             cid = info.get("channel_id") or ""
             if not CHANNEL_ID_RE.match(cid):
                 print(f"  ✗ {entry['name']}: keine gültige Channel-ID (got: {cid!r})")
