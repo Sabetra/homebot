@@ -302,3 +302,154 @@ def evaluate_statement_consistency(
         )
 
     # -- 3) Saldo-Kette: opening + credits - debits == closing --------------
+    if opening_balance is not None and closing_balance is not None:
+        computed_closing = to_cents(opening_balance) + credits - debits
+        stated_closing = to_cents(closing_balance)
+        if computed_closing == stated_closing:
+            checks.append(
+                ConsistencyCheckResult(
+                    name=CHECK_BALANCE_CHAIN,
+                    status=CHECK_STATUS_PASSED,
+                    expected_cents=computed_closing,
+                    actual_cents=stated_closing,
+                    reason=(
+                        "Saldo-Kette stimmt: {o} + {c} - {d} = {r}."
+                    ).format(
+                        o=_fmt_cents(to_cents(opening_balance)),
+                        c=_fmt_cents(credits),
+                        d=_fmt_cents(debits),
+                        r=_fmt_cents(computed_closing),
+                    ),
+                )
+            )
+        else:
+            checks.append(
+                ConsistencyCheckResult(
+                    name=CHECK_BALANCE_CHAIN,
+                    status=CHECK_STATUS_FAILED,
+                    expected_cents=computed_closing,
+                    actual_cents=stated_closing,
+                    reason=(
+                        "Saldo-Kette weicht ab: {o} + {c} - {d} = {r}, "
+                        "ausgewiesener Endsaldo ist {stated}."
+                    ).format(
+                        o=_fmt_cents(to_cents(opening_balance)),
+                        c=_fmt_cents(credits),
+                        d=_fmt_cents(debits),
+                        r=_fmt_cents(computed_closing),
+                        stated=_fmt_cents(stated_closing),
+                    ),
+                )
+            )
+    else:
+        checks.append(
+            ConsistencyCheckResult(
+                name=CHECK_BALANCE_CHAIN,
+                status=CHECK_STATUS_SKIPPED,
+                reason="Anfangs- oder Endsaldo fehlt -- Saldo-Kette nicht prüfbar.",
+            )
+        )
+
+    # -- 4) Verknüpfung zum vorherigen Auszug ------------------------------
+    prior_cents: Optional[int] = None
+    if prior_closing_balance is not None and opening_balance is not None:
+        prior_cents = to_cents(prior_closing_balance)
+        current_opening = to_cents(opening_balance)
+        if prior_cents == current_opening:
+            checks.append(
+                ConsistencyCheckResult(
+                    name=CHECK_PRIOR_BALANCE_LINK,
+                    status=CHECK_STATUS_PASSED,
+                    expected_cents=current_opening,
+                    actual_cents=prior_cents,
+                    reason=(
+                        "Anfangssaldo stimmt mit Endsaldo des Vorzeitraums "
+                        "überein ({a}).".format(a=_fmt_cents(current_opening))
+                    ),
+                )
+            )
+        else:
+            checks.append(
+                ConsistencyCheckResult(
+                    name=CHECK_PRIOR_BALANCE_LINK,
+                    status=CHECK_STATUS_FAILED,
+                    expected_cents=current_opening,
+                    actual_cents=prior_cents,
+                    reason=(
+                        "Anfangssaldo ({o}) stimmt nicht mit Endsaldo des "
+                        "Vorzeitraums ({p}) überein."
+                    ).format(o=_fmt_cents(current_opening), p=_fmt_cents(prior_cents)),
+                )
+            )
+    else:
+        checks.append(
+            ConsistencyCheckResult(
+                name=CHECK_PRIOR_BALANCE_LINK,
+                status=CHECK_STATUS_SKIPPED,
+                reason=(
+                    "Kein vorheriger Endsaldo / kein Anfangssaldo verfügbar -- "
+                    "Verknüpfung zum Vorzeitraum nicht prüfbar."
+                ),
+            )
+        )
+
+    # -- Gesamtauswertung ---------------------------------------------------
+    any_failed = any(c.status == CHECK_STATUS_FAILED for c in checks)
+    any_skipped = any(c.status == CHECK_STATUS_SKIPPED for c in checks)
+    any_evaluated = any(c.status != CHECK_STATUS_SKIPPED for c in checks)
+
+    if any_failed:
+        status = STATUS_FAILED
+    elif any_skipped or not any_evaluated:
+        status = STATUS_PASSED_WITH_WARNINGS
+    else:
+        status = STATUS_PASSED
+
+    return ConsistencyReport(
+        status=status,
+        needs_review=status != STATUS_PASSED,
+        checks=tuple(checks),
+        prior_closing_balance_cents=prior_cents,
+    )
+
+
+def evaluate_extracted_statement(
+    statement: Any,
+    *,
+    prior_closing_balance: Optional[float] = None,
+) -> ConsistencyReport:
+    """Duck-typing-Adapter für extrahierte Statement-Objekte.
+
+    Akzeptiert ``finance.models.ExtractedStatement`` / ``StatementHeader``
+    (Attribute) oder ein einfaches Mapping mit denselben Schlüsseln. Damit
+    bleibt dieses Modul isoliert und ohne Import der Pydantic-Modelle
+    testbar.
+    """
+    if isinstance(statement, Mapping):
+        get = statement.get
+    else:
+
+        def get(key: str, default: Any = None) -> Any:
+            return getattr(statement, key, default)
+
+    transactions = get("transactions", None)
+    return evaluate_statement_consistency(
+        opening_balance=get("opening_balance", None),
+        closing_balance=get("closing_balance", None),
+        total_credits=get("total_credits", None),
+        total_debits=get("total_debits", None),
+        transactions=transactions,
+        prior_closing_balance=prior_closing_balance,
+    )
+
+
+__all__ = [
+    "ConsistencyCheckResult",
+    "ConsistencyReport",
+    "evaluate_statement_consistency",
+    "evaluate_extracted_statement",
+    "to_cents",
+    "STATUS_PASSED",
+    "STATUS_PASSED_WITH_WARNINGS",
+    "STATUS_FAILED",
+]

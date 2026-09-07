@@ -95,6 +95,11 @@ class Statement:
     period_end: Optional[str]
     opening_balance_cents: Optional[int]
     closing_balance_cents: Optional[int]
+    total_credits_cents: Optional[int]
+    total_debits_cents: Optional[int]
+    consistency_passed: Optional[bool]
+    consistency_errors: Optional[str]
+    needs_review: bool
     source_pdf_hash: str
     source_filename: Optional[str]
     imported_at: str
@@ -204,11 +209,17 @@ _SCHEMA_STATEMENTS: Tuple[str, ...] = (
         period_end              TEXT,
         opening_balance_cents   INTEGER,
         closing_balance_cents   INTEGER,
+        total_credits_cents     INTEGER,
+        total_debits_cents      INTEGER,
+        consistency_passed      INTEGER,
+        consistency_errors      TEXT,
+        needs_review            INTEGER NOT NULL DEFAULT 0,
         source_pdf_hash         TEXT NOT NULL UNIQUE,
         source_filename         TEXT,
         imported_at             TEXT NOT NULL DEFAULT (datetime('now'))
     )
     """,
+    "CREATE INDEX IF NOT EXISTS idx_stmt_review ON statements(needs_review)",
     f"""
     CREATE TABLE IF NOT EXISTS transactions (
         id                  INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -318,6 +329,38 @@ _SCHEMA_STATEMENTS: Tuple[str, ...] = (
         payload_json    TEXT NOT NULL,
         schema_hash     TEXT NOT NULL,
         updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+    """,
+    # ------------------------------------------------------------------
+    # Generischer Transaktions-Suchindex (FTS5 + Vektor-Embeddings).
+    # Hier (Freshe-DB-DLL) und NICHT nur in der Migration, damit eine
+    # frische Datenbank komplett initialisiert ist (Tabellen, Indexe,
+    # FTS-Trigger, Constraints). Die Backfill-Logik in
+    # _migrate_transaction_search bleibt fuer Altdatenbanken erhalten.
+    # ------------------------------------------------------------------
+    """
+    CREATE TABLE IF NOT EXISTS transaction_search_docs (
+        transaction_id    INTEGER PRIMARY KEY REFERENCES transactions(id) ON DELETE CASCADE,
+        search_text       TEXT NOT NULL,
+        search_text_norm  TEXT NOT NULL,
+        updated_at        TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_tx_search_docs_norm ON transaction_search_docs(search_text_norm)",
+    """
+    CREATE VIRTUAL TABLE IF NOT EXISTS transaction_search_fts USING fts5(
+        transaction_id UNINDEXED,
+        search_text,
+        tokenize='unicode61 remove_diacritics 2'
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS transaction_search_embeddings (
+        transaction_id    INTEGER PRIMARY KEY REFERENCES transactions(id) ON DELETE CASCADE,
+        model_name        TEXT NOT NULL,
+        embedding_dim     INTEGER NOT NULL,
+        embedding_blob    BLOB NOT NULL,
+        updated_at        TEXT NOT NULL DEFAULT (datetime('now'))
     )
     """,
 )
@@ -560,6 +603,7 @@ class FinanceDB:
             self._migrate_categories(conn)
             self._migrate_transactions(conn)
             self._migrate_account_types(conn)
+            self._migrate_statements_consistency(conn)
             self._migrate_transaction_search(conn)
             self._refresh_schema_catalog(conn)
 
@@ -703,42 +747,40 @@ class FinanceDB:
             return parsed if isinstance(parsed, dict) else {}
 
     @staticmethod
-    def _migrate_transaction_search(conn: sqlite3.Connection) -> None:
-        """Initialisiert und backfilled den generischen Transaktions-Suchindex."""
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS transaction_search_docs (
-                transaction_id    INTEGER PRIMARY KEY REFERENCES transactions(id) ON DELETE CASCADE,
-                search_text       TEXT NOT NULL,
-                search_text_norm  TEXT NOT NULL,
-                updated_at        TEXT NOT NULL DEFAULT (datetime('now'))
-            )
-            """
-        )
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_tx_search_docs_norm ON transaction_search_docs(search_text_norm)"
-        )
-        conn.execute(
-            """
-            CREATE VIRTUAL TABLE IF NOT EXISTS transaction_search_fts USING fts5(
-                transaction_id UNINDEXED,
-                search_text,
-                tokenize='unicode61 remove_diacritics 2'
-            )
-            """
-        )
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS transaction_search_embeddings (
-                transaction_id    INTEGER PRIMARY KEY REFERENCES transactions(id) ON DELETE CASCADE,
-                model_name        TEXT NOT NULL,
-                embedding_dim     INTEGER NOT NULL,
-                embedding_blob    BLOB NOT NULL,
-                updated_at        TEXT NOT NULL DEFAULT (datetime('now'))
-            )
-            """
-        )
+    def _migrate_statements_consistency(conn: sqlite3.Connection) -> None:
+        """Idempotente Migration der Konsistenz-/Review-Spalten auf ``statements``.
 
+        Frische DBs erhalten die Spalten direkt aus ``_SCHEMA_STATEMENTS``.
+        Bestehende DBs bekommen sie hier per ``ALTER TABLE ADD COLUMN``
+        (nur, wenn sie noch fehlen). ``needs_review`` wird mit
+        ``NOT NULL DEFAULT 0`` angelegt, damit vorhandene Zeilen automatisch
+        als "keine Review noetig" gelten, bis sie geprueft werden.
+        """
+        cols = {row["name"] for row in conn.execute("PRAGMA table_info(statements)").fetchall()}
+        if "total_credits_cents" not in cols:
+            conn.execute("ALTER TABLE statements ADD COLUMN total_credits_cents INTEGER")
+        if "total_debits_cents" not in cols:
+            conn.execute("ALTER TABLE statements ADD COLUMN total_debits_cents INTEGER")
+        if "consistency_passed" not in cols:
+            conn.execute("ALTER TABLE statements ADD COLUMN consistency_passed INTEGER")
+        if "consistency_errors" not in cols:
+            conn.execute("ALTER TABLE statements ADD COLUMN consistency_errors TEXT")
+        if "needs_review" not in cols:
+            conn.execute("ALTER TABLE statements ADD COLUMN needs_review INTEGER NOT NULL DEFAULT 0")
+
+        # Index fuer die Review-Abfrage (idempotent).
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_stmt_review ON statements(needs_review)")
+
+    def _migrate_transaction_search(conn: sqlite3.Connection) -> None:
+        """Backfilled den generischen Transaktions-Suchindex (Altdatenbanken).
+
+        Die DDL (Tabellen ``transaction_search_docs`` / ``transaction_search_fts``
+        / ``transaction_search_embeddings`` samt Index) liegt nun in
+        ``_SCHEMA_STATEMENTS`` und wird bei JEDEM Init (frisch und alt)
+        idempotent angelegt. Diese Migration macht nur noch das Backfill:
+        wenn die Such-Tabellen weniger Zeilen als ``transactions`` haben,
+        wird der Index neu aufgebaut.
+        """
         tx_count_row = conn.execute("SELECT COUNT(*) AS cnt FROM transactions").fetchone()
         doc_count_row = conn.execute("SELECT COUNT(*) AS cnt FROM transaction_search_docs").fetchone()
         fts_count_row = conn.execute("SELECT COUNT(*) AS cnt FROM transaction_search_fts").fetchone()
@@ -1171,6 +1213,11 @@ class FinanceDB:
         period_end: Optional[str],
         opening_balance: Optional[float],
         closing_balance: Optional[float],
+        total_credits: Optional[float] = None,
+        total_debits: Optional[float] = None,
+        consistency_passed: Optional[bool] = None,
+        consistency_errors: Optional[str] = None,
+        needs_review: bool = False,
     ) -> int:
         with self._lock, self._connect() as conn:
             return self._insert_statement_within_conn(
@@ -1182,6 +1229,11 @@ class FinanceDB:
                 period_end=period_end,
                 opening_balance=opening_balance,
                 closing_balance=closing_balance,
+                total_credits=total_credits,
+                total_debits=total_debits,
+                consistency_passed=consistency_passed,
+                consistency_errors=consistency_errors,
+                needs_review=needs_review,
             )
 
     def insert_transactions(
@@ -1225,6 +1277,11 @@ class FinanceDB:
         period_end: Optional[str],
         opening_balance: Optional[float],
         closing_balance: Optional[float],
+        total_credits: Optional[float] = None,
+        total_debits: Optional[float] = None,
+        consistency_passed: Optional[bool] = None,
+        consistency_errors: Optional[str] = None,
+        needs_review: bool = False,
         transactions: Sequence[Dict[str, Any]],
     ) -> Tuple[int, int, int, int, int]:
         """Persistiert einen vollstaendigen PDF-Import atomar.
@@ -1255,6 +1312,11 @@ class FinanceDB:
                 period_end=period_end,
                 opening_balance=opening_balance,
                 closing_balance=closing_balance,
+                total_credits=total_credits,
+                total_debits=total_debits,
+                consistency_passed=consistency_passed,
+                consistency_errors=consistency_errors,
+                needs_review=needs_review,
             )
             inserted, duplicates = self._insert_transactions_within_conn(
                 conn,
@@ -3438,6 +3500,7 @@ class FinanceDB:
 
     @staticmethod
     def _row_to_statement(row: sqlite3.Row) -> Statement:
+        consistency_passed = row["consistency_passed"]
         return Statement(
             id=int(row["id"]),
             account_id=int(row["account_id"]),
@@ -3445,6 +3508,11 @@ class FinanceDB:
             period_end=row["period_end"],
             opening_balance_cents=row["opening_balance_cents"],
             closing_balance_cents=row["closing_balance_cents"],
+            total_credits_cents=row["total_credits_cents"],
+            total_debits_cents=row["total_debits_cents"],
+            consistency_passed=None if consistency_passed is None else bool(consistency_passed),
+            consistency_errors=row["consistency_errors"],
+            needs_review=bool(row["needs_review"]),
             source_pdf_hash=row["source_pdf_hash"],
             source_filename=row["source_filename"],
             imported_at=row["imported_at"],

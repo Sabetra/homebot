@@ -390,6 +390,20 @@ class ExtractedStatement(BaseModel):
     closing_balance: Optional[float] = Field(
         default=None, description="Endsaldo (signed). null wenn nicht ausgewiesen."
     )
+    total_credits: Optional[float] = Field(
+        default=None,
+        description=(
+            "Summe aller Gutschriften (Eingänge) als positiver Betrag, "
+            "wenn der Auszug eine solche Summe ausweist. Sonst null."
+        ),
+    )
+    total_debits: Optional[float] = Field(
+        default=None,
+        description=(
+            "Summe aller Belastungen (Ausgänge) als positiver Betrag, "
+            "wenn der Auszug eine solche Summe ausweist. Sonst null."
+        ),
+    )
     transactions: List[ExtractedTransaction] = Field(
         default_factory=list, description="Alle Buchungen des Auszugs"
     )
@@ -398,6 +412,14 @@ class ExtractedStatement(BaseModel):
     @classmethod
     def _check_period(cls, v: Optional[str]) -> Optional[str]:
         return _normalize_date(v)
+
+    @field_validator("total_credits", "total_debits", mode="after")
+    @classmethod
+    def _totals_as_magnitude(cls, v: Optional[float]) -> Optional[float]:
+        """Summen sind Magnituden (immer >= 0) -- siehe StatementHeader."""
+        if v is None:
+            return None
+        return abs(float(v))
 
     @model_validator(mode="after")
     def _check_period_order(self) -> "ExtractedStatement":
@@ -464,11 +486,41 @@ class StatementHeader(BaseModel):
     )
     opening_balance: Optional[float] = Field(default=None, description="Anfangssaldo (signed)")
     closing_balance: Optional[float] = Field(default=None, description="Endsaldo (signed)")
+    total_credits: Optional[float] = Field(
+        default=None,
+        description=(
+            "Summe aller Gutschriften (Eingänge) dieses Auszugs als positiver "
+            "Betrag, wenn der Auszug eine solche Summe ausweist. "
+            "Ohne ausgewiesene Summe: null."
+        ),
+    )
+    total_debits: Optional[float] = Field(
+        default=None,
+        description=(
+            "Summe aller Belastungen (Ausgänge) dieses Auszugs als positiver "
+            "Betrag, wenn der Auszug eine solche Summe ausweist. "
+            "Ohne ausgewiesene Summe: null."
+        ),
+    )
 
     @field_validator("period_start", "period_end")
     @classmethod
     def _check_period(cls, v: Optional[str]) -> Optional[str]:
         return _normalize_date(v)
+
+    @field_validator("total_credits", "total_debits", mode="after")
+    @classmethod
+    def _totals_as_magnitude(cls, v: Optional[float]) -> Optional[float]:
+        """Summen sind Magnituden (immer >= 0).
+
+        Deterministische Normalisierung: falls das LLM eine Belastungssumme
+        versehentlich negativ (signed) ausweist, wird die Magnitude
+        übernommen. So bleibt die Vergleichssemantik in
+        ``finance.consistency`` eindeutig -- kein Raten, nur Vorzeichen-Kollaps.
+        """
+        if v is None:
+            return None
+        return abs(float(v))
 
 
 class TransactionBatch(BaseModel):
