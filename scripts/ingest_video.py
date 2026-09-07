@@ -380,7 +380,9 @@ def run_pipeline(url: str, out_root: Path, n_frames: int,
                 "outtmpl": str(sub_dir / "%(id)s.%(ext)s"),
             })
             with yt_dlp.YoutubeDL(sopts) as ydl:
-                ydl.extract_info(url, download=False)
+                # download=True + skip_download=True = Standard-Rezept für
+                # Subtitle-only-Extraktion (Video wird NICHT geladen).
+                ydl.extract_info(url, download=True)
             vtt_file = sub_dir / f"{vid}.{lang}.vtt"
             if not vtt_file.exists():
                 cands = sorted(sub_dir.glob(f"{vid}.*.vtt"))
