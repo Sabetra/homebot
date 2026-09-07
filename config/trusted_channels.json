@@ -2,7 +2,9 @@
   "_meta": {
     "description": "Trusted YouTube Channel Allowlist fuer die lokale Video-Pipeline (Subtitles/Frames). Nur Channels in dieser Liste duerfen verarbeitet werden (fail-closed).",
     "key": "channel_id (UC…) ist der stabile, permanente Schlüssel. name/handle dienen NUR der Anzeige und sind änderbar/spoofbar.",
+    "handle": "URL-Pfad-Segment des Channels (Handle, Custom-URL oder channel/UC…); NUR zur Auflösung, nie als Allowlist-Schlüssel.",
     "policy": "fail-closed: unbekannter channel_id => Verarbeitungs-Ablehnung (explizites User-OK erforderlich)",
+    "name_check": "resolve verifiziert zusätzlich: Channel-NAME muss den erwarteten Namen enthalten (Kopie-Kanäle abfangen).",
     "seed_sources": [
       "Wikipedia: List of most-subscribed YouTube channels (2026-06)",
       "top10grid.com/top-10-youtube-channels-science-education-2026 (2026)",

@@ -103,10 +103,21 @@ def resolve_missing() -> int:
                 print(f"  ✗ {entry['name']}: keine gültige Channel-ID (got: {cid!r})")
                 failed += 1
                 continue
+            # Fail-closed Namens-Abgleich: der aufgelöste Channel-NAME muss den
+            # erwarteten Namen enthalten (sonst: Spoofing/Kopie-Kanal, z. B.
+            # "@practicalengineering" => "Standing Wave" statt Grady Hillhouse).
+            resolved_name = info.get("channel") or ""
+            if entry["name"].lower() not in resolved_name.lower():
+                print(
+                    f"  ✗ {entry['name']}: NAMEN-ABWEICHUNG: "
+                    f"erwartet ~{entry['name']!r}, aufgelöst = {resolved_name!r}"
+                )
+                failed += 1
+                continue
             entry["channel_id"] = cid
-            entry["resolved_channel_name"] = info.get("channel", entry["name"])
+            entry["resolved_channel_name"] = resolved_name
             entry["follower_count"] = info.get("channel_follower_count")
-            print(f"  ✓ {entry['name']}: {cid} ({info.get('channel', '?')})")
+            print(f"  ✓ {entry['name']}: {cid} ({resolved_name})")
         except Exception as e:  # noqa: BLE001 - Fehler pro Channel isolieren
             print(f"  ✗ {entry['name']}: {type(e).__name__}: {e}")
             failed += 1
@@ -162,6 +173,11 @@ def verify_video(url: str) -> tuple[bool, str, str]:
 
 
 def main(argv: list[str]) -> int:
+    for stream in (sys.stdout, sys.stderr):  # Windows-cp1252-Konsolen robust machen
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:  # noqa: BLE001 - alte Pythons ohne reconfigure
+            pass
     if len(argv) < 1:
         print(__doc__)
         return 2
