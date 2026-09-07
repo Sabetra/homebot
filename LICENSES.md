@@ -10,7 +10,7 @@
 > Weak-Copyleft oder Strong-Copyleft). Dev-only-Abhaengigkeiten sind
 > Build-/Test-Tools und werden nie mit dem Projekt verteilt.
 
-## 1. Runtime-Abhaengigkeiten — direkt (53)
+## 1. Runtime-Abhaengigkeiten — direkt (54)
 
 | Paket | Version | Lizenz | AGPL-3.0-Klasse |
 |-------|---------|--------|-----------------|
@@ -67,6 +67,7 @@
 | transformers | 5.14.1 | Apache 2.0 License (Metadaten-Feld) | permissiv ✓ |
 | urllib3 | 2.7.0 | MIT (PEP 639) | permissiv ✓ |
 | watchdog | 6.0.0 | Apache Software License (OSI-Klassifizierer) | permissiv ✓ |
+| yt-dlp | 2026.8.19 | Unlicense (PEP 639) | permissiv ✓ |
 ## 2. Runtime-Abhaengigkeiten — transitiv (159)
 
 | Paket | Version | Lizenz | AGPL-3.0-Klasse |

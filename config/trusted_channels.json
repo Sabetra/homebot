@@ -1,0 +1,32 @@
+{
+  "_meta": {
+    "description": "Trusted YouTube Channel Allowlist fuer die lokale Video-Pipeline (Subtitles/Frames). Nur Channels in dieser Liste duerfen verarbeitet werden (fail-closed).",
+    "key": "channel_id (UC…) ist der stabile, permanente Schlüssel. name/handle dienen NUR der Anzeige und sind änderbar/spoofbar.",
+    "policy": "fail-closed: unbekannter channel_id => Verarbeitungs-Ablehnung (explizites User-OK erforderlich)",
+    "seed_sources": [
+      "Wikipedia: List of most-subscribed YouTube channels (2026-06)",
+      "top10grid.com/top-10-youtube-channels-science-education-2026 (2026)",
+      "blog.podbrief.io/best-science-channels-on-youtube (2026-03)"
+    ],
+    "updated_at": "2026-09-07"
+  },
+  "channels": [
+    { "name": "Kurzgesagt – In a Nutshell", "handle": "@Kurzgesagt", "category": "science", "channel_id": null },
+    { "name": "Veritasium", "handle": "@Veritasium", "category": "science", "channel_id": null },
+    { "name": "Mark Rober", "handle": "@markrober", "category": "science-engineering", "channel_id": null },
+    { "name": "3Blue1Brown", "handle": "@3blue1brown", "category": "math", "channel_id": null },
+    { "name": "PBS Space Time", "handle": "@pbsspacetime", "category": "physics", "channel_id": null },
+    { "name": "SmarterEveryDay", "handle": "@smartereveryday", "category": "engineering", "channel_id": null },
+    { "name": "Practical Engineering", "handle": "@practicalengineering", "category": "engineering", "channel_id": null },
+    { "name": "Khan Academy", "handle": "@KhanAcademy", "category": "education", "channel_id": null },
+    { "name": "TED-Ed", "handle": "@TED-Ed", "category": "education", "channel_id": null },
+    { "name": "NASA", "handle": "@NASA", "category": "space-institutional", "channel_id": null },
+    { "name": "NVIDIA", "handle": "@nvidia", "category": "tech-ai", "channel_id": null },
+    { "name": "Google DeepMind", "handle": "@deepmind", "category": "ai", "channel_id": null },
+    { "name": "Two Minute Papers", "handle": "@TwoMinutePapers", "category": "ai-news", "channel_id": null },
+    { "name": "AI Explained", "handle": "@aiexplainedoff", "category": "ai", "channel_id": null },
+    { "name": "Fireship", "handle": "@fireship", "category": "programming", "channel_id": null },
+    { "name": "The Coding Train", "handle": "@codingtrain", "category": "programming", "channel_id": null },
+    { "name": "Computerphile", "handle": "@Computerphile", "category": "computer-science", "channel_id": null }
+  ]
+}
