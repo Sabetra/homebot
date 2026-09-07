@@ -11,7 +11,7 @@ Pipeline (in dieser Reihenfolge):
      (unbekannter channel_id / Fehler => Ablehnung, Exit 2/3)
   2. METADATEN    – yt-dlp ``extract_info`` (ein Video, anonym, kein Login)
   3. SUBTITLES    – manuell > automatisch > erste Sprache; Safety-Envelope
-  4. FRAMES       – yt-dlp-Download (kleinstes Format ≤ max-height) +
+  4. FRAMES       – yt-dlp-Download (größtes Format ≤ max-height) +
                     OpenCV-Frame-Samples (kein system-ffmpeg nötig)
   5. MANIFEST     – Status aller Schritte, Fehlerliste, Timestamps
 
@@ -142,33 +142,52 @@ def _finalize(out_dir: Path, manifest: dict) -> None:
         print(f"  ! Manifest-Schreiben fehlgeschlagen: {exc}")
 
 
-def _pick_subtitles(info: dict, language: str) -> tuple[dict | None, list[dict]]:
-    """Wählt Subtitle-Quelle: manuell > automatisch > erste verfügbare."""
-    pools = (
-        ("manual", info.get("subtitles") or {}),
-        ("automatic", info.get("automatic_captions") or {}),
-    )
-    for source_name, pool in pools:
+def _choose_subtitle_source(info: dict, language: str) -> tuple[str, str] | None:
+    """Bestimmt (Quelle, Sprache): manuell > automatisch, bevorzugte Sprache
+    > 'en' > 'en-orig' > erste verfügbare im Pool."""
+    manual = info.get("subtitles") or {}
+    auto = info.get("automatic_captions") or {}
+    for pool_name, pool in (("manual", manual), ("automatic", auto)):
         if not pool:
             continue
-        lang = None
         for cand in dict.fromkeys([language, "en", "en-orig"]):
-            if cand and cand in pool:
-                lang = cand
-                break
-        lang = lang or next(iter(pool), None)
-        if not lang:
+            if cand in pool:
+                return pool_name, cand
+        return pool_name, next(iter(pool))
+    return None
+
+
+def _vtt_parse_ts(stamp: str) -> float:
+    """WebVTT-Zeitstempel ('00:01:02.500') → Sekunden."""
+    m = re.match(r"(\d+):(\d{2}):(\d{2})[.,](\d{1,3})", stamp.strip())
+    if not m:
+        return 0.0
+    h, mn, s, frac = m.groups()
+    return int(h) * 3600 + int(mn) * 60 + int(s) + int(frac.ljust(3, "0")) / 1000.0
+
+
+def _parse_vtt(path: Path) -> list[dict]:
+    """WebVTT → [{start,end,text}]; Zeilennummern, Tags, Kopfzeilen entfernt."""
+    lines: list[dict] = []
+    cur: dict | None = None
+    for raw in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        line = raw.strip()
+        if not line or line.startswith(
+                ("WEBVTT", "Kind:", "Language:", "NOTE", "STYLE", "REGION")):
             continue
-        lines = [
-            {"start": float(e.get("start") or 0.0),
-             "end": float(e.get("end") or 0.0),
-             "text": (e.get("body") or "").strip()}
-            for e in (pool[lang] or [])
-            if isinstance(e, dict)
-        ]
-        if lines:
-            return {"source": source_name, "language": lang}, lines
-    return None, []
+        if "-->" in line:
+            parts = line.split("-->", 1)
+            cur = {"start": _vtt_parse_ts(parts[0]),
+                   "end": _vtt_parse_ts(parts[1]),
+                   "text": ""}
+            lines.append(cur)
+            continue
+        if re.fullmatch(r"\d+", line):
+            continue
+        body = re.sub(r"<[^>]+>", "", line).strip()
+        if body and cur is not None:
+            cur["text"] = f"{cur['text']} {body}".strip()
+    return [l for l in lines if l["text"]]
 
 
 def _vtt_ts(seconds: float) -> str:
@@ -196,7 +215,7 @@ def _extract_metadata(info: dict) -> dict:
 
 def _download_and_sample(info: dict, out_dir: Path,
                          n_frames: int, max_height: int) -> tuple[int, list[str], str | None]:
-    """Lädt das kleinste passende Format und extrahiert Frame-Samples (OpenCV).
+    """Lädt das größte Format ≤ max-height und extrahiert Frame-Samples (OpenCV).
 
     Liefert (Anzahl, Dateinamen, Fehlermeldung|None). Das Download-Container
     wird nach dem Sampling wieder entfernt (Frames sind das Artefakt).
@@ -220,9 +239,10 @@ def _download_and_sample(info: dict, out_dir: Path,
         cands = [f for f in formats if _usable(f)]
         if not cands:
             return 0, [], f"kein passendes Videoformat gefunden (≤{max_height}p)"
+        # Größtes Format ≤ max-height (bessere Frame-Qualität), mp4 bevorzugt.
         best = min(cands, key=lambda f: (
+            -(f.get("height") or 0),
             f.get("ext") != "mp4",
-            f.get("height") or 9999,
             f.get("filesize") or f.get("filesize_approx") or 10**15))
         url = info.get("webpage_url") or info.get("url")
         if not url:
@@ -341,12 +361,35 @@ def run_pipeline(url: str, out_root: Path, n_frames: int,
     print(f"✓ METADATEN: {meta.get('title')} (Dauer {meta.get('duration')}s, "
           f"Upload {meta.get('upload_date')})")
     # --- 3) SUBTITLES (untrusted-data-Envelope, flag-only) ------------------
-    try:
-        source, lines = _pick_subtitles(info, language)
-        if not lines:
-            manifest["subtitles"] = {"status": "unavailable"}
-            print("  ~ SUBTITLES: keine Subtitles verfügbar (nicht fatal)")
-        else:
+    chosen = _choose_subtitle_source(info, language)
+    if not chosen:
+        manifest["subtitles"] = {"status": "unavailable"}
+        print("  ~ SUBTITLES: keine Subtitles verfügbar (nicht fatal)")
+    else:
+        source_name, lang = chosen
+        try:
+            import yt_dlp
+            sub_dir = out_dir / "_sub"
+            sub_dir.mkdir(parents=True, exist_ok=True)
+            sopts = _ydl_opts({
+                "skip_download": True,
+                "writesubtitles": True,
+                "writeautomaticsub": True,
+                "subtitleslangs": list(dict.fromkeys([lang, "en", "en-orig"])),
+                "subtitlesformat": "vtt",
+                "outtmpl": str(sub_dir / "%(id)s.%(ext)s"),
+            })
+            with yt_dlp.YoutubeDL(sopts) as ydl:
+                ydl.extract_info(url, download=False)
+            vtt_file = sub_dir / f"{vid}.{lang}.vtt"
+            if not vtt_file.exists():
+                cands = sorted(sub_dir.glob(f"{vid}.*.vtt"))
+                vtt_file = cands[0] if cands else None
+            if vtt_file is None or not vtt_file.exists():
+                raise RuntimeError("keine VTT-Datei geschrieben")
+            lines = _parse_vtt(vtt_file)
+            if not lines:
+                raise RuntimeError("VTT ohne nutzbare Zeilen")
             flagged: list[dict] = []
             for i, ln in enumerate(lines):
                 ln["flags"] = _scan_text(ln["text"])
@@ -364,24 +407,25 @@ def run_pipeline(url: str, out_root: Path, n_frames: int,
                              "(Injection/PII-Heuristik) — vor Weitergabe prüfen."),
                     "flagged_lines": flagged,
                 },
-                "source": source,
+                "source": {"source": source_name, "language": lang},
                 "line_count": len(lines),
                 "lines": lines,
             }
             (out_dir / "subtitles.json").write_text(
                 json.dumps(envelope, ensure_ascii=False, indent=2), encoding="utf-8")
             _write_vtt(lines, out_dir / "subtitles.vtt")
+            shutil.rmtree(sub_dir, ignore_errors=True)
             manifest["subtitles"] = {
-                "status": "ok", **source,
+                "status": "ok", "source": source_name, "language": lang,
                 "lines": len(lines), "flagged": len(flagged),
             }
             print(f"✓ SUBTITLES: {len(lines)} Zeilen "
-                  f"({source['source']}/{source['language']}), "
-                  f"{len(flagged)} Zeilen geflaggt")
-    except Exception as exc:  # noqa: BLE001 - Teilausfall, nicht fatal
-        manifest["subtitles"] = {"status": "failed", "error": str(exc)}
-        manifest["errors"].append(f"subtitles: {exc}")
-        print(f"  ~ SUBTITLES-FEHLER (nicht fatal): {exc}")
+                  f"({source_name}/{lang}), {len(flagged)} Zeilen geflaggt")
+        except Exception as exc:  # noqa: BLE001 - Teilausfall, nicht fatal
+            shutil.rmtree(out_dir / "_sub", ignore_errors=True)
+            manifest["subtitles"] = {"status": "failed", "error": str(exc)}
+            manifest["errors"].append(f"subtitles: {exc}")
+            print(f"  ~ SUBTITLES-FEHLER (nicht fatal): {exc}")
 
     # --- 4) FRAMES (Download + OpenCV-Sampling, nicht fatal) ----------------
     if n_frames > 0:
