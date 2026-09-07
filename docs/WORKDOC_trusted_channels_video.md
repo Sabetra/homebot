@@ -33,7 +33,7 @@
 | 1 | yt-dlp==2026.8.19 im venv + requirements.txt | pip show + Diff | ✅ |
 | 2 | LICENSES.md frisch; check_licenses --strict grün | Skript-Ausführung | ✅ |
 | 3 | dependency_vulnerability_scanner --strict grün | Skript-Ausführung | ⚠️ abgewichen — see §Scanner-Policy (bestehende P1 in pillow u. a., nicht yt-dlp) |
-| 4 | trusted_channels.json ≥15 Channels, alle mit channel_id (UC…) | JSON-Inspektion | ✅ (17 Channels) |
+| 4 | trusted_channels.json ≥15 Channels, alle mit channel_id (UC…) | JSON-Inspektion | ✅ (32 Channels) |
 | 5 | verify_trusted_channels.py: Auflösung + Fail-Closed; py_compile OK | Testlauf | ✅ |
 | 6 | E2E: erlaubt-Channel-Video → JSON (Metadaten, Subtitles, Frames) | Testlauf | ✅ (AI Explained, 1547 Subtitle-Zeilen, 6 Frames 480p) |
 | 7 | funktionen.md-Eintrag | Doku-Prüfung | ✅ |
@@ -99,6 +99,8 @@
 | 5 | scripts/ingest_video.py | neu (Gate → Metadaten → Subtitles → Frames → manifest) | E2E ✅ + 16 pytest ✅ |
 | 6 | tests/test_ingest_video_safety.py | neu (offline-Sicherheits-Tests) | 16/16 PASS ✅ |
 | 7 | funktionen.md | +Abschnitt Z „Video-Ingestion & Trusted-Channel-Gate“ | — |
+| 8 | config/trusted_channels.json | Coding-Support-Erweiterung (User-OK): +15 Channels (offizielle API-/Tooling-Kanäle, LLM-Praxis, Python) → 32 total; Sam Witteveen + Corey Schafer per Original-Video verifiziert (Handle-Squatter entlarvt) | check: 32/32 ✅ |
+| 9 | funktionen.md | §Z: 32-Channel-Zählung + Squatter-Hinweis (Handle-Auflösung unzuverlässig) | Doku-Prüfung ✅ |
 
 ## Rollback-Strategie
 
@@ -124,6 +126,10 @@
 | 9 | tests/ (komplette Suite) | 1173 passed in 152.7s | 2026-09-07 |
 | 10 | Qwen-Test: ingest E2E Fireship „Alibaba is going all in on Qwen…" (SquU4Bpc73Y) | Gate ERLAUBT (Fireship) · Metadaten (192 s, 2025-10-03) · 193 Subtitle-Zeilen (automatic/en, 0 geflaggt) · 8 Frames 480p · manifest · Exit 0 | 2026-09-07 |
 | 11 | Qwen-Test: Negativ (Digital Spaceport, „Why I'm back to Qwen 3.8 27B", L8xTCd80p68) | ABGELEHNT vor Download, nur Rejections-`manifest.json`, Exit 2 | 2026-09-07 |
+| 12 | verify_trusted_channels.py check (nach +15 Channels) | 32 Channels, alle UC-IDs gültig, Exit 0 | 2026-09-07 |
+| 13 | verify … (trusted: Sam Witteveen PTuGGdDuyPI „Qwen3.8-27B & How to Serve it Fast") | ERLAUBT, UC55ODQSvARtgSyc8ThfiepQ, Exit 0 | 2026-09-07 |
+| 14 | verify … (trusted: Matthew Berman 2w7ZdceZT-g) | ERLAUBT, UCawZsQWqfGSbCI5yjkdVkTA, Exit 0 | 2026-09-07 |
+| 15 | verify … (untrusted: MKBHD ANmTVYkEtLw, Re-Check) | ABGELEHNT, UCBJycsmduvYEL83R_U4JriQ, Exit 1 | 2026-09-07 |
 
 ## Scanner-Policy (Entscheidung 2026-09-07)
 

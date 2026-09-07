@@ -1862,7 +1862,7 @@ Allowlist) = Ablehnung, **niemals** Freigabe.
 
 | Komponente | Datei | Funktion |
 |------------|-------|----------|
-| Allowlist | `config/trusted_channels.json` | 17 Channels, `channel_id` (UC…) + Quellen-Nachweis; `status: approved` erforderlich |
+| Allowlist | `config/trusted_channels.json` | 32 Channels (Wissenschaft, KI, Programmierung, offizielle API-/Tooling-Kanäle), `channel_id` (UC…) + Quellen-Nachweis; `status: approved` erforderlich |
 | Gate-CLI | `scripts/verify_trusted_channels.py` | `resolve` (UC-Auflösung per `extract_flat`), `check` (Integrität), `verify <URL>` (Fail-Closed-Prüfung); `verify_video(url) -> (erlaubt, channel_id, name|Fehler)` |
 | Pipeline | `scripts/ingest_video.py` | Gate → Metadaten → Subtitles (SRT/VTT-Parser, OpenCV-Frame-Extraktion) → `subtitles.json` + `metadata.json` + `frames/` + `manifest.json`; Exit 2 bei Gate-Verletzung |
 | Tests | `tests/test_ingest_video_safety.py` | 16 offline-Tests: Injektions-/PII-Flagging, VTT-/SRT-Parsen, Frame-Limits, Gate-Fail-Closed (offline) |
@@ -1885,6 +1885,12 @@ Allowlist) = Ablehnung, **niemals** Freigabe.
   `extract_info` nur (kein Video-Download), `extract_flat=True` bei
   Channel-URLs (sonst hängen Voll-Enumerations).
 - **Keine Cloud-/LLM-Abhängigkeit im Gate-Pfad:** rein deterministisch.
+- **Handle-Auflösung ist NICHT vertrauenswürdig (2026-09-07 belegt):**
+  `@SamWitteveen` → Squatter-Kanal `samwitteveen` (22 Follower),
+  `@CoreySchafer` → `Coreyschafer` (desc „what?"). Beide echten Channels
+  wurden daher über **Original-Videos** verifiziert (Video-`channel_id` +
+  Display-Name), nicht über die Handle-Tab-Extraktion. Regel: UC-ID immer
+  gegen echten Kanalinhalt prüfen; ein reiner Handle-Namenmatch genügt nicht.
 
 ### Grenzen / Next-Steps
 

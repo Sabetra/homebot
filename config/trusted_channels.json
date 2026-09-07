@@ -32,8 +32,6 @@
     { "name": "Fireship", "handle": "@fireship", "category": "programming", "channel_id": "UCsBjURrPoezykLs9EqgamOA" },
     { "name": "The Coding Train", "handle": "channel/UCvjgXvBlbQiydffZU7m1_aw", "category": "programming", "channel_id": "UCvjgXvBlbQiydffZU7m1_aw" },
     { "name": "Computerphile", "handle": "@Computerphile", "category": "computer-science", "channel_id": "UC9-y-6csu5WGm29I7JiwpnA" },
-
-    { "_section": "Coding-Support-Erweiterung (2026-09-07): offizielle API-/Tooling-Kanäle + praktische LLM-/Python-Channels für den Programmier-Workflow (API-Calls, Library-Features, Fehler, Performance)" },
     { "name": "OpenAI", "handle": "@OpenAI", "category": "official-llm-api", "channel_id": "UCXZCJLdBC09xxGZ6gcdrc6A", "resolved_channel_name": "OpenAI", "follower_count": 2040000 },
     { "name": "Anthropic", "handle": "channel/UCrDwWp7EBBv4NwvScIpBDOA", "category": "official-llm-api", "channel_id": "UCrDwWp7EBBv4NwvScIpBDOA", "resolved_channel_name": "Anthropic", "verification": { "date": "2026-09-07", "method": "Video-Extraktion (om2lIWXLLN4 'Building Anthropic'); separater 2. Kanal 'Anthropic and Claude' NICHT aufgenommen" } },
     { "name": "GitHub", "handle": "@github", "category": "official-dev-platform", "channel_id": "UC7c3Kb6jYCRj4JOHHZTxKsQ", "resolved_channel_name": "GitHub", "follower_count": 681000 },
