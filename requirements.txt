@@ -99,3 +99,8 @@ opentelemetry-sdk>=1.37.0
 
 # Security & Encryption
 cryptography>=45.0.0
+
+# Video / Media (lokale Video-Pipeline, Channel-Allowlist: config/trusted_channels.json)
+# yt-dlp: Unlicense, 0 Runtime-Dependencies; nur Metadaten + Subtitles + Formate.
+# Pinned: YouTube-API-Brüche werden über Release-Zyklen gefixt (Update-Rhythmus: monatelich).
+yt-dlp==2026.8.19
