@@ -86,7 +86,8 @@ def test_choose_none_when_empty():
 
 def test_vtt_timestamp_parse():
     assert iv._vtt_parse_ts("01:01:01.500") == 3661.5
-    assert iv._vtt_parse_ts("00:00:02,25") == 2.025
+    # "25" = 250 ms (VTT: Fraktion wird auf 3 Ziffern aufgefüllt)
+    assert iv._vtt_parse_ts("00:00:02,25") == 2.25
     assert iv._vtt_parse_ts("garbage") == 0.0
 
 
@@ -116,20 +117,16 @@ def test_parse_vtt_drops_empty_cues(tmp_path):
 # Fail-closed-Verhalten des Gates (offline: Allowlist-Pfade)
 # --------------------------------------------------------------------------
 
-def test_gate_rejects_untrusted_url_offline(monkeypatch, capsys):
-    """Unbekannte UC-ID muss auch ohne Netzwerk als Ablehnung enden."""
-    from verify_trusted_channels import check_trusted, ALLOWLIST
+def test_gate_rejects_when_verification_fails_offline(monkeypatch):
+    """Netzwerkfehler muss fail-closed als Ablehnung enden (kein True)."""
+    import verify_trusted_channels as gate
 
-    # resolve_video: ohne Netzwerk => RuntimeError -> gate muss ablehnen.
-    monkeypatch.setattr(
-        "verify_trusted_channels.resolve_video",
-        lambda url, timeout: (_ for _ in ()).throw(
-            RuntimeError("offline test: kein Netzwerk")))
+    def _boom(url, extract_flat=False):
+        raise RuntimeError("offline test: kein Netzwerk")
 
-    allowed, info = check_trusted(
-        "https://www.youtube.com/watch?v=Spuza-KwTJ4",
-        allowlist=ALLOWLIST, timeout=2)
+    monkeypatch.setattr(gate, "_extract_info", _boom)
+    allowed, cid, detail = gate.verify_video(
+        "https://www.youtube.com/watch?v=Spuza-KwTJ4")
     assert allowed is False
-    assert info["status"] == "error"
-    captured = capsys.readouterr()
-    assert "ABGELEHNT" in captured.out
+    assert cid == ""
+    assert "offline test" in detail
