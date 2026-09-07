@@ -42,6 +42,7 @@ import json
 import re
 import shutil
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -128,6 +129,54 @@ def _ydl_opts(extra: dict | None = None) -> dict:
     if extra:
         opts.update(extra)
     return opts
+
+
+def _download_subtitles_once(url: str, sub_dir: Path, lang: str) -> None:
+    """Einzelner Subtitle-Download (Video wird NICHT geladen).
+
+    Throttle-Schutz (Forschung 2026-09-07, yt-dlp Wiki/FAQ + Issues
+    #13831/#12056/#11059/#7123): YouTube rate-limited timedtext-Requests
+    aggressiv (Guest-Session ~300 Videos/h bzw. ~1000 webpage/player-Requests/h,
+    429 = IP-Block wegen Overuse, i.d.R. temporär). ``sleep_interval_subtitles``
+    ist der Python-API-Dest von ``--sleep-subtitles`` (yt-dlp 2026.08.19) und
+    verzögert jeden Subtitle-Download; ein 429-Backoff-Retry erfolgt in der
+    Pipeline (``run_pipeline``).
+    """
+    import yt_dlp
+    sopts = _ydl_opts({
+        "skip_download": True,
+        "writesubtitles": True,
+        "writeautomaticsub": True,
+        "subtitleslangs": list(dict.fromkeys([lang, "en", "en-orig"])),
+        "subtitlesformat": "vtt",
+        "outtmpl": str(sub_dir / "%(id)s.%(ext)s"),
+        "sleep_interval_subtitles": 5,  # 5 s vor dem Subtitle-Download
+        "sleep_requests": 0.75,         # Pause zwischen HTTP-Requests
+    })
+    with yt_dlp.YoutubeDL(sopts) as ydl:
+        # download=True + skip_download=True = Standard-Rezept für
+        # Subtitle-only-Extraktion (Video wird NICHT geladen).
+        ydl.extract_info(url, download=True)
+
+
+def _download_subtitles_with_retry(url: str, sub_dir: Path, lang: str,
+                                   backoff: float = 45.0) -> None:
+    """Subtitle-Download mit 429-Backoff: genau EIN Retry, sonst sofort weiter.
+
+    Nur HTTP-429/„Too Many Requests" (IP-Rate-Limit, temporär) wird nach
+    ``backoff`` Sekunden einmal erneut versucht; alle anderen Fehler
+    (z. B. „video unavailable") werden unverändert weitergeworfen —
+    kein blinder Retry, kein stummer Fallback.
+    """
+    try:
+        _download_subtitles_once(url, sub_dir, lang)
+    except Exception as exc:  # noqa: BLE001 - gezielt nur 429 abfangen
+        if "429" not in str(exc) and "Too Many Requests" not in str(exc):
+            raise
+        print(f"  ~ SUBTITLES: HTTP 429 (Rate-Limit) — "
+              f"{backoff:.0f} s Backoff, 1 Retry ...")
+        time.sleep(backoff)
+        _download_subtitles_once(url, sub_dir, lang)
 
 
 def _finalize(out_dir: Path, manifest: dict) -> None:
@@ -368,21 +417,9 @@ def run_pipeline(url: str, out_root: Path, n_frames: int,
     else:
         source_name, lang = chosen
         try:
-            import yt_dlp
             sub_dir = out_dir / "_sub"
             sub_dir.mkdir(parents=True, exist_ok=True)
-            sopts = _ydl_opts({
-                "skip_download": True,
-                "writesubtitles": True,
-                "writeautomaticsub": True,
-                "subtitleslangs": list(dict.fromkeys([lang, "en", "en-orig"])),
-                "subtitlesformat": "vtt",
-                "outtmpl": str(sub_dir / "%(id)s.%(ext)s"),
-            })
-            with yt_dlp.YoutubeDL(sopts) as ydl:
-                # download=True + skip_download=True = Standard-Rezept für
-                # Subtitle-only-Extraktion (Video wird NICHT geladen).
-                ydl.extract_info(url, download=True)
+            _download_subtitles_with_retry(url, sub_dir, lang)
             vtt_file = sub_dir / f"{vid}.{lang}.vtt"
             if not vtt_file.exists():
                 cands = sorted(sub_dir.glob(f"{vid}.*.vtt"))

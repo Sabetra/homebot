@@ -130,3 +130,54 @@ def test_gate_rejects_when_verification_fails_offline(monkeypatch):
     assert allowed is False
     assert cid == ""
     assert "offline test" in detail
+
+
+# --------------------------------------------------------------------------
+# 429-Rate-Limit-Handling (Forschung 2026-09-07: yt-dlp Wiki/FAQ,
+# Issues #13831/#12056/#11059/#7123 — YouTube throttelt timedtext-Requests
+# aggressiv; 429 = temporärer IP-Block, Backoff+Retry ist das empfohlene
+# Muster; Cookies/PO-Token sind die Eskalationsstufen)
+# --------------------------------------------------------------------------
+
+def test_subtitles_429_triggers_single_backoff_retry(monkeypatch, tmp_path):
+    """429 → genau EIN Retry nach Backoff; zweiter Versuch darf gelingen."""
+    calls = {"n": 0}
+
+    def _fake_once(url, sub_dir, lang):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError(
+                "Unable to download video subtitles for 'en': "
+                "HTTP Error 429: Too Many Requests")
+        (Path(sub_dir) / f"vid429.{lang}.vtt").write_text(
+            "WEBVTT\n\n00:00:00.000 --> 00:00:02.000\nRetry ok\n",
+            encoding="utf-8")
+
+    sleeps: list[float] = []
+    monkeypatch.setattr(iv.time, "sleep", lambda s: sleeps.append(s))
+    monkeypatch.setattr(iv, "_download_subtitles_once", _fake_once)
+    iv._download_subtitles_with_retry(
+        "https://www.youtube.com/watch?v=vid429", tmp_path, "en",
+        backoff=0.1)
+    assert calls["n"] == 2, "429 muss genau ein Retry auslösen"
+    assert sleeps == [0.1], "genau ein Backoff-Sleep"
+
+
+def test_subtitles_non_429_error_not_retried(monkeypatch, tmp_path):
+    """Fremde Fehler (z. B. 'video unavailable') müssen NICHT retryed werden."""
+    calls = {"n": 0}
+
+    def _fake_once(url, sub_dir, lang):
+        calls["n"] += 1
+        raise RuntimeError("video unavailable")
+
+    def _no_sleep(s):
+        raise AssertionError("Sleep erwartet bei nicht-429-Fehler")
+
+    monkeypatch.setattr(iv.time, "sleep", _no_sleep)
+    monkeypatch.setattr(iv, "_download_subtitles_once", _fake_once)
+    with pytest.raises(RuntimeError, match="video unavailable"):
+        iv._download_subtitles_with_retry(
+            "https://www.youtube.com/watch?v=vid429", tmp_path, "en",
+            backoff=0.1)
+    assert calls["n"] == 1, "nicht-429-Fehler darf nicht erneut versuchen"
