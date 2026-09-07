@@ -122,6 +122,8 @@
 | 7 | ingest_video.py Negativ-Test (untrusted-Video) | GATE ABGELEHNT vor Download, kein Artefakt, Exit 2 | 2026-09-07 |
 | 8 | tests/test_ingest_video_safety.py | 16/16 PASS | 2026-09-07 |
 | 9 | tests/ (komplette Suite) | 1173 passed in 152.7s | 2026-09-07 |
+| 10 | Qwen-Test: ingest E2E Fireship „Alibaba is going all in on Qwen…" (SquU4Bpc73Y) | Gate ERLAUBT (Fireship) · Metadaten (192 s, 2025-10-03) · 193 Subtitle-Zeilen (automatic/en, 0 geflaggt) · 8 Frames 480p · manifest · Exit 0 | 2026-09-07 |
+| 11 | Qwen-Test: Negativ (Digital Spaceport, „Why I'm back to Qwen 3.8 27B", L8xTCd80p68) | ABGELEHNT vor Download, nur Rejections-`manifest.json`, Exit 2 | 2026-09-07 |
 
 ## Scanner-Policy (Entscheidung 2026-09-07)
 
