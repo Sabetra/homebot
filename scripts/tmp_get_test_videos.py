@@ -19,10 +19,12 @@ def first_video_url(channel_url: str) -> str | None:
     }
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(channel_url, download=False) or {}
-    entries = info.get("entries") or []
-    for e in entries:
-        if isinstance(e, dict) and e.get("url"):
-            return e["url"]
+    # Ebene 1: direkte Video-Einträge; Ebene 2: Playlist-/Channel-Wrapper
+    candidates = [info] + [e for e in (info.get("entries") or []) if isinstance(e, dict)]
+    for c in candidates:
+        for e in c.get("entries") or []:
+            if isinstance(e, dict) and "watch?v=" in str(e.get("url", "")):
+                return e["url"]
     return None
 
 
