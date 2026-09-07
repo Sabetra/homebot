@@ -39,3 +39,4 @@ This file defines the canonical archive structure for historical material.
 | `docs_archive/WORKDOC_PHASE_E_WELLBEING_RENAME_20260901.md` | Phase-E-Rename (Wellbeing): Verifikationsprotokoll, Rollback-Position — finalisiert 2026-09-01, archiviert 2026-09-07 |
 | `docs_archive/WORKDOC_SOTA_ENRICH.md` | SOTA-Risiko-Priorisierung Dependency-Scanner (KEV/EPSS/SSVC): 100/100 Tests ✅ — finalisiert 2026-09-06, archiviert 2026-09-07 |
 | `docs_archive/implementation_plan.md` | Public Launch Implementationsplan v1.0.0 (Stufen 0–5) — archiviert 2026-09-07 |
+| `docs_archive/WORKDOC_trusted_channels_video.md` | Trusted-Channel-Allowlist & Video-Pipeline (yt-dlp): 32-Channel-Allowlist (UC-ID-SSoT), fail-closed Gate, Subtitle-Safety-Envelope, E2E-Verifikation, Scanner-Policy (bestehende P1 explizit akzeptiert) — finalisiert 2026-09-07, archiviert 2026-09-07 |

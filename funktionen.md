@@ -1865,7 +1865,7 @@ Allowlist) = Ablehnung, **niemals** Freigabe.
 | Allowlist | `config/trusted_channels.json` | 32 Channels (Wissenschaft, KI, Programmierung, offizielle API-/Tooling-Kanäle), `channel_id` (UC…) + Quellen-Nachweis; `status: approved` erforderlich |
 | Gate-CLI | `scripts/verify_trusted_channels.py` | `resolve` (UC-Auflösung per `extract_flat`), `check` (Integrität), `verify <URL>` (Fail-Closed-Prüfung); `verify_video(url) -> (erlaubt, channel_id, name|Fehler)` |
 | Pipeline | `scripts/ingest_video.py` | Gate → Metadaten → Subtitles (SRT/VTT-Parser, OpenCV-Frame-Extraktion) → `subtitles.json` + `metadata.json` + `frames/` + `manifest.json`; Exit 2 bei Gate-Verletzung |
-| Tests | `tests/test_ingest_video_safety.py` | 16 offline-Tests: Injektions-/PII-Flagging, VTT-/SRT-Parsen, Frame-Limits, Gate-Fail-Closed (offline) |
+| Tests | `tests/test_ingest_video_safety.py` | 18 offline-Tests: Injektions-/PII-Flagging, VTT-/SRT-Parsen, Frame-Limits, Gate-Fail-Closed (offline), 429-Retry (nur 429 → 1× 45s-Backoff, andere Fehler sofort) |
 
 ### Design-Prinzipien
 
@@ -1891,6 +1891,11 @@ Allowlist) = Ablehnung, **niemals** Freigabe.
   wurden daher über **Original-Videos** verifiziert (Video-`channel_id` +
   Display-Name), nicht über die Handle-Tab-Extraktion. Regel: UC-ID immer
   gegen echten Kanalinhalt prüfen; ein reiner Handle-Namenmatch genügt nicht.
+- **429-Rate-Limit-Härtung (2026-09-07):** yt-dlp-Optionen `sleep_interval_subtitles=5` +
+  `sleep_requests=0.75`; Subtitle-Download (`_download_subtitles_with_retry`) mit genau
+  **einem** 45s-Backoff-Retry, der **nur** auf HTTP-429/„Too Many Requests" (IP-Rate-Limit)
+  reagiert — alle anderen Fehler brechen sofort ab (fail-closed). PO-Tokens bewusst NICHT
+  im Einsatz (relevant v. a. für Player/GVS + übersetzte Untertitel, nicht Original-Untertitel).
 
 ### Grenzen / Next-Steps
 
