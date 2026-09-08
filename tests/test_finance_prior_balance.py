@@ -173,7 +173,7 @@ class TestGetPriorClosingBalance:
     def test_skips_null_closing_and_uses_next(self, fresh_db: FinanceDB) -> None:
         # Nächstes Statement hat NULL-Endsaldo -> wird übersprungen,
         # das nächste gültige davor wird verwendet.
-        _insert(
+        account_id, _ = _insert(
             fresh_db,
             "prior-skip-1",
             IBAN_A,
@@ -189,16 +189,10 @@ class TestGetPriorClosingBalance:
             period_end="2025-12-31",
             closing_balance=None,  # NULL -> überspringen
         )
-        account_id, _ = _insert(
-            fresh_db,
-            "prior-skip-3",
-            IBAN_A,
-            period_start="2026-01-01",
-            period_end="2026-01-31",
-            closing_balance=1000.0,
-        )
-        # before = 2026-02-01: 2026-01-31 hat NULL -> nächstes gültige ist 2025-11-30 (300.0)
-        assert fresh_db.get_prior_closing_balance(account_id, "2026-02-01") == 300.0
+        # Query-Periode: 2026-01-01. Das naechste Vorstatement (2025-12-31)
+        # hat NULL-Endsaldo -> wird uebersprungen; das vorherige
+        # (2025-11-30, 300.0) ist gultig.
+        assert fresh_db.get_prior_closing_balance(account_id, "2026-01-01") == 300.0
 
     def test_exclude_statement_id(self, fresh_db: FinanceDB) -> None:
         # Repair-Szenario: das geprüfte Statement darf sich nicht selbst als
@@ -228,6 +222,15 @@ class TestGetPriorClosingBalance:
         assert result == 1000.0
 
     def test_does_not_cross_accounts(self, fresh_db: FinanceDB) -> None:
+        # Konto A: zwei Statements (Ende 2025-12-31 und 2026-01-31)
+        _insert(
+            fresh_db,
+            "prior-xacct-a-old",
+            IBAN_A,
+            period_start="2025-12-01",
+            period_end="2025-12-31",
+            closing_balance=111.0,
+        )
         account_a, _ = _insert(
             fresh_db,
             "prior-xacct-a",
@@ -236,6 +239,7 @@ class TestGetPriorClosingBalance:
             period_end="2026-01-31",
             closing_balance=1000.0,
         )
+        # Konto B: ein Statement (Ende 2026-01-31), davor KEIN Vorstatement
         account_b, _ = _insert(
             fresh_db,
             "prior-xacct-b",
@@ -245,10 +249,13 @@ class TestGetPriorClosingBalance:
             closing_balance=9999.0,
         )
         assert account_a != account_b
-        # Konto B hat kein FRÜHERES Statement (nur sein eigenes) -> None
-        assert fresh_db.get_prior_closing_balance(account_b, "2026-02-01") is None
-        # Konto A findet sein eigenes Vorstatement
+        # Konto A findet sein eigenes naechstes Vorstatement (nicht 9999.0 von B)
         assert fresh_db.get_prior_closing_balance(account_a, "2026-02-01") == 1000.0
+        # Konto B findet sein eigenes Statement (nicht 1000.0 von A)
+        assert fresh_db.get_prior_closing_balance(account_b, "2026-02-01") == 9999.0
+        # Konto B hat KEIN Vorstatement mit period_end < 2026-01-01 -> None
+        # (bei einem Cross-Account-Leak wuerde hier A's 111.0 auftauchen)
+        assert fresh_db.get_prior_closing_balance(account_b, "2026-01-01") is None
 
     def test_tie_break_higher_id(self, fresh_db: FinanceDB) -> None:
         # Gleiches period_end -> höheres id gewinnt (deterministisch)
