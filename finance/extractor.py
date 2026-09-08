@@ -330,8 +330,26 @@ class FinanceExtractor:
         consistency_passed: Optional[bool] = None
         consistency_errors: Optional[str] = None
         needs_review = False
+        # Prior-Saldo-Link: naechstes vorhergehendes Statement desselben
+        # Kontos (per IBAN + Periode). Ohne Vorstatement bleibt None und die
+        # "prior_balance_link"-Pruefung wird bewusst als warning skipped
+        # (konservativ: kein stiller Pass). Ein Lookup-Fehler darf den Import
+        # nicht abbrechen -- er degrades auf None (skip), nie auf silent-pass.
+        prior_closing_balance: Optional[float] = None
         try:
-            report = evaluate_extracted_statement(extracted)
+            if extracted.account is not None and extracted.period_start:
+                acct_id = self.db.find_account_id_by_iban(extracted.account.iban)
+                if acct_id is not None:
+                    prior_closing_balance = self.db.get_prior_closing_balance(
+                        acct_id, extracted.period_start
+                    )
+        except Exception as exc:
+            logger.debug("Prior-closing-balance lookup skipped: %s", exc)
+            prior_closing_balance = None
+        try:
+            report = evaluate_extracted_statement(
+                extracted, prior_closing_balance=prior_closing_balance
+            )
             consistency_dict = report.to_dict()
             consistency_passed = report.status == STATUS_PASSED
             consistency_errors = "; ".join(report.errors) or None
@@ -623,6 +641,24 @@ class FinanceExtractor:
             # Hauptwaehrung (EUR) uebergeben. Decimal(cents)/100 ist exakt
             # (nur Komma-Verschiebung) und erhaelt die Cents-Praezision.
             tx_major = [{"amount": Decimal(tx.amount_cents) / 100} for tx in txs]
+            # Prior-Saldo-Link: naechstes vorhergehendes Statement desselben
+            # Kontos (exkl. dieses Statements). Ermoglicht die
+            # "prior_balance_link"-Pruefung; ohne Vorstatement bleibt None ->
+            # warning skip (konservativ, kein stiller Pass). Ein Lookup-Fehler
+            # darf die Reparatur nicht abbrechen.
+            prior_closing_balance: Optional[float] = None
+            try:
+                stmt = self.db.get_statement(statement_id)
+                before_period = header.period_start or (stmt.period_start if stmt else None)
+                if stmt is not None and before_period:
+                    prior_closing_balance = self.db.get_prior_closing_balance(
+                        stmt.account_id,
+                        before_period,
+                        exclude_statement_id=statement_id,
+                    )
+            except Exception as exc:
+                logger.debug("Post-repair prior-balance lookup skipped: %s", exc)
+                prior_closing_balance = None
             eval_input = {
                 "opening_balance": header.opening_balance,
                 "closing_balance": header.closing_balance,
@@ -630,7 +666,9 @@ class FinanceExtractor:
                 "total_debits": header.total_debits,
                 "transactions": tx_major,
             }
-            report = evaluate_extracted_statement(eval_input)
+            report = evaluate_extracted_statement(
+                eval_input, prior_closing_balance=prior_closing_balance
+            )
             self.db.update_statement_consistency(
                 statement_id,
                 total_credits=header.total_credits,

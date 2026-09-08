@@ -1176,6 +1176,76 @@ class FinanceDB:
             ).fetchone()
             return self._row_to_statement(row) if row else None
 
+    def find_account_id_by_iban(self, iban: str) -> Optional[int]:
+        """Gibt die ``account_id`` zur normalisierten IBAN zurueck (oder None).
+
+        Read-only Lookup (kein Upsert) -- sicher fuer den Import-Pfad, wo der
+        Account spaeter ohnehin atomar angelegt wird.
+        """
+        iban_norm = _normalize_iban(iban or "")
+        if not iban_norm:
+            return None
+        with self._lock, self._connect() as conn:
+            row = conn.execute(
+                "SELECT id FROM accounts WHERE iban = ?", (iban_norm,)
+            ).fetchone()
+        return int(row["id"]) if row else None
+
+    def get_prior_closing_balance(
+        self,
+        account_id: int,
+        before_period: Optional[str],
+        exclude_statement_id: Optional[int] = None,
+    ) -> Optional[float]:
+        """Schlussaldo (Hauptwaehrung) des naechsten vorhergehenden Statements
+        desselben Kontos mit ``period_end < before_period`` -- oder None.
+
+        Dient als ``prior_closing_balance`` fuer die Konsistenzpruefung
+        (Saldo-Kette ueber Statements hinweg). Deterministisch: naechster nach
+        ``period_end`` (absteigend), bei Gleichstand hoeheres ``id``.
+        ``exclude_statement_id`` wird vom Suchraum ausgeschlossen, damit ein
+        Statement (z.B. beim Repair) sich nicht selbst als Vorstatement
+        betrachtet. Ohne Vorstatement/Periode: None -> die Pruefung wird
+        konservativ als warning skipped (kein stiller Pass).
+        """
+        before = (before_period or "").strip() or None
+        if before is None:
+            return None
+        with self._lock, self._connect() as conn:
+            if exclude_statement_id is not None:
+                row = conn.execute(
+                    """
+                    SELECT closing_balance_cents
+                    FROM statements
+                    WHERE account_id = ?
+                      AND id != ?
+                      AND period_end IS NOT NULL
+                      AND period_end < ?
+                      AND closing_balance_cents IS NOT NULL
+                    ORDER BY period_end DESC, id DESC
+                    LIMIT 1
+                    """,
+                    (account_id, exclude_statement_id, before),
+                ).fetchone()
+            else:
+                row = conn.execute(
+                    """
+                    SELECT closing_balance_cents
+                    FROM statements
+                    WHERE account_id = ?
+                      AND period_end IS NOT NULL
+                      AND period_end < ?
+                      AND closing_balance_cents IS NOT NULL
+                    ORDER BY period_end DESC, id DESC
+                    LIMIT 1
+                    """,
+                    (account_id, before),
+                ).fetchone()
+        if row is None:
+            return None
+        cents = row["closing_balance_cents"]
+        return None if cents is None else cents / 100.0
+
     def get_statement(self, statement_id: int) -> Optional[Statement]:
         with self._lock, self._connect() as conn:
             row = conn.execute(
