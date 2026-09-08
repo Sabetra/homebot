@@ -39,6 +39,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from pydantic import BaseModel, Field
 
+from finance.consistency import STATUS_PASSED, evaluate_extracted_statement
 from finance.db_schema import FinanceDB, _hash_file
 from finance.models import (
     DEFAULT_CURRENCY,
@@ -176,6 +177,7 @@ class StatementImportResult:
     settlement_gap_count: Optional[int] = None
     settlement_gap_status_counts: Optional[Dict[str, int]] = None
     completeness_check: Optional[Dict[str, Any]] = None
+    consistency: Optional[Dict[str, Any]] = None
     error: Optional[str] = None
     extracted: Optional[ExtractedStatement] = None
 
