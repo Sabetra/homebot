@@ -260,7 +260,11 @@
             "pipeline_progress": "Pipeline импорт: {done}/{total}",
             "failed": "❌ Импортът се провали: {error}",
             "success": "✅ Извлечението е импортирано: {inserted} нови транзакции, {duplicates} дубликата отхвърлени.",
-            "caption": "Import bank statement PDFs – transactions are extracted via Docling + LLM and stored in the finance SQLite database."
+            "caption": "Import bank statement PDFs – transactions are extracted via Docling + LLM and stored in the finance SQLite database.",
+            "consistency_passed": "Проверката за съответствие премина (прецизност до стотинки).",
+            "consistency_failed": "Проверката за съответствие не премина: {errors}",
+            "consistency_review": "Проверка за съответствие: {status} – изисква се преглед.",
+            "consistency_details": "Детайли за проверката на съответствие"
         },
         "accounts": {
             "subheader": "🏦 Банки и сметки",
@@ -399,6 +403,19 @@
             "input": "Вашият въпрос",
             "placeholder": "Въпрос за вашите финанси ... (напр. 'Колко похарчих за храна през април?')",
             "send": "Изпрати"
+        },
+        "review": {
+            "none": "Няма извлечения, изчакащи преглед – всички проверки за съответствие преминаха или са отбелязани като прегледани.",
+            "header": "🔎 Изисква се преглед",
+            "caption": "{count} извлечение(я) бяха отбелязани за преглед (грешка в съответствието или непълно екстрахиране). Проверете сумите и ги отбележете като прегледани, ако всичко е вярно.",
+            "opening": "Отварящ баланс",
+            "closing": "Затварящ баланс",
+            "credits": "Кредити",
+            "debits": "Дебети",
+            "errors": "Причина/и: {errors}",
+            "no_errors": "⚠️ Непълно извлечение – няма запазени отделни причини. Моля, проверете сумите ръчно.",
+            "mark_reviewed": "✅ Отбележи като прегледано",
+            "marked": "✅ Извлечение #{id} беше отбелязано като прегледано."
         }
     },
     "kg_ui": {

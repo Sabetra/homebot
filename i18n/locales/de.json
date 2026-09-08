@@ -271,7 +271,11 @@
             "spinner_batch": "📄 Docling producer + 🤖 LLM consumer in parallel...",
             "pipeline_progress": "Pipeline import: {done}/{total}",
             "failed": "❌ Import failed: {error}",
-            "success": "✅ Statement imported: {inserted} new transactions, {duplicates} duplicates discarded."
+            "success": "✅ Statement imported: {inserted} new transactions, {duplicates} duplicates discarded.",
+            "consistency_passed": "Konsistenz-Check bestanden (Cents-Präzision).",
+            "consistency_failed": "Konsistenz-Check fehlgeschlagen: {errors}",
+            "consistency_review": "Konsistenz-Check: {status} – Prüfung erforderlich.",
+            "consistency_details": "Details Konsistenz-Check"
         },
         "main": {
             "header": "💳 Finanzen",
@@ -425,6 +429,19 @@
             "input": "Your question",
             "placeholder": "Question about your finances ... (e.g. 'How much did I spend on groceries in April?')",
             "send": "Send"
+        },
+        "review": {
+            "none": "Keine Auszüge stehen zur Prüfung an – alle Konsistenz-Checks bestanden oder wurden als geprüft markiert.",
+            "header": "🔎 Prüfung erforderlich",
+            "caption": "{count} Auszug(e) wurden als prüfungspflichtig markiert (Konsistenz-Fehler oder unvollständige Extraktion). Prüfe die Beträge und markiere sie als geprüft, wenn alles stimmt.",
+            "opening": "Anfangssaldo",
+            "closing": "Endsaldo",
+            "credits": "Gutschriften",
+            "debits": "Belastungen",
+            "errors": "Prüfgrund(e): {errors}",
+            "no_errors": "⚠️ Auszug unvollständig – keine Einzelgründe persistiert. Bitte Beträge manuell prüfen.",
+            "mark_reviewed": "✅ Als geprüft markieren",
+            "marked": "✅ Auszug #{id} wurde als geprüft markiert."
         }
     },
     "wellbeing_ui": {

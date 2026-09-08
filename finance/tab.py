@@ -102,6 +102,91 @@ def _relink_transfers(db: FinanceDB, *, productive_window_days: int) -> int:
 # ---------------------------------------------------------------------------
 
 
+def _render_review_section(db: FinanceDB) -> None:
+    """Rendert die Review-Queue: Statements, die manuelle Pruefung brauchen.
+
+    Zeigt alle Zeilen mit ``needs_review = 1`` (fehlgeschlagener oder
+    unvollstaendiger Konsistenz-Check) mit den persistierten Cents-Betraegen
+    und den menschenlesbaren Gruenden. Ein Knopf loescht die Review-Marke,
+    sobald der Nutzer den Auszug geprueft hat.
+    """
+    review = db.find_review_needed_statements()
+
+    st.divider()
+    if not review:
+        st.caption(
+            _tr(
+                "finance_ui.review.none",
+                "Keine Auszuege stehen zur Pruefung an - alle Konsistenz-Checks bestanden oder wurden als geprueft markiert.",
+            )
+        )
+        return
+
+    st.subheader(_tr("finance_ui.review.header", "🔎 Prüfung erforderlich"))
+    st.caption(
+        _tr(
+            "finance_ui.review.caption",
+            "{count} Auszug(e) wurden als prüfungspflichtig markiert (Konsistenz-Fehler oder unvollständige Extraktion). Prüfe die Beträge und markiere sie als geprüft, wenn alles stimmt.",
+            count=len(review),
+        )
+    )
+
+    for stmt in review:
+        errors = (stmt.consistency_errors or "").strip()
+        with st.container():
+            title = "  |  ".join(
+                part
+                for part in [
+                    stmt.source_filename or None,
+                    f"{stmt.period_start or '?'} → {stmt.period_end or '?'}",
+                    f"#{stmt.id}",
+                ]
+                if part
+            )
+            st.markdown(f"**{title}**")
+
+            cols = st.columns(4)
+            cols[0].metric(
+                _tr("finance_ui.review.opening", "Anfangssaldo"),
+                _format_eur(stmt.opening_balance_cents / 100.0) if stmt.opening_balance_cents is not None else "–",
+            )
+            cols[1].metric(
+                _tr("finance_ui.review.closing", "Endsaldo"),
+                _format_eur(stmt.closing_balance_cents / 100.0) if stmt.closing_balance_cents is not None else "–",
+            )
+            cols[2].metric(
+                _tr("finance_ui.review.credits", "Gutschriften"),
+                _format_eur(stmt.total_credits_cents / 100.0) if stmt.total_credits_cents is not None else "–",
+            )
+            cols[3].metric(
+                _tr("finance_ui.review.debits", "Belastungen"),
+                _format_eur(stmt.total_debits_cents / 100.0) if stmt.total_debits_cents is not None else "–",
+            )
+
+        if errors:
+            st.error(_tr("finance_ui.review.errors", "Prüfgrund(e): {errors}", errors=errors))
+        else:
+            st.warning(
+                _tr(
+                    "finance_ui.review.no_errors",
+                    "⚠️ Auszug unvollständig – keine Einzelgründe persistiert. Bitte Beträge manuell prüfen.",
+                )
+            )
+
+        if st.button(
+            _tr("finance_ui.review.mark_reviewed", "✅ Als geprüft markieren"),
+            key=f"finance_review_mark_{stmt.id}",
+        ):
+            db.update_statement_consistency(stmt.id, needs_review=False)
+            st.success(
+                _tr(
+                    "finance_ui.review.marked",
+                    "✅ Auszug #{id} wurde als geprüft markiert.",
+                    id=stmt.id,
+                )
+            )
+
+
 def _render_import_tab(db: FinanceDB) -> None:
     st.subheader(_tr("finance_ui.import.subheader", "📥 Kontoauszug-Import"))
     st.caption(
@@ -110,6 +195,8 @@ def _render_import_tab(db: FinanceDB) -> None:
             "PDF-Kontoauszug hochladen -> Docling extrahiert Text + Tabellen -> strukturierter LLM-Output befuellt die Finanz-DB. Re-Imports desselben PDFs werden idempotent erkannt (SHA-256 Hash).",
         )
     )
+
+    _render_review_section(db)
 
     uploaded = st.file_uploader(
         _tr("finance_ui.import.uploader", "Kontoauszug-PDF(s) hochladen"),
@@ -241,6 +328,35 @@ def _render_import_result(result: "StatementImportResult") -> None:
 
         with st.expander(_tr("finance_ui.import.completeness_details", "Details Vollstaendigkeits-Check"), expanded=False):
             st.json(check)
+
+    if result.consistency:
+        cons = result.consistency
+        c_status = str(cons.get("status") or "")
+        if c_status == "failed":
+            st.error(
+                _tr(
+                    "finance_ui.import.consistency_failed",
+                    "❌ Konsistenz-Check fehlgeschlagen: {errors}",
+                    errors="; ".join(cons.get("errors") or []),
+                )
+            )
+        elif cons.get("needs_review"):
+            st.warning(
+                _tr(
+                    "finance_ui.import.consistency_review",
+                    "⚠️ Konsistenz-Check: {status} – Prüfung erforderlich.",
+                    status=c_status,
+                )
+            )
+        else:
+            st.success(
+                _tr(
+                    "finance_ui.import.consistency_passed",
+                    "✅ Konsistenz-Check bestanden (Cents-Präzision).",
+                )
+            )
+        with st.expander(_tr("finance_ui.import.consistency_details", "Details Konsistenz-Check"), expanded=False):
+            st.json(cons)
 
     if result.extracted is not None:
         with st.expander(_tr("finance_ui.import.extracted_details", "Extrahierte Auszugs-Details")):

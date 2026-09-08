@@ -260,7 +260,11 @@
             "spinner_batch": "📄 Docling producer + 🤖 LLM consumer in parallel...",
             "pipeline_progress": "Pipeline import: {done}/{total}",
             "failed": "❌ Import failed: {error}",
-            "success": "✅ Statement imported: {inserted} new transactions, {duplicates} duplicates discarded."
+            "success": "✅ Statement imported: {inserted} new transactions, {duplicates} duplicates discarded.",
+            "consistency_passed": "Consistency check passed (cent precision).",
+            "consistency_failed": "Consistency check failed: {errors}",
+            "consistency_review": "Consistency check: {status} – review required.",
+            "consistency_details": "Consistency check details"
         },
         "accounts": {
             "subheader": "🏦 Banks & Accounts",
@@ -399,6 +403,19 @@
             "input": "Your question",
             "placeholder": "Question about your finances ... (e.g. 'How much did I spend on groceries in April?')",
             "send": "Send"
+        },
+        "review": {
+            "none": "No statements pending review – all consistency checks passed or were marked as reviewed.",
+            "header": "🔎 Review required",
+            "caption": "{count} statement(s) were flagged for review (consistency error or incomplete extraction). Check the amounts and mark them as reviewed if everything is correct.",
+            "opening": "Opening balance",
+            "closing": "Closing balance",
+            "credits": "Credits",
+            "debits": "Debits",
+            "errors": "Reason(s): {errors}",
+            "no_errors": "⚠️ Incomplete statement – no individual reasons persisted. Please verify the amounts manually.",
+            "mark_reviewed": "✅ Mark as reviewed",
+            "marked": "✅ Statement #{id} marked as reviewed."
         }
     },
     "kg_ui": {
