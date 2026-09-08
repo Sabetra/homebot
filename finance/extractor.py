@@ -34,6 +34,7 @@ import logging
 import re
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
+from decimal import Decimal
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -320,6 +321,41 @@ class FinanceExtractor:
                 success=False, error=f"Structured extraction failed: {exc}"
             )
 
+        # 3.5) Deterministische Cents-Konsistenzprüfung (ohne LLM, ohne Float).
+        #      Bewertet Salden-Kette, Gutschrifts-/Belastungssummen und markiert
+        #      fehlgeschlagene/ungenaue Importe als review-pflichtig. Ein
+        #      Evaluierungs-Fehler blockiert den Import NICHT, wird aber als
+        #      review-pflichtig persistiert (kein silent-fallback).
+        consistency_dict: Optional[Dict[str, Any]] = None
+        consistency_passed: Optional[bool] = None
+        consistency_errors: Optional[str] = None
+        needs_review = False
+        try:
+            report = evaluate_extracted_statement(extracted)
+            consistency_dict = report.to_dict()
+            consistency_passed = report.status == STATUS_PASSED
+            consistency_errors = "; ".join(report.errors) or None
+            needs_review = bool(report.needs_review)
+        except Exception as exc:
+            logger.exception("Consistency evaluation failed")
+            consistency_dict = {
+                "status": "error",
+                "needs_review": True,
+                "errors": [f"Consistency evaluation failed: {exc}"],
+            }
+            consistency_passed = False
+            consistency_errors = f"Consistency evaluation failed: {exc}"
+            needs_review = True
+
+        if needs_review:
+            logger.warning(
+                "Consistency check flagged statement for review: needs_review=%s "
+                "passed=%s errors=%s",
+                needs_review,
+                consistency_passed,
+                consistency_errors,
+            )
+
         # 4) Persistierung
         try:
             tx_dicts: List[Dict[str, Any]] = [tx.model_dump() for tx in extracted.transactions]
@@ -339,6 +375,11 @@ class FinanceExtractor:
                 period_end=extracted.period_end,
                 opening_balance=extracted.opening_balance,
                 closing_balance=extracted.closing_balance,
+                total_credits=extracted.total_credits,
+                total_debits=extracted.total_debits,
+                consistency_passed=consistency_passed,
+                consistency_errors=consistency_errors,
+                needs_review=needs_review,
                 transactions=tx_dicts,
             )
         except Exception as exc:
@@ -366,6 +407,7 @@ class FinanceExtractor:
             settlement_gap_count=settlement_gap_count,
             settlement_gap_status_counts=settlement_gap_status_counts,
             completeness_check=completeness_check,
+            consistency=consistency_dict,
             extracted=extracted,
         )
 
@@ -563,13 +605,50 @@ class FinanceExtractor:
             )
 
         header = self._extract_header(result.text)
-        return self.db.update_statement_balances(
+        updated = self.db.update_statement_balances(
             statement_id,
             opening_balance=header.opening_balance,
             closing_balance=header.closing_balance,
             period_start=header.period_start,
             period_end=header.period_end,
         )
+
+        # Nach der Reparatur: Konsistenz neu bewerten und den persistenten
+        # Zustand aktualisieren. Damit wird needs_review automatisch geklaert,
+        # wenn das reparierte Statement jetzt konsistent ist -- sonst bleibt es
+        # als review-pflichtig markiert (kein silent-fallback).
+        try:
+            txs = self.db.get_statement_transactions(statement_id)
+            # DB-Betraege stehen in Cents (int); der Konsistenz-Engine wird in
+            # Hauptwaehrung (EUR) uebergeben. Decimal(cents)/100 ist exakt
+            # (nur Komma-Verschiebung) und erhaelt die Cents-Praezision.
+            tx_major = [{"amount": Decimal(tx.amount_cents) / 100} for tx in txs]
+            eval_input = {
+                "opening_balance": header.opening_balance,
+                "closing_balance": header.closing_balance,
+                "total_credits": header.total_credits,
+                "total_debits": header.total_debits,
+                "transactions": tx_major,
+            }
+            report = evaluate_extracted_statement(eval_input)
+            self.db.update_statement_consistency(
+                statement_id,
+                total_credits=header.total_credits,
+                total_debits=header.total_debits,
+                consistency_passed=report.status == STATUS_PASSED,
+                consistency_errors="; ".join(report.errors),  # "" klaert die Spalte
+                needs_review=bool(report.needs_review),
+            )
+            logger.info(
+                "Post-repair consistency re-evaluated: statement_id=%s status=%s needs_review=%s",
+                statement_id,
+                report.status,
+                report.needs_review,
+            )
+        except Exception as exc:
+            logger.exception("Post-repair consistency re-evaluation failed")
+
+        return updated
 
     # -- private helpers -------------------------------------------
 
