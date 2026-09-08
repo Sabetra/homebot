@@ -219,7 +219,6 @@ _SCHEMA_STATEMENTS: Tuple[str, ...] = (
         imported_at             TEXT NOT NULL DEFAULT (datetime('now'))
     )
     """,
-    "CREATE INDEX IF NOT EXISTS idx_stmt_review ON statements(needs_review)",
     f"""
     CREATE TABLE IF NOT EXISTS transactions (
         id                  INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -771,6 +770,7 @@ class FinanceDB:
         # Index fuer die Review-Abfrage (idempotent).
         conn.execute("CREATE INDEX IF NOT EXISTS idx_stmt_review ON statements(needs_review)")
 
+    @staticmethod
     def _migrate_transaction_search(conn: sqlite3.Connection) -> None:
         """Backfilled den generischen Transaktions-Suchindex (Altdatenbanken).
 
@@ -1420,14 +1420,21 @@ class FinanceDB:
         period_end: Optional[str],
         opening_balance: Optional[float],
         closing_balance: Optional[float],
+        total_credits: Optional[float] = None,
+        total_debits: Optional[float] = None,
+        consistency_passed: Optional[bool] = None,
+        consistency_errors: Optional[str] = None,
+        needs_review: bool = False,
     ) -> int:
         cur = conn.execute(
             """
             INSERT INTO statements (
                 account_id, period_start, period_end,
                 opening_balance_cents, closing_balance_cents,
+                total_credits_cents, total_debits_cents,
+                consistency_passed, consistency_errors, needs_review,
                 source_pdf_hash, source_filename
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 account_id,
@@ -1435,6 +1442,11 @@ class FinanceDB:
                 period_end,
                 _to_cents(opening_balance) if opening_balance is not None else None,
                 _to_cents(closing_balance) if closing_balance is not None else None,
+                _to_cents(total_credits) if total_credits is not None else None,
+                _to_cents(total_debits) if total_debits is not None else None,
+                None if consistency_passed is None else int(bool(consistency_passed)),
+                consistency_errors,
+                int(bool(needs_review)),
                 source_pdf_hash,
                 source_filename,
             ),
@@ -3280,6 +3292,85 @@ class FinanceDB:
                 params,
             )
             return cur.rowcount > 0
+
+    def update_statement_consistency(
+        self,
+        statement_id: int,
+        *,
+        total_credits: Optional[float] = None,
+        total_debits: Optional[float] = None,
+        consistency_passed: Optional[bool] = None,
+        consistency_errors: Optional[str] = None,
+        needs_review: Optional[bool] = None,
+    ) -> bool:
+        """Aktualisiert die Konsistenz-/Review-Zustaende eines Statements.
+
+        Wird nach Import oder Reparatur (z. B. korrigierte Saetze) aufgerufen,
+        um das Ergebnis von :func:`finance.consistency` zu persistieren.
+        Nur explizit uebergebene Felder werden geschrieben; ``None`` bei
+        ``consistency_passed`` laesst die Spalte bewusst unangetastet.
+        Gibt True zurueck, wenn mindestens eine Zeile veraendert wurde.
+        """
+        sets: List[str] = []
+        params: List[Any] = []
+        if total_credits is not None:
+            sets.append("total_credits_cents = ?")
+            params.append(_to_cents(total_credits))
+        if total_debits is not None:
+            sets.append("total_debits_cents = ?")
+            params.append(_to_cents(total_debits))
+        if consistency_passed is not None:
+            sets.append("consistency_passed = ?")
+            params.append(int(bool(consistency_passed)))
+        if consistency_errors is not None:
+            sets.append("consistency_errors = ?")
+            params.append(consistency_errors)
+        if needs_review is not None:
+            sets.append("needs_review = ?")
+            params.append(int(bool(needs_review)))
+        if not sets:
+            return False
+        params.append(statement_id)
+        with self._lock, self._connect() as conn:
+            cur = conn.execute(
+                f"UPDATE statements SET {', '.join(sets)} WHERE id = ?",
+                params,
+            )
+            return cur.rowcount > 0
+
+    def find_review_needed_statements(self) -> List["Statement"]:
+        """Gibt alle Statements zurueck, die einer manuellen Pruefung beduerfen.
+
+        Das sind Zeilen mit ``needs_review = 1`` (fehlgeschlagene oder
+        unvollstaendige Konsistenzpruefung). Nach ``imported_at`` absteigend,
+        damit die neusten zuerst angezeigt werden.
+        """
+        with self._lock, self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM statements
+                WHERE needs_review = 1
+                ORDER BY imported_at DESC, id DESC
+                """
+            ).fetchall()
+            return [self._row_to_statement(r) for r in rows]
+
+    def get_statement_transactions(self, statement_id: int) -> List[Transaction]:
+        """Gibt alle Transaktionen eines Statements in Buchungsreihenfolge zurueck.
+
+        Wird im Review-Workflow verwendet, um die Einzelbuchungen eines
+        zur Pruefung markierten Statements anzuzeigen.
+        """
+        with self._lock, self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM transactions
+                WHERE statement_id = ?
+                ORDER BY booking_date ASC, id ASC
+                """,
+                (statement_id,),
+            ).fetchall()
+            return [self._row_to_transaction(r) for r in rows]
 
     def evaluate_statement_import_completeness(
         self,
