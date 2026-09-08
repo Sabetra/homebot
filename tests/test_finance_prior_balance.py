@@ -170,6 +170,107 @@ class TestGetPriorClosingBalance:
         # before liegt VOR dem einzigen Statement -> kein Vorstatement
         assert fresh_db.get_prior_closing_balance(account_id, "2025-12-01") is None
 
+    def test_skips_null_closing_and_uses_next(self, fresh_db: FinanceDB) -> None:
+        # Nächstes Statement hat NULL-Endsaldo -> wird übersprungen,
+        # das nächste gültige davor wird verwendet.
+        _insert(
+            fresh_db,
+            "prior-skip-1",
+            IBAN_A,
+            period_start="2025-11-01",
+            period_end="2025-11-30",
+            closing_balance=300.0,
+        )
+        _insert(
+            fresh_db,
+            "prior-skip-2",
+            IBAN_A,
+            period_start="2025-12-01",
+            period_end="2025-12-31",
+            closing_balance=None,  # NULL -> überspringen
+        )
+        account_id, _ = _insert(
+            fresh_db,
+            "prior-skip-3",
+            IBAN_A,
+            period_start="2026-01-01",
+            period_end="2026-01-31",
+            closing_balance=1000.0,
+        )
+        # before = 2026-02-01: 2026-01-31 hat NULL -> nächstes gültige ist 2025-11-30 (300.0)
+        assert fresh_db.get_prior_closing_balance(account_id, "2026-02-01") == 300.0
+
+    def test_exclude_statement_id(self, fresh_db: FinanceDB) -> None:
+        # Repair-Szenario: das geprüfte Statement darf sich nicht selbst als
+        # Vorstatement verwenden, sondern muss das FRÜHERE finden.
+        account_id, _ = _insert(
+            fresh_db,
+            "prior-excl-old",
+            IBAN_A,
+            period_start="2026-01-01",
+            period_end="2026-01-31",
+            closing_balance=1000.0,
+        )
+        _, statement_new = _insert(
+            fresh_db,
+            "prior-excl-new",
+            IBAN_A,
+            period_start="2026-02-01",
+            period_end="2026-02-28",
+            closing_balance=1300.0,
+        )
+        # OHNE exclude: nächstes vor 2026-03-01 = eigenes (1300.0)
+        assert fresh_db.get_prior_closing_balance(account_id, "2026-03-01") == 1300.0
+        # MIT exclude (Repair des eigenen): muss das frühere (1000.0) finden
+        result = fresh_db.get_prior_closing_balance(
+            account_id, "2026-03-01", exclude_statement_id=statement_new
+        )
+        assert result == 1000.0
+
+    def test_does_not_cross_accounts(self, fresh_db: FinanceDB) -> None:
+        account_a, _ = _insert(
+            fresh_db,
+            "prior-xacct-a",
+            IBAN_A,
+            period_start="2026-01-01",
+            period_end="2026-01-31",
+            closing_balance=1000.0,
+        )
+        account_b, _ = _insert(
+            fresh_db,
+            "prior-xacct-b",
+            IBAN_B,
+            period_start="2026-01-01",
+            period_end="2026-01-31",
+            closing_balance=9999.0,
+        )
+        assert account_a != account_b
+        # Konto B hat kein FRÜHERES Statement (nur sein eigenes) -> None
+        assert fresh_db.get_prior_closing_balance(account_b, "2026-02-01") is None
+        # Konto A findet sein eigenes Vorstatement
+        assert fresh_db.get_prior_closing_balance(account_a, "2026-02-01") == 1000.0
+
+    def test_tie_break_higher_id(self, fresh_db: FinanceDB) -> None:
+        # Gleiches period_end -> höheres id gewinnt (deterministisch)
+        account_id, statement_1 = _insert(
+            fresh_db,
+            "prior-tie-1",
+            IBAN_A,
+            period_start="2026-01-01",
+            period_end="2026-01-31",
+            closing_balance=111.0,
+        )
+        _, statement_2 = _insert(
+            fresh_db,
+            "prior-tie-2",
+            IBAN_A,
+            period_start="2026-01-01",
+            period_end="2026-01-31",
+            closing_balance=222.0,
+        )
+        assert statement_2 > statement_1
+        assert fresh_db.get_prior_closing_balance(account_id, "2026-02-01") == 222.0
+
     def test_none_or_blank_before_period_returns_none(self, fresh_db: FinanceDB) -> None:
         account_id, _ = _insert(
             fresh_db,
