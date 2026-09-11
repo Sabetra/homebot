@@ -400,6 +400,20 @@
 | **Tabellen** | Banks, Accounts, Statements, Transactions, Categories, Counterparty Rules, Reconciliations |
 | **Fixes (2026-07-26)** | `_from_cents(0)` → `"0.0"`, `_to_cents("0.0")` → `0`, `_hash_file` → binary mode, COALESCE Null-Coercion in `list_uncategorized`/`list_counterparties` |
 
+### 7.12 `finance/consistency.py` — Prior-Balance & Statement-Konsistenz (2026-09-09)
+**Deterministische Konsistenzprüfung von Auszügen (kein LLM, keine Seiteneffekte).**
+
+| Aspekt | Details |
+|--------|---------|
+| **Zweck** | Saldo-Kette, Gutschrifts-/Belastungssummen und Vorzeitraum-Link (`prior_balance_link`) prüfen |
+| **API** | `evaluate_statement_consistency()`, `evaluate_extracted_statement()` (Duck-Typing-Adapter), `ConsistencyReport` mit `errors`/`warnings`/`to_dict()` |
+| **Prior-Lookup** | `FinanceDB.get_prior_closing_balance()`: nur gleiches Konto, strikt `period_end < before`, neuester nicht-leerer Endsaldo, `exclude_statement_id` = Selbstreferenz-Guard (Repair) |
+| **Konservativ** | Fehlender Vorzeitraum → `skipped` → `passed_with_warnings` + `needs_review=True` (kein stiller Pass) |
+| **Review** | `needs_review = (status != passed)`; Repair (`FinanceExtractor.repair_statement_header`) klärt nur bei Vollpass, sonst bleibt Review + `consistency_errors` |
+| **Settlement** | Cross-Account Kreditkarten-Settlement **unterstützt**: `relink_all_transfers(max_days=5)` (`statement_settlements` + nature `settlement`), `detect_statement_settlement_gaps()` (read-only: `no_candidate`/`candidate_out_of_window`/`ambiguous_in_window`/`single_candidate_in_window`) |
+| **Grenzen** | Fenster (Default 5 Tage), exakte Cents-Übereinstimmung, Belastungen auf dem Kartenkonto selbst werden nicht verlinkt |
+| **Tests** | `tests/test_finance_prior_balance.py` (14), `tests/test_finance_prior_balance_real_data.py` (18) — alle CPU-only, kein LLM/Embedding im VRAM |
+
 ---
 
 ## 8. `llm_utils/language_detector.py` – Language Detection

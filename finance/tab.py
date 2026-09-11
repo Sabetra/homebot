@@ -15,6 +15,7 @@ die über ``st.session_state.chat_logic.model_loader`` geholt wird (Lazy).
 from __future__ import annotations
 
 import logging
+import sqlite3
 import tempfile
 from datetime import date
 from pathlib import Path
@@ -1046,6 +1047,36 @@ def _render_transactions_tab(db: FinanceDB) -> None:
 # ---------------------------------------------------------------------------
 
 
+def _apply_marked_links(db: FinanceDB, rows: pd.DataFrame) -> tuple[int, List[str]]:
+    """Verknüpft alle markierten Kandidaten-Rows und meldet Fehler pro Zeile.
+
+    Root-Cause-Fix 2026-09-11: DB-Fehler (z.B. ``UNIQUE constraint failed:
+    transfer_links.incoming_tx_id`` bei mehrdeutigen Paaren) wurden zuvor
+    nicht gefangen und crashten das gesamte Finance-Tab, weil nur
+    ``ValueError`` behandelt wurde. Jetzt werden ``ValueError`` und alle
+    ``sqlite3.DatabaseError`` (IntegrityError o. ä.) pro Zeile gesammelt und
+    zurückgegeben -- keine silent-fallbacks: jede abgelehnte Zeile bleibt
+    sichtbar und actionable (bestehende Verknüpfung erst lösen).
+
+    Returns ``(linked_count, error_messages)``.
+    """
+    linked = 0
+    errors: List[str] = []
+    for _, row in rows.iterrows():
+        if not bool(row["Verknüpfen"]):
+            continue
+        try:
+            db.link_transfer(
+                outgoing_tx_id=int(row["out_id"]),
+                incoming_tx_id=int(row["in_id"]),
+                source="user",
+            )
+            linked += 1
+        except (ValueError, sqlite3.DatabaseError) as exc:
+            errors.append(f"out={row['out_id']}/in={row['in_id']}: {exc}")
+    return linked, errors
+
+
 def _render_transfers_tab(db: FinanceDB) -> None:
     st.subheader(_tr("finance_ui.transfers.subheader", "🔁 Transfers zwischen eigenen Konten"))
     st.caption(
@@ -1104,6 +1135,17 @@ def _render_transfers_tab(db: FinanceDB) -> None:
         st.success(_tr("finance_ui.transfers.no_candidates", "✅ Keine offenen Transfer-Kandidaten - alles erkannt oder nichts zu paaren."))
     else:
         st.caption(_tr("finance_ui.transfers.candidates_found", "{count} Kandidat(en) gefunden — verschiedene Konten, exakt entgegengesetzte Betraege.", count=len(candidates)))
+        if any(
+            int(c.get("incoming_alternatives", 0)) > 0
+            or int(c.get("outgoing_alternatives", 0)) > 0
+            for c in candidates
+        ):
+            st.warning(
+                _tr(
+                    "finance_ui.transfers.ambiguity_note",
+                    "⚠️ Mehrdeutige Kandidaten: dieselbe Buchung kann hier mit mehreren Partnern erscheinen. Pro Seite kann nur EINE Verknüpfung bestehen (UNIQUE-Constraint) -- der zuerst verknüpfte Kandidat blockiert die anderen. Notwendigenfalls zuerst die bestehende Verknüpfung lösen (Link-ID oben).",
+                )
+            )
         df_c = pd.DataFrame(
             [
                 {
@@ -1117,6 +1159,8 @@ def _render_transfers_tab(db: FinanceDB) -> None:
                     "Counterparty (out)": c["outgoing_counterparty"] or "—",
                     "Counterparty (in)": c["incoming_counterparty"] or "—",
                     "Tage": int(c["day_diff"]),
+                    "⚠️ in-Alternativen": int(c.get("incoming_alternatives", 0)),
+                    "⚠️ out-Alternativen": int(c.get("outgoing_alternatives", 0)),
                     "Verknüpfen": False,
                 }
                 for c in candidates
@@ -1130,23 +1174,11 @@ def _render_transfers_tab(db: FinanceDB) -> None:
             disabled=[
                 "out_id", "in_id", "Betrag (€)", "Datum (out)", "Datum (in)",
                 "Aus IBAN", "→ Auf IBAN", "Counterparty (out)", "Counterparty (in)", "Tage",
+                "⚠️ in-Alternativen", "⚠️ out-Alternativen",
             ],
         )
         if st.button(_tr("finance_ui.transfers.apply_marked", "✅ Markierte als Transfer verknuepfen"), type="primary", key="finance_link_apply"):
-            linked = 0
-            errors: List[str] = []
-            for _, row in edited.iterrows():
-                if not bool(row["Verknüpfen"]):
-                    continue
-                try:
-                    db.link_transfer(
-                        outgoing_tx_id=int(row["out_id"]),
-                        incoming_tx_id=int(row["in_id"]),
-                        source="user",
-                    )
-                    linked += 1
-                except ValueError as exc:
-                    errors.append(f"out={row['out_id']}/in={row['in_id']}: {exc}")
+            linked, errors = _apply_marked_links(db, edited)
             if linked:
                 st.success(_tr("finance_ui.transfers.links_created", "✅ {count} Verknuepfung(en) angelegt.", count=linked))
             if errors:

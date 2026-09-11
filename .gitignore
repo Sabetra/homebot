@@ -195,6 +195,10 @@ _tmp_*
 psychological_support_kg_cache/
 psycho_kg_faiss/
 
+# Repair-Berichte enthalten reale Bankdaten (IBANs, Filenamen, Details) —
+# nur lokal halten, nie committen (2026-09-11).
+database/finance_repair_report.json
+
 # --- Public Launch Hygiene (2026-08-31) ---
 # Maschinen-/benutzerspezifische Runtime-Zustaende und lokale Arbeitsdateien
 # duerfen nie ins (oeffentliche) Repository. Vorlagen: *.example-Dateien.

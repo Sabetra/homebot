@@ -1,4 +1,4 @@
-<!-- last-verified: 2026-07-27 -->
+<!-- last-verified: 2026-09-09 -->
 # 03 - Finance Module Documentation
 
 > **Stand:** 2026-07-27 | **Code- und Gemma4-Canary-verifiziert**
@@ -262,6 +262,72 @@ Verifiziert am 2026-07-27:
 
 - 8 Backup-Files entfernt: `*.backup`, `*.bak_*`
 - Workdoc gelöscht nach Abschluss
+
+---
+
+## 17. Consistency, Prior-Balance, Repair & Settlement (2026-09-09)
+
+### 17.1 Prior-Balance-Lookup (`finance/db_schema.py`)
+
+`FinanceDB.get_prior_closing_balance(account_id, before_period, exclude_statement_id=None)`:
+
+- NUR desselben Kontos; strikte Regel ``period_end < before_period`` (keine Gleichtags- oder ueberlappende Perioden).
+- Nur Statements mit **nicht-leerem Endsaldo** kommen in Frage.
+- Deterministisch: hoechste ``period_end``, bei Gleichstand hoeheres ``id``.
+- ``exclude_statement_id`` schliesst das Statement vom Suchraum aus (Selbstreferenz-Guard im Repair-Pfad).
+- Kein Treffer / keine Periode -> ``None`` (niemals ein erfundener Wert).
+
+Konservativer Vertrag: ``None`` -> die Engine markiert ``prior_balance_link`` als ``skipped``
+-> ``passed_with_warnings`` + ``needs_review = True``. Fehlender Vorzeitraum bedeutet
+review-pflichtig, **kein** impliziter Pass.
+
+### 17.2 Konsistenz-Engine (`finance/consistency.py`)
+
+- `evaluate_statement_consistency(...)`: deterministische, Cents-genaue Pruefungen:
+  `credits_total`, `debits_total`, `balance_chain` (Anfangssaldo + Guthaben - Belastungen = Endsaldo),
+  `prior_balance_link` (Anfangssaldo == Vorzeitraum-Endsaldo).
+- `evaluate_extracted_statement(...)`: Duck-Typing-Adapter fuer `ExtractedStatement` / `StatementHeader` oder Dict.
+- `ConsistencyReport`: `status` (passed / passed_with_warnings / failed),
+  `needs_review = (status != passed)`, `errors` (fehlgeschlagene Pruefungen),
+  `warnings` (uebersprungene Pruefungen), `to_dict()` fuer UI/DB-Storage.
+
+### 17.3 Import vs. Repair
+
+| Pfad | Verhalten |
+|------|-----------|
+| Import (`persist_statement_import`) | Statement + Buchungen persistieren, Konsistenz pruefen; ohne Vorstatement konservativ review-pflichtig. |
+| Repair (`FinanceExtractor.repair_statement_header`) | NUR Header (Bank/Konto/Periode/Salden) per Docling neu extrahieren, Buchungen bleiben unangetastet. Danach: `get_prior_closing_balance(..., exclude_statement_id=stmt)` + `evaluate_extracted_statement` + `update_statement_consistency`. |
+
+Review-Semantik:
+
+- **Klaert**: alle Pruefungen passed (inkl. gueltigem Prior-Link) -> `needs_review = False`, `consistency_errors` wird geleert.
+- **Bewahrt**: irgendeine Pruefung failed ODER Prior-Link skipped -> `needs_review = True` bleibt, `consistency_errors` dokumentiert den Grund (kein silent-fallback).
+
+### 17.4 Cross-Account Kreditkarten-Settlement (unterstuetzt)
+
+- `relink_all_transfers(max_days=5)`: Auto-Erkennung fuer unverlinkte interne Geldbewegungen;
+  beide Formen: klassisches Tx-Paar (-X/+X) und statement-basierte Kreditkarten-Ausgleichsbuchungen
+  (z. B. Bank-Belastung "LADUNG KREDITKARTENKONTO 1000.00" + Kartenauszug mit Endsaldo -1000.00).
+  Ergebnis: `statement_settlements`-Link + `transaction_nature = 'settlement'`.
+- `detect_statement_settlement_gaps(max_days_after_statement=45, extended_search_days=180)`:
+  Read-only-Diagnose offener Faelle: `no_candidate`, `candidate_out_of_window`,
+  `ambiguous_in_window`, `single_candidate_in_window` (Kandidatenlisten, max. 10).
+- Grenzen: Zuordnung nur im produktiven Fenster (Default 5 Tage); Betraege muessen exakt in Cents
+  uebereinstimmen; Belastungen **auf** dem Kartenkonto selbst werden nicht verlinkt.
+  Restfaelle (z. B. Kartensaldo -9.61 ohne passende 9.61er-Belastung) bleiben konservativ offen
+  und werden per Gap-Diagnose klassifiziert statt still zu verlinken.
+
+### 17.5 Test-Abdeckung (2026-09-09)
+
+- `tests/test_finance_prior_balance.py` -- 14 Tests (Lookup-Semantik auf Einheitenebene).
+- `tests/test_finance_prior_balance_real_data.py` -- 18 Tests: reale Auszugs-Ketten
+  (Bank/Karte), 1-Cent-Abweichung, fehlender/falscher Vorzeitraum, Repair-Pfad
+  (Fake-Docling + gepatchter `_extract_header`), Cross-Account-Settlement (Link, Nature-Update,
+  Fenster-Limits, Gap-Klassifikation, Idempotenz).
+- Alle CPU-only: kein LLM, kein Embedding-Modell im VRAM (Statements via oeffentlicher API
+  ohne Transaktionen; Buchungen via rohem SQL; Repair via Fake-Docling).
+- Verwandschafts-Suiten `tests/test_finance_consistency.py`, `tests/test_finance_db_consistency.py`,
+  `tests/test_finance_consistency_db.py`: insgesamt 85 Tests bestanden.
 
 ---
 

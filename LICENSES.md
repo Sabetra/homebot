@@ -68,7 +68,7 @@
 | urllib3 | 2.7.0 | MIT (PEP 639) | permissiv ✓ |
 | watchdog | 6.0.0 | Apache Software License (OSI-Klassifizierer) | permissiv ✓ |
 | yt-dlp | 2026.8.19 | Unlicense (PEP 639) | permissiv ✓ |
-## 2. Runtime-Abhaengigkeiten — transitiv (159)
+## 2. Runtime-Abhaengigkeiten — transitiv (163)
 
 | Paket | Version | Lizenz | AGPL-3.0-Klasse |
 |-------|---------|--------|-----------------|
@@ -123,6 +123,7 @@
 | httpcore | 1.0.9 | BSD-3-Clause (PEP 639) | permissiv ✓ |
 | httptools | 0.8.0 | MIT (PEP 639) | permissiv ✓ |
 | httpx | 0.28.1 | BSD License (OSI-Klassifizierer) | permissiv ✓ |
+| httpx-sse | 0.4.3 | MIT (Metadaten-Feld) | permissiv ✓ |
 | huggingface_hub | 1.26.0 | Apache Software License (OSI-Klassifizierer) | permissiv ✓ |
 | hyperframe | 6.1.0 | MIT License (OSI-Klassifizierer) | permissiv ✓ |
 | idna | 3.18 | BSD-3-Clause (PEP 639) | permissiv ✓ |
@@ -150,6 +151,7 @@
 | markdown-it-py | 4.2.0 | MIT License (OSI-Klassifizierer) | permissiv ✓ |
 | marko | 2.2.3 | MIT (Metadaten-Feld) | permissiv ✓ |
 | MarkupSafe | 3.0.3 | BSD-3-Clause (PEP 639) | permissiv ✓ |
+| mcp | 1.27.1 | MIT License (OSI-Klassifizierer) | permissiv ✓ |
 | mdurl | 0.1.2 | MIT License (OSI-Klassifizierer) | permissiv ✓ |
 | mpire | 2.10.2 | MIT License (OSI-Klassifizierer) | permissiv ✓ |
 | mpmath | 1.3.0 | BSD License (OSI-Klassifizierer) | permissiv ✓ |
@@ -176,6 +178,7 @@
 | pydantic-settings | 2.14.2 | MIT (PEP 639) | permissiv ✓ |
 | pydeck | 0.9.3 | Apache License 2.0 (Metadaten-Feld) | permissiv ✓ |
 | Pygments | 2.20.0 | BSD-2-Clause (PEP 639) | permissiv ✓ |
+| PyJWT | 2.13.0 | MIT (PEP 639) | permissiv ✓ |
 | pylatexenc | 2.11 | MIT License (OSI-Klassifizierer) | permissiv ✓ |
 | pyparsing | 3.3.2 | MIT (PEP 639) | permissiv ✓ |
 | pypdfium2 | 5.12.1 | BSD-3-Clause, Apache-2.0, dependency licenses (Metadaten-Feld) | permissiv ✓ |
@@ -205,6 +208,7 @@
 | sniffio | 1.3.1 | MIT License (OSI-Klassifizierer) | permissiv ✓ |
 | socksio | 1.0.0 | MIT License (OSI-Klassifizierer) | permissiv ✓ |
 | soupsieve | 2.9.1 | MIT (PEP 639) | permissiv ✓ |
+| sse-starlette | 3.4.11 | BSD-3-Clause (PEP 639) | permissiv ✓ |
 | starlette | 1.3.1 | BSD-3-Clause (PEP 639) | permissiv ✓ |
 | sympy | 1.13.1 | BSD License (OSI-Klassifizierer) | permissiv ✓ |
 | tabulate | 0.10.0 | MIT (PEP 639) | permissiv ✓ |

@@ -3198,7 +3198,7 @@ class FinanceDB:
         """
         with self._lock, self._connect() as conn:
             rows = conn.execute(sql, (max_days,)).fetchall()
-            return [
+            candidates = [
                 {
                     "outgoing_tx_id": int(r["out_id"]),
                     "incoming_tx_id": int(r["in_id"]),
@@ -3213,6 +3213,28 @@ class FinanceDB:
                 }
                 for r in rows
             ]
+            # Mehrdeutigkeit sichtbar machen (Root-Cause-Kontext 2026-09-11):
+            # wie viele NOCH offene Kandidaten teilen sich dieselbe
+            # incoming/outgoing Tx? >0 bedeutet: pro Seite kann nur EIN
+            # Kandidat verlinkt werden (UNIQUE-Constraints auf
+            # transfer_links); der zuerst verknuepfte blockiert die anderen.
+            in_counts: Dict[int, int] = {}
+            out_counts: Dict[int, int] = {}
+            for cand in candidates:
+                in_counts[cand["incoming_tx_id"]] = (
+                    in_counts.get(cand["incoming_tx_id"], 0) + 1
+                )
+                out_counts[cand["outgoing_tx_id"]] = (
+                    out_counts.get(cand["outgoing_tx_id"], 0) + 1
+                )
+            for cand in candidates:
+                cand["incoming_alternatives"] = (
+                    in_counts[cand["incoming_tx_id"]] - 1
+                )
+                cand["outgoing_alternatives"] = (
+                    out_counts[cand["outgoing_tx_id"]] - 1
+                )
+            return candidates
 
     def link_transfer(
         self,
@@ -3246,12 +3268,45 @@ class FinanceDB:
                 raise ValueError("amounts must be exact negatives of each other")
             if int(out_row["account_id"]) == int(in_row["account_id"]):
                 raise ValueError("transfer must span two different accounts")
-            cur = conn.execute(
-                "INSERT INTO transfer_links "
-                "(outgoing_tx_id, incoming_tx_id, confidence, source) "
-                "VALUES (?, ?, ?, ?)",
-                (outgoing_tx_id, incoming_tx_id, float(confidence), source),
-            )
+            # Root-Cause-Fix 2026-09-11: UNIQUE(outgoing_tx_id) /
+            # UNIQUE(incoming_tx_id) erlauben je Seite genau eine
+            # Verknuepfung. detect_transfer_candidates listet mehrdeutige
+            # Kandidaten (gleiche in_id, mehrere out_ids) bewusst mehrfach --
+            # verlinkt der User zwei davon, traf das alte rohe
+            # sqlite3.IntegrityError die UI/Agent-Aufrufe (crash, nur
+            # ValueError wurde gefangen). Jetzt: klares, actionable
+            # ValueError mit der ID der bestehenden Verknuepfung.
+            for side, tx_id in (
+                ("outgoing", outgoing_tx_id),
+                ("incoming", incoming_tx_id),
+            ):
+                existing = conn.execute(
+                    "SELECT id, outgoing_tx_id, incoming_tx_id FROM transfer_links "
+                    "WHERE outgoing_tx_id = ? OR incoming_tx_id = ?",
+                    (tx_id, tx_id),
+                ).fetchone()
+                if existing is not None:
+                    raise ValueError(
+                        f"{side} transaction {tx_id} is already linked "
+                        f"(link id {int(existing['id'])}: "
+                        f"out={int(existing['outgoing_tx_id'])} -> "
+                        f"in={int(existing['incoming_tx_id'])}); "
+                        "unlink it first or choose a different pair"
+                    )
+            try:
+                cur = conn.execute(
+                    "INSERT INTO transfer_links "
+                    "(outgoing_tx_id, incoming_tx_id, confidence, source) "
+                    "VALUES (?, ?, ?, ?)",
+                    (outgoing_tx_id, incoming_tx_id, float(confidence), source),
+                )
+            except sqlite3.IntegrityError as exc:
+                # Safety-Net (z.B. paralleler Writer zwischen Check und
+                # Insert): weiterhin lauter, klarer Fehler -- nie silent.
+                raise ValueError(
+                    f"transfer link conflict for out={outgoing_tx_id} / "
+                    f"in={incoming_tx_id}: {exc}"
+                ) from exc
             self._refresh_transaction_natures_within_conn(
                 conn,
                 [outgoing_tx_id, incoming_tx_id],

@@ -407,6 +407,7 @@
             "candidates_found": "{count} candidate(s) found — different accounts, exactly opposite amounts.",
             "no_candidates": "✅ No open transfer candidates - everything linked or nothing to pair.",
             "apply_marked": "✅ Link selected as transfer",
+            "ambiguity_note": "⚠️ Mehrdeutige Kandidaten: dieselbe Buchung kann hier mit mehreren Partnern erscheinen. Pro Seite kann nur EINE Verknüpfung bestehen (UNIQUE-Constraint) -- der zuerst verknüpfte Kandidat blockiert die anderen. Notwendigenfalls zuerst die bestehende Verknüpfung lösen (Link-ID oben).",
             "links_created": "✅ {count} transfer link(s) created.",
             "open_settlement": "### Open credit card settlements (root-cause analysis)",
             "open_settlement_caption": "Diagnosis of open statement settlements: no candidates, candidates outside assignment window, or ambiguities. Structural only, no keywords.",

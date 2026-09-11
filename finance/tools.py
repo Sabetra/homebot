@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import sqlite3
 from statistics import mean, pstdev
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
@@ -991,6 +992,14 @@ class FinanceTools:
             )
         except ValueError as exc:
             return {"success": False, "error": str(exc), "error_class": "invalid"}
+        except sqlite3.IntegrityError as exc:
+            # Safety-Net (Root-Cause-Fix 2026-09-11): UNIQUE-Konflikt auf
+            # transfer_links als strukturierter Fehler, kein Crash.
+            return {
+                "success": False,
+                "error": f"transfer link conflict: {exc}",
+                "error_class": "conflict",
+            }
         return {"success": True, "link_id": link_id}
 
     def unlink_transfer(self, params: Dict[str, Any]) -> Dict[str, Any]:
