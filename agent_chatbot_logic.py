@@ -1,4 +1,5 @@
 import copy
+import dataclasses
 import json
 import logging
 import os
@@ -13,6 +14,7 @@ from functools import lru_cache, wraps  # NEU: Für Caching und Retry-Decorator
 import hashlib  # NEU: Für Cache-Keys
 from utils.runtime_policy import parse_bool_env
 from utils import token_scaling  # Adaptive max_tokens (Token-Skalierung, docs/20)
+from utils import chat_perf_recorder  # Low-Overhead Chat-Perf-Telemetrie (Best-Effort, Kill-Switch HOMEBOT_CHAT_PERF_DISABLED)
 from chatbot_logic import ChatbotLogic  # Base ChatbotLogic mit Context Manager
 from chat_context_manager import ChatContextManager  # NEU: Context Manager Import
 from scripts.model_loader import LLM_CONTEXT_SIZE  # Single Source of Truth für Context-Window
@@ -160,6 +162,48 @@ def retry_on_failure(max_retries: int = 3, delay: float = 1.0, backoff_factor: f
             return None
         return wrapper
     return decorator
+
+
+def _serialize_trace_value(value: Any) -> Any:
+    """Rekursiv Trace-Werte in JSON-fähige Strukturen überführen.
+
+    Pydantic-Modelle (``model_dump``) und Dataclasses werden zu Dicts,
+    Container rekursiv aufgelöst. Nicht-Serialisierbare Objekte landen
+    als ``repr`` (Debug-Objekte bleiben lesbar, nichts geht verloren).
+    """
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if hasattr(value, "model_dump") and callable(value.model_dump):
+        return _serialize_trace_value(value.model_dump())
+    if dataclasses.is_dataclass(value) and not isinstance(value, type):
+        return {
+            k: _serialize_trace_value(v)
+            for k, v in vars(value).items()
+            if not k.startswith("_")
+        }
+    if isinstance(value, dict):
+        return {str(k): _serialize_trace_value(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [_serialize_trace_value(v) for v in value]
+    return repr(value)
+
+
+def _trace_to_dict(trace: Any) -> Optional[dict]:
+    """Aktuelle AgentTrace (Dataclass oder Pydantic) als plain dict serialisieren.
+
+    ``AgentTrace`` ist ein Dataclass (``agent/agent_types.py``) — die frühere
+    ``hasattr(..., "model_dump")``-Prüfung lieferte deshalb immer ``None`` und
+    die Trace ging im ``ChatRunResult`` verloren. Wirft nie.
+    """
+    if trace is None:
+        return None
+    try:
+        result = _serialize_trace_value(trace)
+        return result if isinstance(result, dict) else None
+    except Exception:
+        logger.debug("Trace-Serialisierung fehlgeschlagen", exc_info=True)
+        return None
+
 
 class AgentChatbotLogic(ChatbotLogic):
     """
@@ -1313,32 +1357,46 @@ class AgentChatbotLogic(ChatbotLogic):
         """Run chat work in a producer thread and yield ordered typed events."""
         event_queue: queue.Queue[ChatEvent | object] = queue.Queue()
         sentinel = object()
-        context = StreamingContext(session_id=session_id, sink=event_queue.put)
+        # Telemetrie-Sink: forwardiert zuerst an die UI (event_queue), dann
+        # Beobachtung + Persistenz (Best-Effort, nie blockierend).
+        context = StreamingContext(
+            session_id=session_id,
+            sink=chat_perf_recorder.make_recording_sink(event_queue.put),
+        )
 
         def produce() -> None:
             history_snapshot = copy.deepcopy(self.message_history)
             partial_text: list[str] = []
             text_started = False
             active_step_id: str | None = None
+            active_step_started: float | None = None
             step_counter = 0
 
             def finish_active_step(status: str = "completed") -> None:
-                nonlocal active_step_id
+                nonlocal active_step_id, active_step_started
                 if active_step_id is not None and not context.is_terminal:
+                    duration_ms = (
+                        int((time.perf_counter() - active_step_started) * 1000)
+                        if active_step_started is not None
+                        else None
+                    )
                     context.emit(
                         StepFinished,
                         step_id=active_step_id,
                         status=status,
+                        duration_ms=duration_ms,
                     )
                     active_step_id = None
+                    active_step_started = None
 
             def on_progress(step: str, details: str = "") -> None:
-                nonlocal active_step_id, step_counter
+                nonlocal active_step_id, active_step_started, step_counter
                 if context.is_cancelled:
                     raise StreamingCancelled("".join(partial_text))
                 finish_active_step()
                 step_counter += 1
                 active_step_id = f"step-{step_counter}"
+                active_step_started = time.perf_counter()
                 label = f"{step}: {details}" if details else step
                 context.emit(StepStarted, step_id=active_step_id, label=label)
 
@@ -1389,7 +1447,7 @@ class AgentChatbotLogic(ChatbotLogic):
                     else None
                 ))
                 last_trace = self.last_trace
-                trace = last_trace.model_dump() if last_trace is not None and hasattr(last_trace, "model_dump") else None
+                trace = _trace_to_dict(last_trace)
                 result = ChatRunResult(
                     text=response,
                     sources=sources,
@@ -1463,6 +1521,14 @@ class AgentChatbotLogic(ChatbotLogic):
         # Reset vor jedem Chat
         self.last_followup_questions = []
         self._last_route_mode = "UNKNOWN"
+        # Run-spezifischer Zustand: nie aus einem früheren Run übernehmen.
+        # Ohne diesen Reset würde z. B. ein SIMPLE-Run die AgentTrace des
+        # letzten PLAN_EXECUTE-Runs in ChatRunResult/Telemetrie mitgeben
+        # (beobachtet 2026-09-12: identische trace_summary in 3 Folge-Runs).
+        self.last_trace = None
+        self.last_sources = []
+        self.last_graphics = []
+        self.last_files = []
 
         # Eigentliche Chat-Logik
         response = self._chat_core(

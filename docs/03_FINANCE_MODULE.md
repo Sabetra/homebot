@@ -1,4 +1,4 @@
-<!-- last-verified: 2026-09-09 -->
+<!-- last-verified: 2026-09-15 -->
 # 03 - Finance Module Documentation
 
 > **Stand:** 2026-07-27 | **Code- und Gemma4-Canary-verifiziert**
@@ -36,7 +36,7 @@ Natural-Language Query
 | Query Planner | `finance/query_planner.py` | NL zu typisiertem Finance-Toolplan | Verifiziert |
 | Grammar Compiler | `finance/grammar_compiler.py` | Pydantic-v2-Schema zu BNF | Verifiziert |
 | Query Reflector | `finance/query_reflector.py` | Ergebnisbewertung und Fortsetzungsentscheidung | Verifiziert |
-| Tools | `finance/tools.py` | SQLite-Abfragen und deterministische Analysen | 34 exponierte Tools implementiert |
+| Tools | `finance/tools.py` | SQLite-Abfragen und deterministische Analysen | 37 exponierte Tools implementiert |
 | Tab UI | `finance/tab.py` | Streamlit-Dashboard und Finance-Chat | Verifiziert |
 | Chat | `finance/chat.py` | Lokale Finance-Toolschleife und Endsynthese | Python-Executor produktiv gesperrt |
 | Extractor | `finance/extractor.py` | PDF zu Transaktionen | Aktiv |
@@ -328,6 +328,123 @@ Review-Semantik:
   ohne Transaktionen; Buchungen via rohem SQL; Repair via Fake-Docling).
 - Verwandschafts-Suiten `tests/test_finance_consistency.py`, `tests/test_finance_db_consistency.py`,
   `tests/test_finance_consistency_db.py`: insgesamt 85 Tests bestanden.
+
+---
+
+## 18. SOTA Phase 1 – Monarch-Core Prognosen (2026-09-12)
+
+**Deterministische Cashflow- und Guthaben-Prognose für den Finance-Tab.**
+Schedule-first-Hybrid: wiederkehrende Zahlungen als deterministischer Plan +
+variable Einnahmen/Ausgaben via OLS-Trend × Kalendermonats-Saisonalität +
+Residual-Bootstrap-Konfidenzintervall; Guthaben wird vom letzten
+`effective_balance_at` fortgeschrieben. Kein ML, kein LLM, keine neuen
+Dependencies, kein Future-Leak.
+
+### 18.1 Neue Tools (`finance/tools.py`)
+
+| Tool | Zweck | Parameter |
+|------|-------|-----------|
+| `finance_upcoming_bills` | Fälligkeits-Kalender: nächste Fälligkeit, Betrag, Abo-Kennzeichnung im Vorwärtsfenster | `days_ahead` 1–180 (Default 30), `iban`, `reference_date` |
+| `finance_cash_flow_forecast` | Monats-Nachweis (Einnahmen / Wiederkehrend / Variable Ausgaben / Netto) mit KI + Guthaben-Kurve | `forecast_months` 1–24 (6), `lookback_months` 3–36 (12), `confidence_level` 0.5–0.99 (0.8), `include_balance` (True), `iban`, `reference_date` |
+| `finance_subscription_audit` | Abo-/Recurring-Audit: Monats-/Jahreskosten, Trend, letzte Preisänderung, Abo-Heuristik | `iban`, `reference_date` |
+
+### 18.2 Methodik (Schedule-first-Hybrid)
+
+- **Deterministischer Anteil:** wiederkehrende Ausgabengruppen (≥ 2 Buchungen,
+  `_recurring_groups`) werden mit ihrem Historien-Monatswert und dem nächsten
+  Fälligkeitstag projiziert (Anchortag = Median der letzten 5 Buchungstage,
+  `_next_due_on_or_after`).
+- **Stochastischer Anteil:** variable Einnahmen/Ausgaben (Gesamt minus
+  Wiederkehrendes) je Monat; Trend per OLS (`_fit_trend`), Saisonalität über
+  Jahres-Monats-Indizes (`_seasonal_index`, Degradation auf Index=1 bei
+  < 12 Monaten Historie).
+- **Unsicherheit:** Residual-Bootstrap (`_bootstrap_interval`, B=1000, fester
+  Seed → deterministisch, Perzentil-Intervall); CI-Reihenfolge-Invariante
+  (untere ≤ Punkt ≤ obere); leere Residuals → Punktintervall.
+- **Guthaben-Kurve:** Start = letztes `effective_balance_at` (Bankwahrheit
+  minus verlinkte interne Transfers); nur bei IBAN + Einzelwährung, sonst
+  `balance: null` (konsistent mit dem `estimated_savings`-Pattern).
+- **Ausschlüsse / Invarianten:** Transfers via bestehende
+  `_non_transfer_clause`; Währungen getrennt (keine Kursumrechnung — keine
+  lokalen Kursdaten); nur Fakten bis `reference_date` (`_facts_up_to`,
+  kein Future-Leak); Preisänderungen via `_detect_price_change`.
+
+### 18.3 Registrierung (Single Source of Truth)
+
+- `agent/tool_schemas.py` +3 OpenAI-Schemata · `agent_toolkit.py` +3
+  Dispatch-Wrapper (read-only, Fail-Fast-Validatoren bei Import)
+- `agent/tool_profiles.py`: `FINANCE_ANALYTICS` +3
+- `finance/chat.py`: Planner-Prompt +3 Routings, Reflector +3 Actions,
+  Retry-Dispatch +3 · `finance/query_reflector.py` + `finance/grammar_compiler.py`:
+  `_REFLECTOR_ACTIONS` / `FINANCE_TOOL_NAMES` + `REFLECTOR_ACTIONS` +3
+- `finance/tab.py`: neuer Sub-Tab „📈 Prognosen" (`_render_forecast_tab`):
+  Konto-Filter + Slider (Horizont 1–24, Rückblick 3–36, Konfidenz 0.5–0.99,
+  Guthaben-Checkbox, Fälligkeitsfenster 7–180), Monats-Tabelle, Plotly-Chart
+  (KI-Band + Guthaben), Fälligkeits-Tabelle, Audit-Tabelle
+- i18n: `finance_ui.forecast.*` (43 Keys) + `finance_ui.tabs.forecast` (DE/EN/BG)
+
+### 18.4 Test-Abdeckung (2026-09-12)
+
+- `tests/test_finance_monarch_core.py` — 26 Tests: saisonales Residual-Verhalten,
+  Balance-Ketten-Korrektheit, CI-Reihenfolge, kein Future-Leakage, Transfer-Ausschluss,
+  Multi-Currency, Bills-Anker-/Fenster-Logik, Audit-Klassifikation und -Totale.
+  Alle CPU-only, deterministisch (feste Bootstrap-Seed, injizierbare Referenzdaten).
+- Breitere Suite (2026-09-12): `test_finance_analytics_tools`, `test_finance_chat`,
+  `test_finance_structured_runtime`, `test_finance_tab_regressions`,
+  `test_i18n_consistency`, `test_tool_profiles` — **220/220 PASS** (2026-09-12).
+
+### 18.5 Grenzen & Next Steps
+
+- **Grenzen Phase 1:** keine ML-Forecasts (ARIMA/Prophet/XGBoost — 12–36
+  Monatspunkte = Overfit-Risiko, schwere Dependencies, Non-Determinismus,
+  AGPL-Lizenzcheck), keine LLM-Generierung (Arithmetik unzuverlässig, nicht
+  reproduzierbar), keine externen APIs/Cloud. Bewertung der Varianten in 5
+  Kategorien × 1–7: `docs_archive/finance_sota_phase1_workdoc_20260912.md`.
+- **Phase 2 (in Arbeit):** Goals/Sinking Funds mit SQLite-Tabellen;
+  verifizierte DAO-/Tool-Vertraege und Tests siehe §19.
+- **Phase 3 (offen):** Szenario-What-If-Engine, ML-Experimente,
+  Anomalie-Erkennung 2.0.
+- Bootstrap-KI bei sehr kurzer Historie (< 12 Monate) ist grob — wird per
+  `notes` deklariert, nicht versteckt.
+
+---
+
+## 19. Sparziele: Verifizierte Vertraege (2026-09-15)
+
+- `FinanceDB.upsert_goal`: Ohne explizite Waehrung greift die bestehende
+  IBAN-Ableitung (DE/AT: EUR, CH: CHF, sonst `DEFAULT_CURRENCY`). Explizite
+  Waehrungen bleiben vorrangig; dies ist keine Waehrungsumrechnung.
+- `goal_contributions`: `UNIQUE(transaction_id)` erzwingt hoechstens ein
+  Ziel pro Buchung; beide Fremdschluessel verwenden `ON DELETE CASCADE`.
+  Tests pruefen SQLite-Metadaten statt eine bestimmte SQL-Schreibweise.
+- `FinanceTools.project_goal`: Fortschritt unter `progress.saved_cents`;
+  Rate explizit > geplant > Historie. Auch die historische Rate ignoriert
+  Buchungen nach dem Referenztag, einschliesslich desselben Monats.
+  Die Monatsserie beginnt im Folgemonat. Bereits erreichte Ziele haben
+  `months_left_at_rate=0` und den Referenzmonat als `achieved_month`
+  (keine Rekonstruktion des historischen Erreichungsdatums).
+  `months_until_target_date` liefert die vorzeichenbehaftete
+  Kalendermonatsdifferenz auch bei vergangenen Zielterminen.
+- `suggest_goal_candidates`: Stabile wiederkehrende **Ausgaben** mit
+  Periode >45 Tage, ohne Zielzuordnung; `min_occurrences >= 2` (Default 3).
+  `reference_date` ist optional (Default heute); kein `window_days`.
+  Monatsbetrag unter `monthly_equivalent`; keine Summe ueber Waehrungen.
+- `cash_flow_forecast`: Horizont per `forecast_months`, Monatsreihen unter
+  `results[*].months`. Optionales `goals`-Overlay mit `count`, `goals` und
+  `monthly_draw_by_currency`; `balance_with_goals` beruecksichtigt die
+  kumulierten Raten. Ein Kontostand setzt IBAN und Einzelwaehrung voraus.
+  Der aktuelle Overlay-Vertrag zieht positive geplante Raten von Zielen
+  mit Status `active` ab; ein automatischer Stopp am Zielbetrag/-termin
+  ist damit noch nicht implementiert.
+- Registrierung: `get_tool_schemas()` und `get_available_tool_schemas("finance_tab")`.
+  `FINANCE_ALL` enthaelt alle zehn Goal-Tools; das ReAct-Profil `finance_tab`
+  enthaelt nur deren fuenf Lese-Tools, keine Schreib-Tools.
+
+**Teststand:** `tests/test_finance_goals_schema.py`: 43 bestanden.
+Gemeinsamer Lauf mit Monarch-Core, Analytics, drei DB-Konsistenz-Suiten,
+Finance-Chat, Structured Runtime, Tab-Regressionsfaellen und beiden
+Tool-Profil-Suiten: **211 bestanden** im Projekt-venv. Keine produktiven
+Daten oder LLM-/GPU-Laeufe; kein Gesamtprojekt-Release-Gate.
 
 ---
 

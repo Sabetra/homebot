@@ -32,6 +32,7 @@ from finance.models import (
     ACCOUNT_TYPE_MIGRATIONS,
     DEFAULT_CURRENCY,
     VALID_ACCOUNT_TYPES,
+    VALID_GOAL_STATUSES,
     VALID_TRANSACTION_NATURES,
 )
 
@@ -172,6 +173,50 @@ class TransferLink:
     outgoing_counterparty: Optional[str] = None
     incoming_counterparty: Optional[str] = None
 
+
+@dataclass(frozen=True)
+class Goal:
+    """Sparziel / Sinking Fund (Phase 2, 2026-09-12).
+
+    Persistenter Zielwert mit optionaler Zeitkomponente (YNAB/PocketSmith-
+    Semantik): ``target_cents`` ist das Sparziel, ``target_date`` das
+    optionale Faelligkeitsdatum (ISO YYYY-MM-DD), ``monthly_rate_cents``
+    die geplante monatliche Rate. Fortschritt = Summe der in
+    ``goal_contributions`` zugeordneten Buchungen (max. 1 Ziel pro
+    Buchung, UNIQUE-Constraint -- Double-Counting ist konstruktiv
+    ausgeschlossen).
+    """
+
+    id: int
+    name: str
+    iban: str                          # finanzierendes Konto (SSOT: IBAN)
+    currency: str
+    target_cents: int                  # > 0
+    target_date: Optional[str] = None  # ISO YYYY-MM-DD (optional)
+    monthly_rate_cents: Optional[int] = None  # >= 0
+    status: str = "active"             # VALID_GOAL_STATUSES
+    notes: Optional[str] = None
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class GoalContribution:
+    """Zuordnung einer Buchung zu exakt einem Ziel (Fortschritts-Beitrag).
+
+    ``amount_cents`` ist ein Snapshot des Buchungsbetrags zum Zeitpunkt
+    der Zuordnung (vorzeichenbehaftet) -- der Fortschritt ist damit
+    stabil, auch wenn die Buchung spaeter bearbeitet wird.
+    """
+
+    id: int
+    goal_id: int
+    transaction_id: int
+    amount_cents: int
+    source: str                        # 'user' | 'rule'
+    created_at: Optional[str] = None
+
+
 # ---------------------------------------------------------------------------
 # Schema
 # ---------------------------------------------------------------------------
@@ -289,6 +334,42 @@ _SCHEMA_STATEMENTS: Tuple[str, ...] = (
     "CREATE INDEX IF NOT EXISTS idx_tx_counterparty ON transactions(counterparty)",
     "CREATE INDEX IF NOT EXISTS idx_stmt_account   ON statements(account_id)",
     "CREATE INDEX IF NOT EXISTS idx_budgets_month  ON budgets(month)",
+    # ------------------------------------------------------------------
+    # Goals / Sinking Funds (Phase 2, 2026-09-12): Sparziele mit
+    # optionalem Faelligkeitsdatum + expliziten Ziel-Beitragen.
+    # Invariante: max. 1 Ziel pro Buchung (UNIQUE transaction_id) --
+    # Double-Counting ist damit konstruktiv ausgeschlossen.
+    # ------------------------------------------------------------------
+    f"""
+    CREATE TABLE IF NOT EXISTS goals (
+        id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+        name                TEXT NOT NULL,
+        iban                TEXT NOT NULL,   -- finanzierendes Konto (SSOT: IBAN)
+        currency            TEXT NOT NULL DEFAULT '{DEFAULT_CURRENCY}',
+        target_cents        INTEGER NOT NULL,
+        target_date         TEXT,            -- ISO YYYY-MM-DD (optional)
+        monthly_rate_cents  INTEGER,         -- >= 0
+        status              TEXT NOT NULL DEFAULT 'active',
+        notes               TEXT,
+        created_at          TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at          TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS goal_contributions (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        goal_id         INTEGER NOT NULL REFERENCES goals(id) ON DELETE CASCADE,
+        transaction_id  INTEGER NOT NULL UNIQUE REFERENCES transactions(id) ON DELETE CASCADE,
+        amount_cents    INTEGER NOT NULL,    -- Snapshot des Buchungsbetrags
+        source          TEXT NOT NULL DEFAULT 'user',
+        created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+    """,
+    # Index-Namen sind Teil des oeffentlichen Schemas (goals_active / gc_*):
+    "CREATE INDEX IF NOT EXISTS goals_active           ON goals(status)",
+    "CREATE INDEX IF NOT EXISTS idx_goals_target       ON goals(target_date)",
+    "CREATE INDEX IF NOT EXISTS gc_goal                ON goal_contributions(goal_id)",
+    "CREATE INDEX IF NOT EXISTS gc_tx                  ON goal_contributions(transaction_id)",
     # Transfer-Verknpfungen: zwei Tx (negativ auf Konto A, positiv auf Konto B)
     # werden als eine Geldbewegung erkannt -- z.B. Kreditkartenabrechnung
     # gegen Sammelbelastung auf dem Girokonto. Beide Buchungen werden in
@@ -604,7 +685,19 @@ class FinanceDB:
             self._migrate_account_types(conn)
             self._migrate_statements_consistency(conn)
             self._migrate_transaction_search(conn)
+            self._migrate_goal_index_names(conn)
             self._refresh_schema_catalog(conn)
+
+    def _migrate_goal_index_names(self, conn: sqlite3.Connection) -> None:
+        """Entfernt Legacy-Index-Namen der Goal-Tabellen (2026-09-13).
+
+        Die Index-Namen ``goals_active`` / ``gc_goal`` / ``gc_tx`` sind Teil
+        des oeffentlichen Schemas. Bestehende DBs tragen noch die alten
+        ``idx_*``-Namen (dieselben Spalten) und werden hier entfernt,
+        damit keine redundanten Duplikat-Indizes bleiben.
+        """
+        for legacy in ("idx_goals_status", "idx_goal_contrib_goal"):
+            conn.execute(f"DROP INDEX IF EXISTS {legacy}")
 
     def _refresh_schema_catalog(self, conn: sqlite3.Connection) -> None:
         schema_hash = self._compute_schema_hash(conn)
@@ -843,7 +936,9 @@ class FinanceDB:
 
         embeddings = model.encode(list(texts), batch_size=min(64, max(8, len(texts))), defer_cache_cleanup=True)
         model_name = str(model.model_name or "unknown")
-        embedding_dim = int(getattr(model, "embedding_dim", embeddings.shape[1]))
+        # embedding_dim kann None sein, wenn der Singleton nicht vollstaendig
+        # initialisiert wurde -- dann die echte Array-Dimension verwenden.
+        embedding_dim = int(getattr(model, "embedding_dim", None) or embeddings.shape[1])
         blobs = [row.astype("float32", copy=False).tobytes() for row in embeddings]
         model.flush_cuda_cache()
         return model_name, embedding_dim, blobs
@@ -1034,6 +1129,17 @@ class FinanceDB:
             f"COALESCE({table_alias}.transaction_nature, 'ordinary') != 'internal_transfer' "
             f"AND {table_alias}.id NOT IN (SELECT outgoing_tx_id FROM transfer_links "
             f"UNION SELECT incoming_tx_id FROM transfer_links)"
+        )
+
+    @staticmethod
+    def _transfer_leg_clause(table_alias: str = "t") -> str:
+        """Logisches Komplement zu ``_non_transfer_clause``: exakt die internen
+        Transfer-Beine derselben Person (verlinkte Ausgangs-/Eingangsbeine oder
+        Nature 'internal_transfer', z. B. Kreditkarten-Settlements)."""
+        return (
+            f"(COALESCE({table_alias}.transaction_nature, 'ordinary') = 'internal_transfer' "
+            f"OR {table_alias}.id IN (SELECT outgoing_tx_id FROM transfer_links "
+            f"UNION SELECT incoming_tx_id FROM transfer_links))"
         )
 
     @staticmethod
@@ -2071,7 +2177,14 @@ class FinanceDB:
                     WHERE tc.transaction_id = t.id
                     ORDER BY tc.confidence DESC
                     LIMIT 1
-                ), '(uncategorized)') AS category
+                ), '(uncategorized)') AS category,
+                -- 2026-09-13: Ziel-Zuordnung (SSOT goal_contributions; 0 = keine).
+                COALESCE((
+                    SELECT gc.goal_id FROM goal_contributions gc
+                    WHERE gc.transaction_id = t.id
+                    ORDER BY gc.id
+                    LIMIT 1
+                ), 0) AS goal_id
             FROM transactions t
             {where_clause}
             ORDER BY t.booking_date, t.id
@@ -2087,6 +2200,7 @@ class FinanceDB:
                     "currency": str(row["currency"]),
                     "counterparty": str(row["counterparty"]),
                     "category": str(row["category"]),
+                    "goal_id": int(row["goal_id"] or 0),
                 }
                 for row in rows
             ]
@@ -2245,6 +2359,14 @@ class FinanceDB:
         Combines the most recent statement's opening balance with the sum of
         all subsequent transactions. Falls back to pure transaction sum when
         no statement-derived opening balance is available.
+
+        Semantik (konsistent mit ``consistency.py`` und
+        ``test_finance_reconciliation``): ``opening_balance`` ist der Saldo
+        VOR ``period_start`` (Anfangssaldo), alle Buchungen der Periode --
+        einschliesslich ``booking_date == period_start`` -- schlagen darauf
+        auf (``opening + Summe(Periode) = closing``). Deshalb ``>=`` am
+        Anker-Tag: eine Buchung am ersten Auszugstag ist Teil des Auszugs
+        und darf nicht vom Anker "verschluckt" werden.
         """
         with self._lock, self._connect() as conn:
             stmt_row = conn.execute(
@@ -2265,7 +2387,7 @@ class FinanceDB:
                     """
                     SELECT COALESCE(SUM(amount_cents), 0) AS s
                     FROM transactions
-                    WHERE account_id = ? AND booking_date > ? AND booking_date <= ?
+                    WHERE account_id = ? AND booking_date >= ? AND booking_date <= ?
                     """,
                     (account_id, anchor_date, as_of_date),
                 ).fetchone()
@@ -2286,6 +2408,42 @@ class FinanceDB:
                 "balance_cents": total_cents,
                 "balance": _from_cents(total_cents),
             }
+
+    def effective_balance_at(self, account_id: int, as_of_date: str) -> Dict[str, Any]:
+        """Kontostand in Haushalts-Perspektive: ``balance_at`` minus verlinkte
+        interne Transfer-Beine.
+
+        ``balance_at`` bleibt die Bankwahrheit des Einzelkontos (muss mit dem
+        Bankauszug abrechenbar sein; nutzt sie ``finance_balance_at``, die
+        Tab-Saldoanzeige und Reconcile). Fuer die Guthaben-Prognose und die
+        Spending-Power-Analyse sind verlinkte interne Transfers (Konto<->Konto
+        derselben Person, inkl. Kreditkarten-Settlements) aber interne
+        Umverteilungen ohne Nettoeffekt auf das Geld der Person und werden hier
+        netto herausgerechnet. Die Ausschlussmenge ist exakt das Komplement von
+        ``_non_transfer_clause`` -- identisch zu ``list_analysis_facts``.
+
+        Das Ergebnis enthaelt ``internal_transfer_net_cents`` (Summe der
+        herausgerechneten Beine im Kontokontext), damit Konsumenten die
+        Anpassung sichtbar melden koennen.
+        """
+        base = self.balance_at(account_id, as_of_date)
+        with self._lock, self._connect() as conn:
+            row = conn.execute(
+                "SELECT COALESCE(SUM(t.amount_cents), 0) AS s "
+                "FROM transactions t "
+                f"WHERE t.account_id = ? AND t.booking_date <= ? AND "
+                + self._transfer_leg_clause("t"),
+                (account_id, as_of_date),
+            ).fetchone()
+        transfer_net_cents = int(row["s"]) if row and row["s"] is not None else 0
+        total_cents = int(base["balance_cents"]) - transfer_net_cents
+        return {
+            "account_id": account_id,
+            "as_of_date": as_of_date,
+            "balance_cents": total_cents,
+            "balance": _from_cents(total_cents),
+            "internal_transfer_net_cents": transfer_net_cents,
+        }
 
     # -- categories --------------------------------------------------
 
@@ -2714,6 +2872,342 @@ class FinanceDB:
                 }
                 for r in rows
             ]
+
+    # -- goals / sinking funds (Phase 2, 2026-09-12) --------------------
+
+    @staticmethod
+    def _validate_iso_date(value: str, *, field: str) -> str:
+        """Validiert ISO-Datum YYYY-MM-DD (Format + Kalendergueltigkeit)."""
+        if not (len(value) == 10 and value[4] == "-" and value[7] == "-"
+                and value[:4].isdigit() and value[5:7].isdigit() and value[8:].isdigit()):
+            raise ValueError(f"{field} must be YYYY-MM-DD, got {value!r}")
+        try:
+            datetime.strptime(value, "%Y-%m-%d")
+        except ValueError:
+            raise ValueError(f"{field} is not a valid calendar date: {value!r}") from None
+        return value
+
+    @staticmethod
+    def _currency_for_iban(iban: str) -> Optional[str]:
+        """Ableitet die ISO-4217-Waehrung aus dem IBAN-Landescode (ISO 13616).
+
+        Die ersten zwei Zeichen der IBAN sind der ISO-3166-Landescode:
+        DE/AT -> EUR (Euroland), CH -> CHF (CH-IBANs sind standardmaessig CHF).
+        Fuer alle anderen Laender gibt es keine eindeutige Ableitung,
+        daher None -> der Aufrufer faellt auf DEFAULT_CURRENCY zurueck.
+        """
+        normalized = "".join(str(iban or "").split()).upper()
+        if len(normalized) < 2 or not normalized[:2].isalpha():
+            return None
+        country = normalized[:2]
+        if country in ("DE", "AT"):
+            return "EUR"
+        if country == "CH":
+            return "CHF"
+        return None
+
+    def upsert_goal(
+        self,
+        *,
+        name: str,
+        iban: str,
+        target_cents: int,
+        currency: Optional[str] = None,
+        target_date: Optional[str] = None,
+        monthly_rate_cents: Optional[int] = None,
+        status: str = "active",
+        notes: Optional[str] = None,
+    ) -> int:
+        """Erstellt oder aktualisiert ein Ziel (Schluessel: name + iban).
+
+        Validierung (Fail-Fast): name/iban nicht-leer, target_cents > 0,
+        monthly_rate_cents >= 0, status in VALID_GOAL_STATUSES,
+        target_date ISO YYYY-MM-DD.
+
+        Currency-Default: IBAN-Landescode (DE/AT -> EUR, CH -> CHF),
+        sonst DEFAULT_CURRENCY (siehe :meth:`_currency_for_iban`).
+        """
+        if not name or not str(name).strip():
+            raise ValueError("name must be non-empty")
+        if not iban or not str(iban).strip():
+            raise ValueError("iban must be non-empty")
+        if not isinstance(target_cents, int) or isinstance(target_cents, bool) or target_cents <= 0:
+            raise ValueError(f"target_cents must be a positive int, got {target_cents!r}")
+        if monthly_rate_cents is not None and (
+            not isinstance(monthly_rate_cents, int)
+            or isinstance(monthly_rate_cents, bool)
+            or monthly_rate_cents < 0
+        ):
+            raise ValueError(f"monthly_rate_cents must be >= 0, got {monthly_rate_cents!r}")
+        if status not in VALID_GOAL_STATUSES:
+            raise ValueError(f"status must be one of {sorted(VALID_GOAL_STATUSES)}, got {status!r}")
+        if target_date is not None:
+            target_date = self._validate_iso_date(str(target_date), field="target_date")
+        # 2026-09-13: Currency-Fallback ueber den IBAN-Landescode (SSOT: das
+        # Ziel wird vom Kontokonto finanziert) vor DEFAULT_CURRENCY:
+        # DE/AT -> EUR, CH -> CHF, sonst DEFAULT_CURRENCY.
+        currency = (currency or self._currency_for_iban(iban) or DEFAULT_CURRENCY).upper()
+        if len(currency) != 3 or not currency.isalpha():
+            raise ValueError(f"currency must be a 3-letter ISO code, got {currency!r}")
+        with self._lock, self._connect() as conn:
+            row = conn.execute(
+                "SELECT id FROM goals WHERE name = ? AND iban = ?",
+                (name.strip(), iban.strip()),
+            ).fetchone()
+            if row:
+                gid = int(row["id"])
+                conn.execute(
+                    """UPDATE goals SET target_cents = ?, currency = ?, target_date = ?,
+                       monthly_rate_cents = ?, status = ?, notes = ?,
+                       updated_at = datetime('now') WHERE id = ?""",
+                    (target_cents, currency, target_date, monthly_rate_cents,
+                     status, notes, gid),
+                )
+                return gid
+            cur = conn.execute(
+                """INSERT INTO goals (name, iban, currency, target_cents, target_date,
+                                      monthly_rate_cents, status, notes)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (name.strip(), iban.strip(), currency, target_cents, target_date,
+                 monthly_rate_cents, status, notes),
+            )
+            return int(cur.lastrowid or 0)
+
+    def get_goal(self, goal_id: int) -> Optional[Goal]:
+        with self._lock, self._connect() as conn:
+            row = conn.execute("SELECT * FROM goals WHERE id = ?", (goal_id,)).fetchone()
+            if row is None:
+                return None
+            return Goal(
+                id=int(row["id"]),
+                name=row["name"],
+                iban=row["iban"],
+                currency=row["currency"],
+                target_cents=int(row["target_cents"]),
+                target_date=row["target_date"],
+                monthly_rate_cents=(
+                    int(row["monthly_rate_cents"]) if row["monthly_rate_cents"] is not None else None
+                ),
+                status=row["status"],
+                notes=row["notes"],
+                created_at=row["created_at"],
+                updated_at=row["updated_at"],
+            )
+
+    def list_goals(
+        self, *, status: Optional[str] = None, iban: Optional[str] = None
+    ) -> List[Goal]:
+        sql = "SELECT * FROM goals WHERE 1=1"
+        params: List[Any] = []
+        if status is not None:
+            if status not in VALID_GOAL_STATUSES:
+                raise ValueError(f"status must be one of {sorted(VALID_GOAL_STATUSES)}, got {status!r}")
+            sql += " AND status = ?"
+            params.append(status)
+        if iban is not None:
+            sql += " AND iban = ?"
+            params.append(iban)
+        sql += " ORDER BY created_at DESC, name"
+        with self._lock, self._connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [
+            Goal(
+                id=int(r["id"]), name=r["name"], iban=r["iban"], currency=r["currency"],
+                target_cents=int(r["target_cents"]), target_date=r["target_date"],
+                monthly_rate_cents=int(r["monthly_rate_cents"]) if r["monthly_rate_cents"] is not None else None,
+                status=r["status"], notes=r["notes"],
+                created_at=r["created_at"], updated_at=r["updated_at"],
+            )
+            for r in rows
+        ]
+
+    def goal_progress(self, goal_id: int) -> Dict[str, Any]:
+        """Fortschritt eines Ziels: Summe der zugeordneten Buchungen.
+
+        Liefert ``progress_cents`` (vorzeichenbehaftet), ``remaining_cents``,
+        ``progress_pct`` (bezogen auf target_cents, kann >100 sein) und
+        ``contribution_count``. ``ValueError`` bei unbekannter goal_id.
+        """
+        with self._lock, self._connect() as conn:
+            goal = conn.execute("SELECT * FROM goals WHERE id = ?", (goal_id,)).fetchone()
+            if goal is None:
+                raise ValueError(f"goal {goal_id} not found")
+            agg = conn.execute(
+                "SELECT COUNT(*) AS n, COALESCE(SUM(amount_cents), 0) AS s "
+                "FROM goal_contributions WHERE goal_id = ?",
+                (goal_id,),
+            ).fetchone()
+        target = int(goal["target_cents"])
+        progress = int(agg["s"])
+        pct = round(progress * 100.0 / target, 2) if target else 0.0
+        return {
+            "goal_id": int(goal["id"]),
+            "status": goal["status"],
+            "target_cents": target,
+            "progress_cents": progress,
+            "remaining_cents": target - progress,
+            "progress_pct": pct,
+            "contribution_count": int(agg["n"]),
+        }
+
+    def goal_progress_asof(
+        self, goal_id: int, reference_date: date
+    ) -> Dict[str, Any]:
+        """Fortschritt eines Ziels bis (inklusive) eines Referenzdatums.
+
+        Nur Buchungen mit ``booking_date <= reference_date`` zählen --
+        für Projektionen ohne Future-Leak (Phase 2). ``reference_date``
+        ist ein ``datetime.date`` (oder 'YYYY-MM-DD'). ``ValueError``
+        bei unbekannter goal_id.
+        """
+        ref_iso = (
+            reference_date.isoformat()
+            if isinstance(reference_date, date)
+            else str(reference_date)
+        )
+        with self._lock, self._connect() as conn:
+            goal = conn.execute("SELECT * FROM goals WHERE id = ?", (goal_id,)).fetchone()
+            if goal is None:
+                raise ValueError(f"goal {goal_id} not found")
+            agg = conn.execute(
+                "SELECT COUNT(*) AS n, COALESCE(SUM(gc.amount_cents), 0) AS s "
+                "FROM goal_contributions gc "
+                "JOIN transactions t ON t.id = gc.transaction_id "
+                "WHERE gc.goal_id = ? AND t.booking_date <= ?",
+                (goal_id, ref_iso),
+            ).fetchone()
+        target = int(goal["target_cents"])
+        progress = int(agg["s"])
+        pct = min(100.0, round(progress * 100.0 / target, 2)) if target else 0.0
+        return {
+            "goal_id": goal_id,
+            "reference_date": ref_iso,
+            "target_cents": target,
+            "saved_cents": progress,
+            "progress_pct": pct,
+            "contribution_count": int(agg["n"]),
+        }
+
+    def assigned_transaction_ids(self) -> List[int]:
+        """Alle ``transactions.id``, die bereits einem Ziel zugeordnet sind.
+
+        Für die Kandidaten-Erkennung (Phase 2 DoD #5: bereits zugeordnete
+        Buchungen werden ausgeschlossen).
+        """
+        with self._lock, self._connect() as conn:
+            rows = conn.execute(
+                "SELECT DISTINCT transaction_id FROM goal_contributions"
+            ).fetchall()
+        return [int(row["transaction_id"]) for row in rows]
+
+    def assign_contribution(
+        self, goal_id: int, transaction_id: int, *, source: str = "user"
+    ) -> int:
+        """Ordnet eine Buchung exakt einem Ziel zu (1 Buchung = 1 Ziel).
+
+        Invariante aus UNIQUE(transaction_id): ist die Buchung bereits
+        einem Ziel zugeordnet, ``ValueError`` (klar + actionable,
+        ``transfer_links``-Muster). Der Betrag wird als Snapshot
+        gespeichert; Vorzeichen egal (Spar-Beitrag = positiv,
+        Ziel-Auszahlung = negativ -- beides ist Fortschritt).
+        """
+        if source not in ("user", "rule"):
+            raise ValueError(f"source must be user|rule, got {source!r}")
+        with self._lock, self._connect() as conn:
+            if conn.execute("SELECT id FROM goals WHERE id = ?", (goal_id,)).fetchone() is None:
+                raise ValueError(f"goal {goal_id} not found")
+            tx = conn.execute(
+                "SELECT id, amount_cents FROM transactions WHERE id = ?",
+                (transaction_id,),
+            ).fetchone()
+            if tx is None:
+                raise ValueError(f"transaction {transaction_id} not found")
+            existing = conn.execute(
+                "SELECT id, goal_id FROM goal_contributions WHERE transaction_id = ?",
+                (transaction_id,),
+            ).fetchone()
+            if existing is not None:
+                raise ValueError(
+                    f"transaction {transaction_id} is already assigned to goal "
+                    f"{int(existing['goal_id'])} (contribution id {int(existing['id'])}); "
+                    "unassign it first or choose a different goal"
+                )
+            try:
+                cur = conn.execute(
+                    "INSERT INTO goal_contributions "
+                    "(goal_id, transaction_id, amount_cents, source) "
+                    "VALUES (?, ?, ?, ?)",
+                    (goal_id, transaction_id, int(tx["amount_cents"]), source),
+                )
+            except sqlite3.IntegrityError as exc:
+                # Safety-Net (paralleler Writer zwischen Check und Insert):
+                # lauter, klarer Fehler -- nie silent.
+                raise ValueError(
+                    f"goal contribution conflict for goal={goal_id} / "
+                    f"tx={transaction_id}: {exc}"
+                ) from exc
+            return int(cur.lastrowid or 0)
+
+    def unassign_contribution(self, contribution_id: int) -> None:
+        with self._lock, self._connect() as conn:
+            cur = conn.execute(
+                "DELETE FROM goal_contributions WHERE id = ?", (contribution_id,)
+            )
+            if cur.rowcount == 0:
+                raise ValueError(f"contribution {contribution_id} not found")
+
+    def list_contributions(self, goal_id: int) -> List[GoalContribution]:
+        with self._lock, self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM goal_contributions WHERE goal_id = ? "
+                "ORDER BY created_at, id",
+                (goal_id,),
+            ).fetchall()
+        return [
+            GoalContribution(
+                id=int(r["id"]),
+                goal_id=int(r["goal_id"]),
+                transaction_id=int(r["transaction_id"]),
+                amount_cents=int(r["amount_cents"]),
+                source=r["source"],
+                created_at=r["created_at"],
+            )
+            for r in rows
+        ]
+
+    def find_contribution_id(
+        self, goal_id: int, transaction_id: int
+    ) -> Optional[int]:
+        """Liefert die ``goal_contributions.id`` fuer ein (Ziel, Buchung)-Paar.
+
+        ``None`` wenn die Buchung dem Ziel nicht zugeordnet ist (z. B.
+        bereits entfernt oder einem anderen Ziel zugeordnet -- max. 1 Ziel
+        pro Buchung gilt konstruktiv).
+        """
+        with self._lock, self._connect() as conn:
+            row = conn.execute(
+                "SELECT id FROM goal_contributions WHERE goal_id = ? AND transaction_id = ?",
+                (goal_id, transaction_id),
+            ).fetchone()
+        return int(row["id"]) if row is not None else None
+
+    def set_goal_status(self, goal_id: int, status: str) -> None:
+        if status not in VALID_GOAL_STATUSES:
+            raise ValueError(f"status must be one of {sorted(VALID_GOAL_STATUSES)}, got {status!r}")
+        with self._lock, self._connect() as conn:
+            cur = conn.execute(
+                "UPDATE goals SET status = ?, updated_at = datetime('now') WHERE id = ?",
+                (status, goal_id),
+            )
+            if cur.rowcount == 0:
+                raise ValueError(f"goal {goal_id} not found")
+
+    def delete_goal(self, goal_id: int) -> None:
+        """Loescht ein Ziel; Ziel-Beitraege fallen per ON DELETE CASCADE ab."""
+        with self._lock, self._connect() as conn:
+            cur = conn.execute("DELETE FROM goals WHERE id = ?", (goal_id,))
+            if cur.rowcount == 0:
+                raise ValueError(f"goal {goal_id} not found")
 
     # -- monthly report ----------------------------------------------
 

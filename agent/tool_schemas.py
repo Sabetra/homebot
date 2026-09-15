@@ -1218,6 +1218,415 @@ def get_tool_schemas() -> List[Dict[str, Any]]:
                 },
             },
         },
+        {
+            "type": "function",
+            "function": {
+                "name": "finance_upcoming_bills",
+                "description": (
+                    "Deterministischer Faelligkeits-Kalender: projiziert den naechsten "
+                    "Faelligkeitstag jeder wiederkehrenden Rechnung/Abos/Ausgabe "
+                    "(>= 2 Buchungen) innerhalb eines Fensters (Default 30 Tage) aus "
+                    "dem Median der letzten Buchungstage. "
+                    "WANN VERWENDEN: 'Welche Rechnungen stehen an?', 'Kommende "
+                    "Faellichkeiten', 'Was muss ich in den naechsten Wochen zahlen?', "
+                    "'Bills-Kalender', 'naechste Abos faellig'."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "days_ahead": {
+                            "type": "integer",
+                            "description": "Fenster in Tagen, 1-180 (Default 30)",
+                        },
+                        "iban": {"type": "string", "description": "Konto-IBAN (optional)"},
+                        "reference_date": {
+                            "type": "string",
+                            "description": "ISO YYYY-MM-DD, ab wann projiziert wird (Default heute)",
+                        },
+                    },
+                    "required": [],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "finance_cash_flow_forecast",
+                "description": (
+                    "Cashflow- und Guthaben-Prognose (Schedule-first-Hybrid): "
+                    "wiederkehrende Zahlungen werden als deterministischer Plan "
+                    "projiziert, variable Ausgaben/Einnahmen via Trend + "
+                    "Kalendersaisonalitaet mit Bootstrap-Vertrauensintervall; "
+                    "das Guthaben wird vom letzten Ist-Saldo fortgeschrieben "
+                    "(nur Single-Currency/Single-Konto). "
+                    "WANN VERWENDEN: 'Wie entwickelt sich mein Kontostand?', "
+                    "'Cashflow-Prognose', 'Wann wird das Guthaben knapp?', "
+                    "Guthaben-Band, Prognose mit Konfidenzband."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "forecast_months": {
+                            "type": "integer",
+                            "description": "Prognose-Monate, 1-24 (Default 6)",
+                        },
+                        "lookback_months": {
+                            "type": "integer",
+                            "description": "Fit-Fenster in Monaten, 3-36 (Default 12)",
+                        },
+                        "confidence_level": {
+                            "type": "number",
+                            "description": "Konfidenz 0.5-0.99 (Default 0.8)",
+                        },
+                        "include_balance": {
+                            "type": "boolean",
+                            "description": "Guthaben-Kette mitprognostizieren (Default true)",
+                        },
+                        "include_goals": {
+                            "type": "boolean",
+                            "description": (
+                                "Goals-Overlay: geplante Monatsraten aktiver "
+                                "Sparziele als planmaessige Ziehung einrechnen "
+                                "(goals_draw, balance_with_goals; Default false)"
+                            ),
+                        },
+                        "iban": {"type": "string", "description": "Konto-IBAN (optional)"},
+                        "reference_date": {
+                            "type": "string",
+                            "description": "ISO YYYY-MM-DD, Prognose-Start (Default heute)",
+                        },
+                    },
+                    "required": [],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "finance_subscription_audit",
+                "description": (
+                    "Abo-/Recurring-Audit: alle wiederkehrenden Ausgabengruppen "
+                    "(>= 2 Buchungen) mit Monats-/Jahreskosten, letzter "
+                    "Preisveraenderung, Stabilitaet und Abo-Heuristik. "
+                    "WANN VERWENDEN: 'Welche Abos habe ich?', 'Abos auditieren', "
+                    "'Was kosten meine Abos pro Jahr?', 'Preisveraenderung "
+                    "beim Streaming-Anbieter?', 'wiederkehrende Ausgaben uebersicht'."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "iban": {"type": "string", "description": "Konto-IBAN (optional)"},
+                        "reference_date": {
+                            "type": "string",
+                            "description": "ISO YYYY-MM-DD, Fakten nur bis dieses Datum (Default heute)",
+                        },
+                    },
+                    "required": [],
+                },
+            },
+        },
+        # ------------------------------------------------------------------
+        # Sparziele / Sinking Funds (Finance SOTA Phase 2, 2026-09-13)
+        # ------------------------------------------------------------------
+        {
+            "type": "function",
+            "function": {
+                "name": "finance_upsert_goal",
+                "description": (
+                    "Sparziel (Sinking Fund) anlegen oder aktualisieren. "
+                    "Schluessel: name + iban (gleiche Kombination = Update). "
+                    "Liefert Fortschritt (Sparplan/Real) und Projektion "
+                    "(Monate bis Ziel, Pacing vs. Zieldatum). "
+                    "WANN VERWENDEN: 'Ziel Neuwagen 8000 EUR anlegen', "
+                    "'Monatlich 300 Euro auf das Handy-Ziel legen', "
+                    "'Ziel Urlaub auf 5000 EUR anpassen'."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "name": {
+                            "type": "string",
+                            "description": "Ziel-Name, z.B. 'Neuer Laptop'",
+                        },
+                        "iban": {
+                            "type": "string",
+                            "description": "IBAN des Kontos, auf das gespart wird",
+                        },
+                        "target_amount": {
+                            "type": "number",
+                            "description": "Zielbetrag (positiv), z.B. 8000.00",
+                        },
+                        "currency": {
+                            "type": "string",
+                            "description": "Wahrung, z.B. EUR (Default: Wahrung des Kontos)",
+                        },
+                        "monthly_rate": {
+                            "type": "number",
+                            "description": "Geplanter monatlicher Sparrate >= 0 (optional)",
+                        },
+                        "target_date": {
+                            "type": "string",
+                            "description": "Wunsch-Zieldatum YYYY-MM-DD (optional)",
+                        },
+                        "status": {
+                            "type": "string",
+                            "enum": ["active", "paused", "achieved", "archived"],
+                            "description": "Default active",
+                        },
+                        "notes": {"type": "string", "description": "Freitext (optional)"},
+                    },
+                    "required": ["name", "iban", "target_amount"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "finance_list_goals",
+                "description": (
+                    "Liste aller Sparziele mit Fortschritt (gespart vs. Ziel, "
+                    "in %) und Projektion (Monate bis Ziel bei geplantem "
+                    "monatlichen Sparrate, on-track vs. Zieldatum). "
+                    "WANN VERWENDEN: 'Meine Sparziele', 'Wie nah bin ich "
+                    "an meinem Ziel?', 'Sparziele mit Fortschritt'."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "status": {
+                            "type": "string",
+                            "enum": ["active", "paused", "achieved", "archived"],
+                            "description": "Filter nach Status (optional)",
+                        },
+                        "iban": {
+                            "type": "string",
+                            "description": "Filter nach Konto-IBAN (optional)",
+                        },
+                    },
+                    "required": [],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "finance_get_goal",
+                "description": (
+                    "Detailansicht eines einzelnen Sparziels inkl. aller "
+                    "Felder, Fortschritt und Projektion. "
+                    "WANN VERWENDEN: 'Details zum Ziel Neuwagen'."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "goal_id": {
+                            "type": "integer",
+                            "description": "goal_id aus finance_list_goals",
+                        },
+                    },
+                    "required": ["goal_id"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "finance_set_goal_status",
+                "description": (
+                    "Status eines Sparziels aendern (active/paused/achieved/"
+                    "archived). Liefert neuen Fortschritt + Projektion. "
+                    "WANN VERWENDEN: 'Ziel Neuwagen als erreicht markieren', "
+                    "'Ziel Urlaub pausieren'."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "goal_id": {
+                            "type": "integer",
+                            "description": "goal_id aus finance_list_goals",
+                        },
+                        "status": {
+                            "type": "string",
+                            "enum": ["active", "paused", "achieved", "archived"],
+                        },
+                    },
+                    "required": ["goal_id", "status"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "finance_delete_goal",
+                "description": (
+                    "Sparziel loeschen (inkl. Beitrags-Zuordnungen; die "
+                    "zugrunde liegenden Buchungen bleiben unangetastet). "
+                    "WANN VERWENDEN: 'Ziel Altes Handy loeschen'."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "goal_id": {
+                            "type": "integer",
+                            "description": "goal_id aus finance_list_goals",
+                        },
+                    },
+                    "required": ["goal_id"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "finance_assign_goal_contribution",
+                "description": (
+                    "Bestehende Buchung als Ziel-Beitrag zuordnen (1:1). "
+                    "Buchungen in derselben Waehrung wie das Ziel. "
+                    "Liefert neuen Fortschritt + Projektion. "
+                    "WANN VERWENDEN: 'Diese Ueberweisung zaehlt auf das "
+                    "Hausrat-Ziel', 'Beitrag 200 EUR auf Ziel Neuwagen buchen'."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "goal_id": {
+                            "type": "integer",
+                            "description": "goal_id aus finance_list_goals",
+                        },
+                        "transaction_id": {
+                            "type": "integer",
+                            "description": "Buchungs-ID (aus finance_search_transactions)",
+                        },
+                    },
+                    "required": ["goal_id", "transaction_id"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "finance_unassign_goal_contribution",
+                "description": (
+                    "Zuordnung einer Buchung zu einem Sparziel aufheben "
+                    "(die Buchung bleibt erhalten). Liefert neuen Fortschritt. "
+                    "WANN VERWENDEN: 'Diese Buchung nicht mehr auf das Ziel "
+                    "zaehlen'."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "goal_id": {
+                            "type": "integer",
+                            "description": "goal_id aus finance_list_goals",
+                        },
+                        "transaction_id": {
+                            "type": "integer",
+                            "description": "Zu entfernende Buchungs-ID",
+                        },
+                    },
+                    "required": ["goal_id", "transaction_id"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "finance_list_goal_contributions",
+                "description": (
+                    "Alle einem Sparziel zugeordneten Buchungen (Beitraege), "
+                    "chronologisch, mit kumuliertem Fortschritt. "
+                    "WANN VERWENDEN: 'Welche Zahlungen habe ich auf das "
+                    "Handy-Ziel getaetigt?', 'Beitraege zum Ziel zeigen'."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "goal_id": {
+                            "type": "integer",
+                            "description": "goal_id aus finance_list_goals",
+                        },
+                    },
+                    "required": ["goal_id"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "finance_project_goal",
+                "description": (
+                    "Deterministische Projektion eines Sparziels: Stand zum "
+                    "Referenzdatum (default heute; spaetere Beitraege fließen "
+                    "NIE ein), Sparrate (explizit > geplant > Beitraege-"
+                    "Historie), Erreichbarkeits-Monat, verbleibende Monate, "
+                    "erforderliche Rate für das Zieldatum, On-/Off-Track und "
+                    "Monats-Serie. WANN VERWENDEN: 'Wann erreiche ich mein "
+                    "Ziel?', 'Reicht die Sparrate bis zum Zieldatum?', "
+                    "'Wie laeuft mein Sparplan?'"
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "goal_id": {
+                            "type": "integer",
+                            "description": "goal_id aus finance_list_goals (alternativ name + iban)",
+                        },
+                        "name": {
+                            "type": "string",
+                            "description": "Ziel-Name (mit iban als Alternative zu goal_id)",
+                        },
+                        "iban": {
+                            "type": "string",
+                            "description": "IBAN des Sparziels (mit name als Alternative zu goal_id)",
+                        },
+                        "rate": {
+                            "type": "number",
+                            "description": "Explizite monatliche Rate in Ziel-Wahrung (optional; sonst geplant/Historie)",
+                        },
+                        "reference_date": {
+                            "type": "string",
+                            "description": "Referenzdatum YYYY-MM-DD (optional, default heute)",
+                        },
+                        "horizon_months": {
+                            "type": "integer",
+                            "description": "Laenge der Monats-Serie 1-60 (default 24)",
+                        },
+                    },
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "finance_suggest_goal_candidates",
+                "description": (
+                    "Empfoehlt Kandidaten fuer neue Sparziele: wiederkehrende "
+                    "Ausgaben mit Periode > 45 Tage (z.B. halbjaehrlich, "
+                    "jaehrlich), stabile Betraege und ohne bestehende "
+                    "Ziel-Zuordnung. Nur lesend, deterministisch, keine "
+                    "Waehrumsrechnung. WANN VERWENDEN: 'Wofuer sollte ich "
+                    "einen Sparplan anlegen?', 'Was ist wiederkehrend und "
+                    "kann ich planen?'"
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "iban": {
+                            "type": "string",
+                            "description": "IBAN-Filter (optional, sonst alle Konten)",
+                        },
+                        "reference_date": {
+                            "type": "string",
+                            "description": "Referenzdatum YYYY-MM-DD (optional, default heute)",
+                        },
+                        "min_occurrences": {
+                            "type": "integer",
+                            "description": "Mindestanzahl Vorkommen >= 2 (default 3)",
+                        },
+                    },
+                },
+            },
+        },
         # ------------------------------------------------------------------
         # SOTA Filesystem-Connector (2026) — list_directory + search_files
         # ------------------------------------------------------------------

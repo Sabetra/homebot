@@ -82,6 +82,7 @@ from utils.cuda_init import configure_cuda_scheduling
 configure_cuda_scheduling()
 from utils.model_registry import models_root
 from utils import token_scaling  # Token/Context-Skalierung (nie-feilend, s. docs/20)
+from utils import chat_perf_recorder  # Low-Overhead Chat-Perf-Telemetrie (Best-Effort, wirft nie)
 
 # ============================================================================
 # MODELL-KONFIGURATIONEN - Pfade über Umgebungsvariablen konfigurierbar
@@ -1627,7 +1628,14 @@ class ModelLoader:
                 # the main agent loop → access violation (0x0000000000000000).
                 with cuda_lock:
                     try:
-                        return fn(*args, **kwargs)
+                        # Telemetrie: Perf-Context je Attempt zuruecksetzen;
+                        # NUR erfolgreiche Calls werden akkumuliert
+                        # (Partial-Stats fehlgeschlagener Attempts werden vom
+                        # naechsten begin_llm_call verworfen).
+                        chat_perf_recorder.begin_llm_call(self.llm)
+                        result = fn(*args, **kwargs)
+                        chat_perf_recorder.end_llm_call(self.llm)
+                        return result
                     except (RuntimeError, MemoryError) as e:
                         # CUDA OOM or decode error -- clear cache before retry
                         if torch.cuda.is_available():
@@ -1640,7 +1648,10 @@ class ModelLoader:
         else:
             # No tenacity -- single attempt with lock
             with cuda_lock:
-                return fn(*args, **kwargs)
+                chat_perf_recorder.begin_llm_call(self.llm)
+                result = fn(*args, **kwargs)
+                chat_perf_recorder.end_llm_call(self.llm)
+                return result
 
     def generate_response(
         self,
@@ -3259,6 +3270,7 @@ class ModelLoader:
                         [lambda _input_ids, _logits: is_cancelled()]
                     )
 
+                chat_perf_recorder.begin_llm_call(self.llm)
                 stream = self.llm.create_completion(  # type: ignore[union-attr]
                     prompt=tokens,
                     max_tokens=effective_max,
@@ -3280,6 +3292,10 @@ class ModelLoader:
                             text = chunk["choices"][0].get("text", "")
                             if text:
                                 yield text
+                    # Telemetrie: nur wenn die Konsumierung normal beendet ist
+                    # (Exception im Stream = kein Record; Cancel = Partial-
+                    # Metriken des tatsaechlich abgearbeiteten Anteils).
+                    chat_perf_recorder.end_llm_call(self.llm)
                 finally:
                     close_stream = getattr(stream, "close", None)
                     if callable(close_stream):

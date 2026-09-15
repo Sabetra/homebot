@@ -843,6 +843,19 @@ Nach der Tool-Ausführung bekommst du die Ergebnisse und kannst weitere Tools ve
             "finance_budget_vs_actual_analysis": self._finance_budget_vs_actual_analysis,
             "finance_savings_potential_analysis": self._finance_savings_potential_analysis,
             "finance_expense_trend_break_detection": self._finance_expense_trend_break_detection,
+            "finance_upcoming_bills": self._finance_upcoming_bills,
+            "finance_cash_flow_forecast": self._finance_cash_flow_forecast,
+            "finance_subscription_audit": self._finance_subscription_audit,
+            "finance_upsert_goal": self._finance_upsert_goal,
+            "finance_list_goals": self._finance_list_goals,
+            "finance_get_goal": self._finance_get_goal,
+            "finance_set_goal_status": self._finance_set_goal_status,
+            "finance_delete_goal": self._finance_delete_goal,
+            "finance_assign_goal_contribution": self._finance_assign_goal_contribution,
+            "finance_unassign_goal_contribution": self._finance_unassign_goal_contribution,
+            "finance_list_goal_contributions": self._finance_list_goal_contributions,
+            "finance_project_goal": self._finance_project_goal,
+            "finance_suggest_goal_candidates": self._finance_suggest_goal_candidates,
             "finance_monthly_report": self._finance_monthly_report,
             "finance_list_transfer_candidates": self._finance_list_transfer_candidates,
             "finance_link_transfer": self._finance_link_transfer,
@@ -3809,6 +3822,45 @@ if _HAS_MPL:
 
     def _finance_expense_trend_break_detection(self, params: Dict) -> Dict:
         return self._finance_tools.expense_trend_break_detection(params)
+
+    def _finance_upcoming_bills(self, params: Dict) -> Dict:
+        return self._finance_tools.upcoming_bills(params)
+
+    def _finance_cash_flow_forecast(self, params: Dict) -> Dict:
+        return self._finance_tools.cash_flow_forecast(params)
+
+    def _finance_subscription_audit(self, params: Dict) -> Dict:
+        return self._finance_tools.subscription_audit(params)
+
+    def _finance_upsert_goal(self, params: Dict) -> Dict:
+        return self._finance_tools.upsert_goal(params)
+
+    def _finance_list_goals(self, params: Dict) -> Dict:
+        return self._finance_tools.list_goals(params)
+
+    def _finance_get_goal(self, params: Dict) -> Dict:
+        return self._finance_tools.get_goal(params)
+
+    def _finance_set_goal_status(self, params: Dict) -> Dict:
+        return self._finance_tools.set_goal_status(params)
+
+    def _finance_delete_goal(self, params: Dict) -> Dict:
+        return self._finance_tools.delete_goal(params)
+
+    def _finance_assign_goal_contribution(self, params: Dict) -> Dict:
+        return self._finance_tools.assign_goal_contribution(params)
+
+    def _finance_unassign_goal_contribution(self, params: Dict) -> Dict:
+        return self._finance_tools.unassign_goal_contribution(params)
+
+    def _finance_list_goal_contributions(self, params: Dict) -> Dict:
+        return self._finance_tools.list_goal_contributions(params)
+
+    def _finance_project_goal(self, params: Dict) -> Dict:
+        return self._finance_tools.project_goal(params)
+
+    def _finance_suggest_goal_candidates(self, params: Dict) -> Dict:
+        return self._finance_tools.suggest_goal_candidates(params)
 
     def _finance_monthly_report(self, params: Dict) -> Dict:
         return self._finance_tools.monthly_report(params)

@@ -38,3 +38,24 @@ def _isolate_model_loader_singleton():
     model_loader._instance = None
     yield
     model_loader._instance = None
+
+
+@pytest.fixture(autouse=True)
+def _disable_chat_perf_telemetry(monkeypatch: pytest.MonkeyPatch):
+    """Die Test-Suite darf NICHT in die produktive chat_perf-DB schreiben.
+
+    ``agent_chatbot_logic.stream_chat_events`` hüllt die UI-Sink in eine
+    Recording-Sink ein; ohne Isolation landen synthetische Test-Runs
+    (0–1 ms, ohne LLM-Metriken, route=NULL) in der produktiven Telemetrie-DB
+    unter ``~/.local/share/homebot_dbs/chat_perf.db`` und verzerren den
+    perf_report (beobachtet 2026-09-12: 8 Noise-Rows aus Suite-Runs).
+
+    ``enabled`` liest die Variable pro Zugriff dynamisch (chat_perf_recorder,
+    Property ``enabled``) -- der Kill-Switch greift auch für bereits
+    konstruierte Recorder und erzeugt keine DB-Datei.
+
+    Die Telemetrie-Tests selbst (``tests/test_chat_perf_telemetry.py``)
+    entfernen die Variable in ihrem eigenen autouse-Fixture (läuft nach dem
+    hier) und nutzen eine tmp-DB.
+    """
+    monkeypatch.setenv("HOMEBOT_CHAT_PERF_DISABLED", "1")

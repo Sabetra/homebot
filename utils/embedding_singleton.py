@@ -201,7 +201,13 @@ class EmbeddingSingleton:
                 self.model_name = model_name
                 self.device = device
                 self._use_fp16 = use_fp16
-                self.embedding_dim = self.model.get_embedding_dimension()
+                # API-Kompatibilitaet: sentence-transformers <=5.1 hat nur
+                # get_sentence_embedding_dimension(), neuere (>=5.6) beide
+                # (dort ist der alte Name deprecated) -- neuen Namen zuerst.
+                _dim_fn = getattr(self.model, "get_embedding_dimension", None) or getattr(
+                    self.model, "get_sentence_embedding_dimension", None
+                )
+                self.embedding_dim = int(_dim_fn()) if _dim_fn is not None else None
                 
                 # Log VRAM after loading (explizit die AUX-GPU-Index abfragen)
                 if isinstance(device, str) and device.startswith('cuda'):
@@ -225,12 +231,24 @@ class EmbeddingSingleton:
             except ImportError:
                 logger.error("❌ sentence-transformers nicht installiert!")
                 logger.error("   Installieren Sie es mit: pip install sentence-transformers")
+                # Singleton NICHT im halb-geladenen Zustand lassen (sonst meldet
+                # der Early-Return von load_model() bei spaeteren Calls Erfolg).
+                self.model = None
+                self.model_name = None
+                self.embedding_dim = None
+                self.device = None
                 return False
                 
             except Exception as e:
                 logger.error(f"❌ Fehler beim Laden des Embedding-Models: {e}")
                 import traceback
                 logger.error(traceback.format_exc())
+                # Wie bei ImportError: fehlerhafter Partial-Load rueckgaengig
+                # machen, damit is_loaded()/load_model() nicht luegen.
+                self.model = None
+                self.model_name = None
+                self.embedding_dim = None
+                self.device = None
                 return False
     
     def encode(self, texts: Union[str, List[str]], batch_size: int = 32, 

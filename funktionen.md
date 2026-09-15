@@ -1,4 +1,4 @@
-<!-- last-verified: 2026-08-28 -->
+<!-- last-verified: 2026-09-12 -->
 # Funktionen.md – Große & Komplexe Funktionen des Projekts
 
 > **Zweck:** Diese Datei fasst alle besonders großen/komplexen Funktionen zusammen, damit sie bei späteren Aufgaben schnell verstanden und bearbeitet werden können.
@@ -353,7 +353,7 @@
 
 | Aspekt | Detail |
 |--------|--------|
-| **Zweck** | Fuehrt lesende SQLite-Abfragen sowie 34 exponierte Finance-Tools aus |
+| **Zweck** | Fuehrt lesende SQLite-Abfragen sowie 37 exponierte Finance-Tools aus |
 | **Analysepfade** | Kategorie-/Gegenparteikosten, Kostenstruktur, wiederkehrende Ausgaben, Forecast, Anomalien, Budget-vs-Ist, Sparpotenzial, Trendbruch |
 | **Invarianten** | Signed integer cents intern; positive Ausgabenpraesentation; Transfers standardmaessig aus; Waehrungen getrennt |
 
@@ -1921,3 +1921,144 @@ Allowlist) = Ablehnung, **niemals** Freigabe.
   dokumentiert akzeptiert — `yt-dlp` ist scanner-sauber
   (Workdoc §Scanner-Policy).
 
+## AA. Chat-Perf-Telemetrie (2026-09-11)
+
+Low-Overhead-Flaschenhals-Diagnose pro Chat-Run: **exakt 1 SQLite-Zeile/Run**
+(TTFT, Total, Route, Steps, Token, Engine-Metriken) — ohne UX-Kosten.
+Hintergrund: Messwerte waren zuvor nur transiente UI-Events;
+`performance_metrics.db` tot seit 2025-09-05.
+
+### Kern-Komponenten
+
+| Komponente | Datei | Funktion |
+|------------|-------|----------|
+| Recorder | `utils/chat_perf_recorder.py` (662 Zeilen) | `chat_perf_runs`-Schema + `ChatPerfRecord` + bounded Queue + Daemon-Writer-Thread (batched SQLite, WAL) + Observer (`make_recording_sink`) + Engine-Brücke + Kill-Switch; `py_compile`-sauber, wirft nie |
+| Sink-Hook | `agent_chatbot_logic.py:1321` | `sink=chat_perf_recorder.make_recording_sink(event_queue.put)` — Base-Sink läuft **zuerst**, Telemetrie best-effort danach (Exception-Fang, kein Stream-Break) |
+| Engine-Hooks | `scripts/model_loader.py:1635-1653, 3273-3298` | `begin_llm_call`/`end_llm_call` um `fn()` in `_resilient_llm_call` (fehlgeschlagene Retries **nicht** akkumuliert) + `generate_response_stream` (Cancel → Partial-Metriken). Alle übrigen `create_completion`-Call-Sites laufen durch `_resilient_llm_call` |
+| Report | `scripts/perf_report.py` (251 Zeilen) | p50/p90/p99 für `ttft_ms`/`total_ms`/`tokens_per_second` je Route + Tag, Engine-Zeiten (Prefill/Generation), **Overhead-Zerlegung** (Pipeline vs. LLM), `recent_runs` mit `step_summary`/`trace_summary` (schema-adaptiv), `--route/--days/--json/--all` |
+| Tests | `tests/test_chat_perf_telemetry.py` | 19 Tests: Kill-Switch, Observer (completed/failed/cancelled/foreign), tok/s-Fallback, bounded Queue, Writer-Persistenz, Engine-Metriken (Stub, Thread-Isolation, No-ctx, Negativ-Werte), Trace-Summary (Build, Persistenz, NULL-Trace, Migration) |
+| Workdoc | `docs_archive/chat_perf_telemetry_workdoc_20260911.md` | DoD 8/8 ✅, Alternativen-Auswahl, Testnachweise |
+
+### Design-Prinzipien
+
+- **Best-Effort, nie blockierend:** Producer macht nur `put_nowait` (O(1),
+  I/O-frei); I/O ausschließlich im Daemon-Writer; Queue begrenzt
+  (älteste Zeile drop + `dropped`-Zähler) — UX-Pfad bleibt unangetastet.
+- **1 Record/Run, nicht pro Token:** Token-Zahlen kommen aus C++
+  (`llama_perf_context`: `n_p_eval`/`n_eval`/`t_p_eval_ms`/`t_eval_ms`),
+  kein Python-Token-Counting im Hot-Path.
+- **Engine-Metriken thread-lokal:** `consume_engine_metrics()` liest aus
+  `_tls` — Background-Threads (KG-Extraktion, Vision) kontaminieren den
+  Chat-Run nicht; akkumuliert über alle Calls eines Runs
+  (Routing + Antwort), konsumiert beim Finalize.
+- **Kein Hardcoden:** DB-Pfad via `utils/db_path_resolver.get_db_path("chat_perf.db")`;
+  Engine-Bindings via `llama_cpp.llama_cpp` (0.3.35), Feature-Check
+  (`llama_perf_context`/`llama_perf_context_reset` + `llm.ctx`) mit
+  Silent-Noop-Fallback.
+- **PII-frei:** nur IDs, Routen, Zeiten, Token-Zahlen, generische Step-Labels.
+- **Kill-Switch:** `HOMEBOT_CHAT_PERF_DISABLED=1` → Recorder + Engine-Capture
+  inaktiv (Hot-Pfad = no-op), ohne Code-Änderung.
+
+### Real-Daten-Fixes & Erweiterungen (2026-09-12)
+
+Nach den ersten 4 realen Runs (simple ×2, react, plan_execute) drei
+Lücken gefixt:
+
+- **`tokens_per_second` war immer NULL:** Die App emittiert
+  `usage_updated` nur mit `ttft_ms` (`agent_chatbot_logic.py`); die
+  Fallback-Logik in `_finalize` leitet tok/s jetzt aus den
+  Engine-Metriken ab: `Σ generation_tokens / Σ generation_ms` (gewichtet
+  über alle Calls des Runs, llama.cpp-Präzision). Die 4 Bestands-Rows
+  wurden einmalig nachgebucht (identische Formel).
+- **Step-Dauern fehlten:** `StepFinished` wurde ohne `duration_ms`
+  emittiert, obwohl das Schema sie trägt → `stream_chat_events`
+  (`agent_chatbot_logic.py`) timet jetzt Step-Start und setzt
+  `duration_ms`; die `step_summary`-Spalte zeigt dadurch `Label=Xms`
+  pro Step — damit ist die plan_execute-Overhead-Zeit (~81 % der
+  Laufzeit) Step-weise zuordenbar.
+- **Test-Kontamination der Produktions-DB:** Die Streaming-Suites
+  (ohne Telemetrie-Fixtures) schrieben synthetische 0–1-ms-Runs in die
+  produktive `chat_perf.db` (8 Noise-Rows, entfernt). Fix: autouse-Fixture
+  `_disable_chat_perf_telemetry` in `tests/conftest.py` setzt
+  `HOMEBOT_CHAT_PERF_DISABLED=1` suite-weit (dynamisch wirksam, keine
+  DB-Datei); die Telemetrie-Tests entfernen die Variable in ihrem
+  eigenen autouse-Fixture (läuft nach der Conftest-Instanziierung —
+  empirisch verifiziert) und nutzen eine tmp-DB.
+- **Trace ging vor der Persistenz verloren:** `AgentTrace` ist ein
+  Dataclass (`agent/agent_types.py`), die Serialisierung in
+  `agent_chatbot_logic.py` prüfte aber `hasattr(..., "model_dump")` →
+  immer `trace=None` im `ChatRunResult` → Recorder verwurft die Zeile.
+  Fix: `_serialize_trace_value()`/`_trace_to_dict()` (rekursiv;
+  Pydantic `model_dump` + Dataclass `vars()`, nicht-serialisierbare
+  Objekte als `repr`, wirft nie) → `ChatRunResult.trace` ist jetzt
+  ein plain dict. Der Recorder fasst es in der neuen Spalte
+  **`trace_summary`** (TEXT) kompakt zusammen:
+  `planner_ms/tools_ms/summarize_ms/verify_ms`, multi-hop-Felder,
+  `planned=[...]`/`ran=[...]` Tools, Subquery-Anzahl, `ragStats[...]`
+  (max. 2000 Zeichen; schwere Debug-Felder wie `tool_results`
+  bewusst ausgeschlossen). Bestands-DBs werden beim Recorder-Start
+  migriert (`ALTER TABLE ... ADD COLUMN trace_summary TEXT`, idempotent;
+  verifiziert an einer Kopie der Produktions-DB mit 9 Real-Rows).
+  `perf_report.py` wählt optionale Spalten jetzt schema-adaptiv
+  (PRAGMA table_info) und zeigt `recent_runs` mit `step_summary` +
+  `trace_summary`. Damit ist Tool-/RAG-Zeit pro Run (z. B. der
+  ~869 s-RAG-Step von Run 16) in der DB nachweisbar.
+  Tests: 19/19 `tests/test_chat_perf_telemetry.py`
+  (u. a. `_build_trace_summary`, Observer-Persistenz, Migration).
+- **Stale-Trace-Leak zwischen Runs (2026-09-12, an echten Daten gefunden):**
+  `last_trace` (und `last_sources`/`last_graphics`/`last_files`) wurden in
+  `chat()` nie pro Run zurückgesetzt — ein SIMPLE-Run erbe damit die
+  `AgentTrace` des letzten Agent-Runs (beobachtet: identische
+  `trace_summary` mit Phase-Summe 677 s in SIMPLE-Runs von 12 s/68 s).
+  Fix: der Reset-Block in `chat()` (`agent_chatbot_logic.py`,
+  „Reset vor jedem Chat") setzt jetzt `last_trace`, `last_sources`,
+  `last_graphics`, `last_files` auf Leerwerte — `chat()` ist der
+  einzige Einstiegspunkt aller Routen (`_chat_core` wird nur dort
+  aufgerufen). Die 2 nachgewiesenen kontaminierten Produktions-Rows
+  wurden einmalig repariert (`trace_summary=NULL`).
+  Regressionstests: `tests/test_agent_chat_streaming.py`
+  (`test_chat_resets_stale_run_state_before_each_run`,
+  `test_stream_completed_result_has_no_stale_trace`) — empirisch
+  verifiziert, dass sie ohne Fix fehlschlagen.
+
+### Grenzen
+
+- Background-LLM-Calls (Vision/OCR, KG-Extraktion) bewusst nicht gehookt
+  (nicht Teil des Chat-Runs).
+- `llm_calls` zählt nur Calls im Producer-Thread (aktuell: alle im
+  Streaming-Thread — korrekt).
+- Hypothesen (LLM-Dominanz, RAG-Kosten, KV-Reuse) erst nach ≥ 5 realen
+  Runs per `perf_report.py` falsifizierbar.
+
+---
+
+## AB. Finance SOTA Phase 1 – Monarch-Core Prognosen (2026-09-12)
+
+**Deterministische Cashflow-/Guthaben-Prognose für den Finance-Tab.**
+Schedule-first-Hybrid: wiederkehrende Zahlungen als deterministische Anker +
+variable Residuals (OLS-Trend × Kalendermonats-Saisonalität) + Residual-
+Bootstrap-Konfidenzintervall + Guthaben-Projektion. Kein ML, kein LLM, keine
+neuen Dependencies, kein Future-Leak.
+
+| Aspekt | Detail |
+|--------|--------|
+| **Zweck** | SOTA-Haushaltsanalyse: Guthaben-Projektion, Fälligkeits-Kalender, Abo-Audit (Erfolgskriterien Cash Predict / PocketSmith / Finanzguru — siehe Workdoc) |
+| **Tools** | `finance_upcoming_bills` (Fenster 1–180 Tage, Anchortag = Median der letzten 5 Buchungstage, Abo-Kennzeichnung) · `finance_cash_flow_forecast` (Horizont 1–24 Monate, Rückblick 3–36, Konfidenz 0.5–0.99, `include_balance`) · `finance_subscription_audit` (Monats-/Jahreskosten, Trend, letzte Preisänderung, Abo-Heuristik) |
+| **Methodik** | Deterministischer Anteil: Recurring-Gruppen (≥ 2 Buchungen, `_recurring_groups`) mit Historien-Monatswert + nächstem Fälligkeitstag (`_next_due_on_or_after`). Stochastischer Anteil: variable Einnahmen/Ausgaben mit OLS-Trend (`_fit_trend`) × Monats-Indizes (`_seasonal_index`; Degradation auf 1.0 bei < 12 Monaten). Unsicherheit: Residual-Bootstrap (`_bootstrap_interval`, B=1000, fester Seed → deterministisch, Perzentil-Methode). |
+| **Guthaben-Kurve** | Start = letztes `effective_balance_at` (Bankwahrheit minus verlinkte interne Transfers); nur bei IBAN + Einzelwährung, sonst `balance: null` (konsistent mit `estimated_savings`-Pattern) |
+| **Invarianten** | CI-Reihenfolge (untere ≤ Punkt ≤ obere), kein Future-Leak (`_facts_up_to`), Transfer-Ausschluss (`_non_transfer_clause`), Währungen getrennt (keine Kursumrechnung — keine lokalen Kursdaten) |
+| **Registrierung** | `agent/tool_schemas.py` +3 Schemas · `agent_toolkit.py` +3 Dispatch-Wrapper · `agent/tool_profiles.py` `FINANCE_ANALYTICS` +3 · `finance/chat.py` Planner-Prompt + Reflector + Retry-Dispatch +3 (Fail-Fast-Validatoren bei Import) · `finance/query_reflector.py` / `finance/grammar_compiler.py` `_REFLECTOR_ACTIONS` + `FINANCE_TOOL_NAMES` +3 |
+| **UI** | Neuer Sub-Tab „📈 Prognosen" (`finance/tab.py::_render_forecast_tab`): Konto-Filter, Slider (Horizont/Rückblick/Konfidenz/Fälligkeitsfenster), Monats-Tabelle, Plotly-Chart (KI-Band + Guthaben), Fälligkeits-Tabelle, Audit-Tabelle |
+| **i18n** | `finance_ui.forecast.*` (43 Keys) + `finance_ui.tabs.forecast` (DE/EN/BG) |
+| **Tests** | `tests/test_finance_monarch_core.py` — 26 Tests (saisonales Residual-Verhalten, Balance-Ketten-Korrektheit, CI-Reihenfolge, kein Future-Leakage, Transfer-Ausschluss, Multi-Currency, Anker-/Fenster-Logik, Audit-Klassifikation/-Totale); breitere Finance-Suite (13 Finance-Dateien + i18n + tool-profiles) 2026-09-12: **220/220 PASS** |
+| **Abgelehnte Varianten** | ML (Prophet/ARIMA/XGBoost: Overfit bei 12–36 Monatspunkten, schwere Dependencies, Non-Determinismus, AGPL-Lizenzcheck) · LLM als Prognose-Engine (Arithmetik unzuverlässig, nicht reproduzierbar) · externe APIs/Cloud. Bewertung: 5 Kategorien (Korrektheit/Robustheit/Wartbarkeit/Performance/Migrationsrisiko) × 1–7 im Workdoc |
+| **Grenzen & Next** | KI bei < 12 Monaten Historie grob (per `notes` deklariert). **Phase 2 (in Arbeit):** DB-backed Goals/Sinking Funds, verifizierte Vertraege siehe `docs/03_FINANCE_MODULE.md` §19. **Phase 3 (offen):** Szenario-What-If-Engine, ML-Experimente, Anomalie-Erkennung 2.0. Doku: `docs/03_FINANCE_MODULE.md` §18; Workdoc: `docs_archive/finance_sota_phase1_workdoc_20260912.md`. |
+
+### Sparziel-Projektion: Reparaturstand 2026-09-15
+
+`FinanceTools.project_goal` projiziert ab dem Folgemonat; Stand und historische
+Rate sind taggenau auf `reference_date` begrenzt (`_history_rate_cents`).
+Erreichte Ziele liefern Restlaufzeit 0; vergangene Zieltermine behalten ihre
+vorzeichenbehaftete Monatsdifferenz. DAO-Waehrungsdefault und API-Testvertraege
+sind in `docs/03_FINANCE_MODULE.md` §19 dokumentiert. Sparziel-Suite: 43 Tests,
+gemeinsame Finance-/Profil-Regressionspruefung: 211 Tests bestanden.

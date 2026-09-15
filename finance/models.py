@@ -163,6 +163,13 @@ VALID_TRANSACTION_NATURES: frozenset = frozenset(
     }
 )
 
+# Goal-/Sinking-Fund-Status (Phase 2, 2026-09-12). Single Source of Truth:
+# ``db_schema.py`` importiert diese Konstante fuer DAO-Validierung; die
+# UI/Tools dafuer.
+VALID_GOAL_STATUSES: frozenset = frozenset(
+    {"active", "paused", "achieved", "archived"}
+)
+
 # Mapping used once during DB initialisation to rename legacy German values
 # that were stored by the previous extraction schema.
 ACCOUNT_TYPE_MIGRATIONS: dict = {

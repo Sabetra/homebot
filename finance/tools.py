@@ -12,23 +12,46 @@ allen anderen Toolkit-Methoden.
 
 from __future__ import annotations
 
+import calendar
 import json
 import logging
+import math
+import random
 import re
 import sqlite3
-from statistics import mean, pstdev
+from datetime import date, timedelta
+from statistics import mean, median, pstdev
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from finance.db_schema import (
     FinanceDB,
+    Goal,
     _from_cents,
     _normalize_iban,
     _normalize_like_needle,
     _to_cents,
 )
-from finance.models import DEFAULT_CURRENCY
+from finance.models import DEFAULT_CURRENCY, VALID_GOAL_STATUSES
 
 logger = logging.getLogger(__name__)
+
+# Heuristische "vielleicht-Abo"-Klassifikation (Phase-1-SOTA), bewusst
+# konservativ: Treffer sind Hinweise, keine Fakten (UI/Chat formulieren
+# entsprechend als "vermutliches Abo").
+SUBSCRIPTION_NAME_HINTS = (
+    "netflix", "spotify", "prime video", "apple.com/bill", "google one",
+    "youtube premium", "youtube music", "icloud", "onedrive", "office 365",
+    "office365", "dropbox", "adobe", "openai", "chatgpt", "github",
+    "notion", "slack", "zoom", "canva", "figma", "nordvpn", "mullvad",
+    "surfshark", "expressvpn", "deezer", "tidal", "patreon", "substack",
+    "zeit online", "t-online", "vodafone", "telekom", "magenta", "web.de",
+    "gmx", "ionos", "hetzner", "strato", "all-ink", "congstar", "fritz",
+    "kagi", "protonmail", "protonvpn",
+)
+SUBSCRIPTION_CATEGORY_HINTS = (
+    "abonn", "subscri", "membership", "stream", "saas", "software",
+    "cloud", "medien", "media", "digital",
+)
 
 
 class FinanceTools:
@@ -521,6 +544,1332 @@ class FinanceTools:
                     }
                 )
         return {"success": True, "forecast": forecasts, "count": len(forecasts)}
+
+    # -- Phase 1 "Monarch-Core" (SOTA-Haushaltsprognosen) -------------
+    #
+    # Schedule-first-Hybrid (siehe docs/03_FINANCE_MODULE.md):
+    # deterministische Termine (Recurring: Rechnungen, Abos, Gehalt)
+    # werden aus dem echten Zahlungshistorien-Anchortag projiziert; der
+    # stochastische variable Rest wird mit OLS-Trend x Kalendermonats-
+    # Saisonalitaet + Residual-Bootstrap-KI (fester Seed) geschätzt;
+    # das Guthaben wird vom letzten ``effective_balance_at`` fortgeschrieben
+    # (Haushalts-Perspektive: verlinkte interne Transfers herausgerechnet).
+    # Reine Stdlib, deterministisch, fail-fast.
+
+    @staticmethod
+    def _parse_reference_date(value: Any) -> date:
+        """'YYYY-MM-DD'-Referenzdatum parsen (None/leer -> heute)."""
+        if value is None or value == "":
+            return date.today()
+        if isinstance(value, date):
+            return value
+        if isinstance(value, str):
+            return date.fromisoformat(value.strip())
+        raise ValueError("reference_date must be 'YYYY-MM-DD'")
+
+    def _facts_up_to(
+        self, iban: Optional[str], reference: date
+    ) -> Tuple[List[Dict[str, Any]], Optional[Dict[str, Any]]]:
+        """Analyse-Fakten bis (inklusive) Referenzdatum.
+
+        Zukünftige Buchungen werden nie gelesen (kein Future-Leak in
+        Prognosen); Transfers bleiben ausgeschlossen wie in allen
+        übrigen Finanz-Tools.
+        """
+        facts, error = self._analysis_facts({"iban": iban})
+        if error is not None:
+            return [], error
+        ref_iso = reference.isoformat()
+        return [fact for fact in facts if fact["booking_date"] <= ref_iso], None
+
+    @staticmethod
+    def _month_key(month: str) -> Tuple[int, int]:
+        """'YYYY-MM' -> (Jahr, Monat)."""
+        year, mon = month.split("-", 1)
+        return int(year), int(mon)
+
+    @staticmethod
+    def _next_month_key(key: Tuple[int, int], steps: int) -> Tuple[int, int]:
+        """Kalendermonat-Schritt (steps > 0: Zukunft, < 0: Vergangenheit)."""
+        absolute = key[0] * 12 + key[1] - 1 + steps
+        return absolute // 12, absolute % 12 + 1
+
+    @staticmethod
+    def _next_due_on_or_after(reference: date, anchor_day: int) -> date:
+        """Erste Faelligkeit ab ``reference`` fuer den Anker-Tag.
+
+        Kuerzere Monate clampen auf den Monatsletzten (Anker 31 im
+        Februar -> 28/29). Monatsende-Anker (Tag 29-31) gelten am
+        Referenztag selbst als faellig — die naechste Faelligkeit ist
+        dann der Folgemonat (31.01. + Tag 31 -> 28.02.); natuerliche
+        Anker (Tag 1-28) enthalten den Referenztag selbst.
+        Deterministisch, max. 14 Iterationen.
+        """
+        year, month = reference.year, reference.month
+        for _ in range(14):
+            last_day = calendar.monthrange(year, month)[1]
+            candidate = date(year, month, min(anchor_day, last_day))
+            if candidate > reference or (candidate == reference and anchor_day <= 28):
+                return candidate
+            year, month = (year + 1, 1) if month == 12 else (year, month + 1)
+        return reference  # defensiv; mathematisch unerreichbar
+
+    @staticmethod
+    def _fit_trend(values: List[float]) -> Tuple[float, float]:
+        """OLS-Fit y = a + b*t (t = 0..n-1); n < 3 -> flacher Mittelwert."""
+        n = len(values)
+        if n == 0:
+            return 0.0, 0.0
+        if n < 3:
+            return mean(values), 0.0
+        t_mean = (n - 1) / 2.0
+        y_mean = mean(values)
+        numerator = sum((i - t_mean) * (value - y_mean) for i, value in enumerate(values))
+        denominator = sum((i - t_mean) ** 2 for i in range(n))
+        slope = numerator / denominator if denominator else 0.0
+        return y_mean - slope * t_mean, slope
+
+    @staticmethod
+    def _seasonal_index(observed: Sequence[Tuple[int, float]]) -> Dict[int, float]:
+        """Multiplikative Saisonalitäts-Indizes pro Kalendermonat (1..12).
+
+        Nur aktiv, wenn mindestens 12 Monatsbeobachtungen alle 12
+        Kalendermonate abdecken; sonst neutraler Index 1.0 (dokumentierte
+        Degradation bei wenig Daten).
+        """
+        by_month: Dict[int, List[float]] = {}
+        for cal_month, value in observed:
+            by_month.setdefault(cal_month, []).append(value)
+        if len(by_month) < 12 or sum(len(values) for values in by_month.values()) < 12:
+            return {month: 1.0 for month in range(1, 13)}
+        all_values = [value for values in by_month.values() for value in values]
+        overall_mean = mean(all_values)
+        if overall_mean <= 0:
+            return {month: 1.0 for month in range(1, 13)}
+        return {
+            month: (mean(by_month[month]) / overall_mean if month in by_month else 1.0)
+            for month in range(1, 13)
+        }
+
+    @staticmethod
+    def _bootstrap_interval(
+        point: float,
+        residuals: Sequence[float],
+        confidence: float,
+        seed: int = 42,
+        draws: int = 1000,
+    ) -> Tuple[float, float]:
+        """Residual-Bootstrap-Konfidenzintervall um den Punkt-Schätzer.
+
+        Deterministisch (fester Seed). Leere Residuals -> Punktintervall.
+        """
+        if not residuals:
+            return point, point
+        rng = random.Random(seed)
+        alpha = max(0.01, min(0.5, (1.0 - confidence) / 2.0))
+        lower_q = alpha
+        upper_q = 1.0 - alpha
+        n = len(residuals)
+        sums = []
+        for _ in range(draws):
+            total = 0.0
+            for _ in range(n):
+                total += residuals[rng.randrange(n)]
+            sums.append(total / n)
+        sums.sort()
+        lower = point + sums[int(lower_q * (draws - 1))]
+        upper = point + sums[int(upper_q * (draws - 1))]
+        return min(lower, upper), max(lower, upper)
+
+    @staticmethod
+    def _expense_recurring_pairs(
+        facts: Sequence[Dict[str, Any]],
+        min_occurrences: int,
+        fixed_only: bool = False,
+    ) -> set:
+        """(currency, counterparty)-Paare, die wiederkehrende Ausgaben sind.
+
+        ``fixed_only=True`` schraeft auf konstante Betraege ein
+        (deterministischer Plan: Miete, Abo, Gehalt); variable
+        Wiederkehrende (z. B. Lebensmittel) bleiben im stochastischen
+        Rest der Prognose.
+        """
+        grouped: Dict[Tuple[str, str], List[int]] = {}
+        for fact in facts:
+            if int(fact["amount_cents"]) >= 0:
+                continue
+            key = (fact["currency"], fact["counterparty"])
+            grouped.setdefault(key, []).append(abs(int(fact["amount_cents"])))
+        return {
+            key
+            for key, amounts in grouped.items()
+            if len(amounts) >= min_occurrences and (not fixed_only or len(set(amounts)) == 1)
+        }
+
+    @staticmethod
+    def _detect_price_change(
+        amounts: Sequence[float], last_date: str
+    ) -> Tuple[Optional[Dict[str, Any]], Optional[float]]:
+        """Echte Preisveraenderung einer wiederkehrenden Ausgabengruppe.
+
+        Qualifiziert nur, wenn der alte Preis stabil war (mindestens 2
+        aufeinanderfolgende Zahlungen zu diesem Betrag) und der neue
+        Preis die letzte Zahlung ist. Normale Streuung (z. B.
+        Lebensmittel) liefert ``(None, None)``; die Monatskosten werden
+        dann der Durchschnitt. Liefert ``(change | None, new_price | None)``.
+        """
+        last = amounts[-1]
+        index = len(amounts) - 2
+        while index >= 0 and amounts[index] == last:
+            index -= 1
+        if index < 0:
+            return None, None
+        old = amounts[index]
+        if index < 1 or amounts[index - 1] != old:
+            return None, None
+        change = {
+            "old": round(old, 2),
+            "new": round(last, 2),
+            "change_pct": round((last - old) / old * 100.0, 1) if old else None,
+            "date": last_date,
+        }
+        return change, round(last, 2)
+
+    @classmethod
+    def _is_subscription_like(
+        cls, counterparty: str, category: Optional[str] = None
+    ) -> bool:
+        """Heuristischer "vielleicht-Abo"-Marker (Name- oder Kategorie-Hinweis)."""
+        name = (counterparty or "").casefold()
+        if any(hint in name for hint in SUBSCRIPTION_NAME_HINTS):
+            return True
+        cat = (category or "").casefold()
+        return any(hint in cat for hint in SUBSCRIPTION_CATEGORY_HINTS)
+
+    def upcoming_bills(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Deterministischer Fälligkeits-Kalender für kommende Zahlungen.
+
+        Projeziert den nächsten Fälligkeitstag jeder wiederkehrenden
+        Ausgabengruppe (>= 2 Buchungen) aus dem Median der letzten 5
+        Buchungs-Tage (Anchortag). Phase-1-SOTA ("Monarch-Core"):
+        Basis für die Cashflow-Prognose und Fälligkeits-Erinnerungen.
+
+        Parameters
+        ----------
+        days_ahead:     1-180 (Default 30)
+        iban:           optionales Konten-Filter (IBAN)
+        reference_date: 'YYYY-MM-DD' (Default heute; testbar injizierbar)
+        """
+        try:
+            reference = self._parse_reference_date(params.get("reference_date"))
+        except ValueError as exc:
+            return {"success": False, "error": str(exc), "error_class": "invalid_reference_date"}
+
+        days_ahead = self._coerce_int_param(params.get("days_ahead"), default=30)
+        if days_ahead is None:
+            return {"success": False, "error": "days_ahead must be an integer", "error_class": "invalid_param"}
+        days_ahead = max(1, min(int(days_ahead), 180))
+
+        iban = params.get("iban") or None
+        facts, error = self._facts_up_to(iban, reference)
+        if error is not None:
+            return error
+
+        expense_pairs = self._expense_recurring_pairs(facts, min_occurrences=2)
+        groups = [
+            group
+            for group in self._recurring_groups(facts, min_occurrences=2)
+            if (group["currency"], group["counterparty"]) in expense_pairs
+        ]
+
+        window_end = reference + timedelta(days=days_ahead)
+        bills = []
+        for group in groups:
+            counterparty = group["counterparty"]
+            expense_dates = sorted(
+                fact["booking_date"]
+                for fact in facts
+                if fact["counterparty"] == counterparty and int(fact["amount_cents"]) < 0
+            )
+            if not expense_dates:
+                continue
+            anchor_day = int(round(median([int(day[8:10]) for day in expense_dates[-5:]])))
+            next_due = self._next_due_on_or_after(reference, anchor_day)
+            if next_due > window_end:
+                continue
+            category = next(
+                (fact["category"] for fact in facts if fact["counterparty"] == counterparty), ""
+            )
+            bills.append(
+                {
+                    "counterparty": counterparty,
+                    "category": category,
+                    "currency": group["currency"],
+                    "amount": group["average_expense"],
+                    "next_due": next_due.isoformat(),
+                    "days_until": (next_due - reference).days,
+                    "last_seen": expense_dates[-1],
+                    "occurrences": group["occurrences"],
+                    "is_fixed": group["is_fixed"],
+                    "subscription_like": self._is_subscription_like(counterparty, category),
+                }
+            )
+        bills.sort(key=lambda bill: (bill["next_due"], bill["counterparty"]))
+        currencies = {bill["currency"] for bill in bills}
+        single_currency = currencies.pop() if len(currencies) == 1 else None
+        return {
+            "success": True,
+            "method": "recurring_projection",
+            "reference_date": reference.isoformat(),
+            "window_end": window_end.isoformat(),
+            "currency": single_currency,
+            "count": len(bills),
+            "bills": bills,
+            "total_in_window": (
+                round(sum(bill["amount"] for bill in bills), 2) if single_currency else None
+            ),
+        }
+
+    def cash_flow_forecast(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Cashflow- und Guthaben-Prognose (Phase 1 "Monarch-Core").
+
+        Schedule-first-Hybrid: wiederkehrende Zahlungen werden aus dem
+        Zahlungshistorien-Monatswert projiziert (deterministischer
+        Plan); variable Ausgaben und Einnahmen via OLS-Trend x
+        Kalendermonats-Saisonalitaet + Residual-Bootstrap-KI; Guthaben
+        wird vom letzten ``effective_balance_at`` fortgeschrieben
+        (Bankwahrheit minus verlinkte interne Transfers; IBAN +
+        Einzelwaehrung). Deterministisch, kein Future-Leak, Transfers
+        ausgeschlossen.
+
+        Parameters: forecast_months 1-24 (6), lookback_months 3-36 (12),
+        iban, confidence_level 0.5-0.99 (0.8), include_balance (True),
+        include_goals (False), reference_date 'YYYY-MM-DD' (heute).
+
+        include_goals=True ueberlagert die geplante Monatsrate aktiver
+        Ziele (Sinking Funds) als deterministische planmaessige Ziehung auf
+        die Monats-Prognosen (goals_draw, net_with_goals,
+        balance_with_goals) -- opt-in, damit das Phase-1-Verhalten
+        unveraendert bleibt.
+        """
+        try:
+            reference = self._parse_reference_date(params.get("reference_date"))
+        except ValueError as exc:
+            return {"success": False, "error": str(exc), "error_class": "invalid_reference_date"}
+
+        forecast_months = self._coerce_int_param(params.get("forecast_months"), default=6)
+        if forecast_months is None:
+            return {"success": False, "error": "forecast_months must be an integer", "error_class": "invalid_param"}
+        forecast_months = max(1, min(int(forecast_months), 24))
+
+        lookback_months = self._coerce_int_param(params.get("lookback_months"), default=12)
+        if lookback_months is None:
+            lookback_months = 12
+        lookback_months = max(3, min(int(lookback_months), 36))
+
+        try:
+            confidence = float(params.get("confidence_level", 0.8))
+        except (TypeError, ValueError):
+            return {"success": False, "error": "confidence_level must be a number", "error_class": "invalid_param"}
+        confidence = max(0.5, min(confidence, 0.99))
+
+        include_balance = bool(params.get("include_balance", True))
+        include_goals = bool(params.get("include_goals", False))
+        iban = params.get("iban") or None
+        facts, error = self._facts_up_to(iban, reference)
+        if error is not None:
+            return error
+
+        reference_key = (reference.year, reference.month)
+        currencies = sorted({fact["currency"] for fact in facts})
+        if not currencies:
+            return {"success": False, "error": "Keine Buchungsdaten für die Prognose verfügbar", "error_class": "no_data"}
+
+        notes: List[str] = []
+        account_id = self._resolve_account_id(iban) if iban else None
+        balance_start: Optional[float] = None
+        if account_id is not None and len(currencies) == 1 and include_balance:
+            # Haushalts-Perspektive: verlinkte interne Transfers (Konto<->Konto
+            # derselben Person) sind Umverteilungen ohne Nettoeffekt auf das
+            # Geld der Person und werden aus dem Startsaldo herausgerechnet
+            # (balance_at bleibt die Bankwahrheit des Einzelkontos).
+            balance_row = self._db.effective_balance_at(
+                account_id, reference.isoformat()
+            )
+            balance_start = balance_row.get("balance")
+            if int(balance_row.get("internal_transfer_net_cents", 0)) != 0:
+                notes.append(
+                    "Guthaben-Startsaldo: verlinkte interne Transfers netto "
+                    "herausgerechnet (Haushalts-Perspektive)"
+                )
+        elif iban and len(currencies) > 1:
+            notes.append("Guthaben-Prognose entfällt: Konto führt mehrere Währungen")
+
+        goals_overlay: Optional[Dict[str, Any]] = None
+        goals_draw_by_currency: Dict[str, int] = {}
+        if include_goals:
+            # Sinking Funds: aktiven Zielen mit geplanter Monatsrate wird eine
+            # deterministische planmaessige Ziehung pro Prognose-Monat
+            # zugerechnet (Status "active" + Rate > 0; kein Future-Leak,
+            # Fortschritt nur bis Referenzdatum).
+            active_goals = [
+                goal
+                for goal in self._db.list_goals(status="active")
+                if goal.monthly_rate_cents and int(goal.monthly_rate_cents) > 0
+            ]
+            if iban:
+                iban_norm = _normalize_iban(str(iban))
+                active_goals = [
+                    goal
+                    for goal in active_goals
+                    if _normalize_iban(goal.iban or "") == iban_norm
+                ]
+            goals: List[Dict[str, Any]] = []
+            for goal in sorted(active_goals, key=lambda item: (item.currency or "", item.name)):
+                progress = self._db.goal_progress_asof(goal.id, reference)
+                goals.append(
+                    {
+                        "goal_id": goal.id,
+                        "name": goal.name,
+                        "currency": goal.currency,
+                        "iban": goal.iban,
+                        "monthly_rate": round(_from_cents(int(goal.monthly_rate_cents)), 2),
+                        "target_amount": round(_from_cents(goal.target_cents), 2),
+                        "target_date": goal.target_date,
+                        "saved": round(_from_cents(progress["saved_cents"]), 2),
+                        "remaining": round(
+                            _from_cents(max(0, goal.target_cents - progress["saved_cents"])), 2
+                        ),
+                    }
+                )
+                if goal.currency:
+                    goals_draw_by_currency[goal.currency] = (
+                        goals_draw_by_currency.get(goal.currency, 0)
+                        + int(goal.monthly_rate_cents)
+                    )
+            goals_overlay = {
+                "count": len(goals),
+                "goals": goals,
+                "monthly_draw_by_currency": {
+                    cur: round(_from_cents(cents), 2)
+                    for cur, cents in sorted(goals_draw_by_currency.items())
+                },
+            }
+            notes.append(
+                "Goals-Overlay: geplante Monatsraten aktiver Ziele als planmaessige "
+                "Ziehung eingerechnet"
+                if goals
+                else "Goals-Overlay: keine aktiven Ziele mit geplanter Monatsrate"
+            )
+
+        results = []
+        for currency in currencies:
+            fit_state = self._fit_currency_series(facts, currency, reference_key, lookback_months)
+            if fit_state is None:
+                notes.append(f"{currency}: keine Buchungen im Fit-Fenster")
+                continue
+            months = self._project_months(
+                fit_state, reference_key, forecast_months, confidence, balance_start
+            )
+            if include_goals and goals_draw_by_currency.get(currency):
+                draw = round(_from_cents(goals_draw_by_currency[currency]), 2)
+                for step, month in enumerate(months, start=1):
+                    month["goals_draw"] = draw
+                    month["net_with_goals"] = round(month["net"] - draw, 2)
+                    if "balance" in month:
+                        month["balance_with_goals"] = round(
+                            month["balance"] - draw * step, 2
+                        )
+                        month["balance_low_with_goals"] = round(
+                            month["balance_low"] - draw * step, 2
+                        )
+                        month["balance_high_with_goals"] = round(
+                            month["balance_high"] - draw * step, 2
+                        )
+            results.append(
+                {
+                    "currency": currency,
+                    "months_used": fit_state["n"],
+                    "seasonality_applied": fit_state["seasonality_applied"],
+                    "recurring_monthly": round(fit_state["recurring_monthly"], 2),
+                    "months": months,
+                }
+            )
+
+        return {
+            "success": True,
+            "method": "schedule_first_hybrid",
+            "reference_date": reference.isoformat(),
+            "forecast_months": forecast_months,
+            "lookback_months": lookback_months,
+            "confidence_level": confidence,
+            "currencies": currencies,
+            "results": results,
+            "goals": goals_overlay,
+            "balance": (
+                {"start_balance": round(balance_start, 2), "currency": currencies[0]}
+                if balance_start is not None
+                else None
+            ),
+            "notes": notes,
+        }
+
+    def _fit_currency_series(
+        self,
+        facts: List[Dict[str, Any]],
+        currency: str,
+        reference_key: Tuple[int, int],
+        lookback_months: int,
+    ) -> Optional[Dict[str, Any]]:
+        """Waehrungs-Monatsreihen in recurring/variable/Einnahmen zerlegen und fitten.
+
+        Wiederkehrende Paare mit konstantem Betrag sind der
+        deterministische Plan; variable Wiederkehrende (z. B.
+        Lebensmittel) gehoren in den stochastischen Rest.
+        Liefert None, wenn im Fit-Fenster keine Buchungen existieren.
+        """
+        currency_facts = [fact for fact in facts if fact["currency"] == currency]
+        expense_pairs = self._expense_recurring_pairs(
+            currency_facts, min_occurrences=2, fixed_only=True
+        )
+
+        monthly_variable: Dict[str, float] = {}
+        monthly_income: Dict[str, float] = {}
+        monthly_recurring: Dict[str, float] = {}
+        for fact in currency_facts:
+            month = fact["month"]
+            cents = int(fact["amount_cents"])
+            if cents > 0:
+                monthly_income[month] = monthly_income.get(month, 0.0) + _from_cents(cents)
+            elif (fact["currency"], fact["counterparty"]) in expense_pairs:
+                monthly_recurring[month] = monthly_recurring.get(month, 0.0) + _from_cents(-cents)
+            else:
+                monthly_variable[month] = monthly_variable.get(month, 0.0) + _from_cents(-cents)
+
+        all_months = set(monthly_variable) | set(monthly_income) | set(monthly_recurring)
+        if not all_months:
+            return None
+        first_data_key = min(self._month_key(month) for month in all_months)
+        window = [
+            self._next_month_key(reference_key, -offset)
+            for offset in range(lookback_months - 1, -1, -1)
+        ]
+        fit_months = [key for key in window if key >= first_data_key]
+        fit_labels = [f"{key[0]:04d}-{key[1]:02d}" for key in fit_months]
+        cal_months = [key[1] for key in fit_months]
+        variable_series = [monthly_variable.get(label, 0.0) for label in fit_labels]
+        income_series = [monthly_income.get(label, 0.0) for label in fit_labels]
+        recurring_series = [monthly_recurring.get(label, 0.0) for label in fit_labels]
+
+        n = len(fit_months)
+        var_a, var_b = self._fit_trend(variable_series)
+        inc_a, inc_b = self._fit_trend(income_series)
+        var_index = self._seasonal_index(list(zip(cal_months, variable_series)))
+        inc_index = self._seasonal_index(list(zip(cal_months, income_series)))
+        var_fit = [(var_a + var_b * i) * var_index[cal_months[i]] for i in range(n)]
+        inc_fit = [(inc_a + inc_b * i) * inc_index[cal_months[i]] for i in range(n)]
+        return {
+            "n": n,
+            "var": (var_a, var_b, var_index),
+            "inc": (inc_a, inc_b, inc_index),
+            "var_residuals": [observed - fitted for observed, fitted in zip(variable_series, var_fit)],
+            "inc_residuals": [observed - fitted for observed, fitted in zip(income_series, inc_fit)],
+            "recurring_monthly": sum(recurring_series) / n if n else 0.0,
+            "seasonality_applied": (
+                any(value != 1.0 for value in var_index.values())
+                or any(value != 1.0 for value in inc_index.values())
+            ),
+        }
+
+    def _project_months(
+        self,
+        fit_state: Dict[str, Any],
+        reference_key: Tuple[int, int],
+        forecast_months: int,
+        confidence: float,
+        balance_start: Optional[float],
+    ) -> List[Dict[str, Any]]:
+        """Prognose-Monate (Punkt + Bootstrap-KI + optionale Guthaben-Kette)."""
+        var_a, var_b, var_index = fit_state["var"]
+        inc_a, inc_b, inc_index = fit_state["inc"]
+        n = fit_state["n"]
+        recurring = fit_state["recurring_monthly"]
+        months = []
+        running = balance_start
+        for step in range(1, forecast_months + 1):
+            key = self._next_month_key(reference_key, step)
+            trend_index = n + step - 1
+            variable_point = max(0.0, (var_a + var_b * trend_index) * var_index[key[1]])
+            income_point = max(0.0, (inc_a + inc_b * trend_index) * inc_index[key[1]])
+            variable_low, variable_high = self._bootstrap_interval(
+                variable_point, fit_state["var_residuals"], confidence
+            )
+            income_low, income_high = self._bootstrap_interval(
+                income_point, fit_state["inc_residuals"], confidence
+            )
+            payload: Dict[str, Any] = {
+                "month": f"{key[0]:04d}-{key[1]:02d}",
+                "income": round(income_point, 2),
+                "recurring": round(recurring, 2),
+                "variable": round(variable_point, 2),
+                "variable_low": round(variable_low, 2),
+                "variable_high": round(variable_high, 2),
+                "income_low": round(income_low, 2),
+                "income_high": round(income_high, 2),
+                "expense_total": round(recurring + variable_point, 2),
+                "net": round(income_point - recurring - variable_point, 2),
+            }
+            if balance_start is not None and running is not None:
+                payload["balance"] = round(running + payload["net"], 2)
+                payload["balance_low"] = round(
+                    running + income_low - recurring - variable_high, 2
+                )
+                payload["balance_high"] = round(
+                    running + income_high - recurring - variable_low, 2
+                )
+                running += payload["net"]
+            months.append(payload)
+        return months
+
+    def subscription_audit(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Abo-/Recurring-Audit (Phase 1 SOTA): Kosten, Trends, Preisänderungen.
+
+        Wiederkehrende Ausgabengruppen (>= 2 Buchungen) werden nach
+        monatlichen Durchschnitt, Trend, letzter Preisänderung,
+        Jahres-/Monatskosten und Abo-Heuristik zusammengefasst.
+        Währungsumrechnung ist bewusst NICHT enthalten (keine Kursdaten
+        lokal verfügbar) -> Summen nur bei einheitlicher Währung.
+
+        Parameters
+        ----------
+        iban: optionales Konten-Filter (IBAN)
+        """
+        iban = params.get("iban") or None
+        try:
+            reference = self._parse_reference_date(params.get("reference_date"))
+        except ValueError as exc:
+            return {"success": False, "error": str(exc), "error_class": "invalid_reference_date"}
+        facts, error = self._facts_up_to(iban, reference)
+        if error is not None:
+            return error
+
+        groups = self._recurring_groups(facts, min_occurrences=2)
+        expense_pairs = self._expense_recurring_pairs(facts, min_occurrences=2)
+        audits = []
+        for group in groups:
+            if (group["currency"], group["counterparty"]) not in expense_pairs:
+                continue
+            counterparty = group["counterparty"]
+            expenses = sorted(
+                (
+                    fact
+                    for fact in facts
+                    if fact["counterparty"] == counterparty and int(fact["amount_cents"]) < 0
+                ),
+                key=lambda fact: fact["booking_date"],
+            )
+            amounts = [abs(_from_cents(int(fact["amount_cents"]))) for fact in expenses]
+            price_change, changed_price = self._detect_price_change(
+                amounts, expenses[-1]["booking_date"]
+            )
+            category = next(
+                (fact["category"] for fact in facts if fact["counterparty"] == counterparty),
+                None,
+            )
+            if category in (None, "", "(uncategorized)"):
+                category = None
+            # Nach echter Preisveraenderung gilt der aktuelle Preis als
+            # Monatskosten; sonst der Durchschnitt (variable Wiederkehrende).
+            monthly = changed_price if changed_price is not None else group["average_expense"]
+            last_amount = amounts[-1]
+            audits.append(
+                {
+                    "counterparty": counterparty,
+                    "category": category,
+                    "currency": group["currency"],
+                    "monthly_cost": monthly,
+                    "annual_cost": round(monthly * 12, 2),
+                    "last_amount": last_amount,
+                    "price_change": price_change,
+                    "occurrences": group["occurrences"],
+                    "last_seen": expenses[-1]["booking_date"],
+                    "is_fixed": group["is_fixed"],
+                    "subscription_like": self._is_subscription_like(counterparty, category),
+                }
+            )
+        audits.sort(key=lambda item: (-item["monthly_cost"], item["counterparty"]))
+        single_currency = next(
+            (item["currency"] for item in audits if len({a["currency"] for a in audits}) == 1),
+            None,
+        )
+        return {
+            "success": True,
+            "method": "recurring_audit",
+            "count": len(audits),
+            "total_monthly": (
+                round(sum(item["monthly_cost"] for item in audits), 2) if single_currency else None
+            ),
+            "total_annual": (
+                round(sum(item["annual_cost"] for item in audits), 2) if single_currency else None
+            ),
+            "currency": single_currency,
+            "groups": audits,
+        }
+
+    def set_goal_status(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Aendert den Status eines Sparziels (active/paused/achieved/archived)."""
+        goal_id = self._coerce_int_param(params.get("goal_id"))
+        if goal_id is None:
+            return {"success": False, "error": "goal_id required (int)", "error_class": "missing_param"}
+        status = str(params.get("status") or "").strip().lower()
+        if status not in VALID_GOAL_STATUSES:
+            return {
+                "success": False,
+                "error": f"status must be one of {sorted(VALID_GOAL_STATUSES)}",
+                "error_class": "invalid_param",
+            }
+        if self._db.get_goal(goal_id) is None:
+            return {"success": False, "error": f"goal {goal_id} not found", "error_class": "goal_not_found"}
+        self._db.set_goal_status(goal_id, status)
+        goal = self._db.get_goal(goal_id)
+        return {"success": True, "goal_id": goal_id, "status": status, "goal": self._goal_dict(goal)}
+
+    def delete_goal(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Loescht ein Sparziel (Ziel-Beitraege fallen per Cascade ab)."""
+        goal_id = self._coerce_int_param(params.get("goal_id"))
+        if goal_id is None:
+            return {"success": False, "error": "goal_id required (int)", "error_class": "missing_param"}
+        if self._db.get_goal(goal_id) is None:
+            return {"success": False, "error": f"goal {goal_id} not found", "error_class": "goal_not_found"}
+        removed = len(self._db.list_contributions(goal_id))
+        self._db.delete_goal(goal_id)
+        return {"success": True, "goal_id": goal_id, "removed_contributions": removed}
+
+    def assign_goal_contribution(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Ordnet eine Buchung als Beitrag einem Sparziel zu (1:1)."""
+        goal_id = self._coerce_int_param(params.get("goal_id"))
+        transaction_id = self._coerce_int_param(params.get("transaction_id"))
+        if goal_id is None or transaction_id is None:
+            return {
+                "success": False,
+                "error": "goal_id and transaction_id required (int)",
+                "error_class": "missing_param",
+            }
+        if self._db.get_goal(goal_id) is None:
+            return {"success": False, "error": f"goal {goal_id} not found", "error_class": "goal_not_found"}
+        with self._db._connect() as conn:
+            tx = conn.execute(
+                "SELECT id, counterparty, booking_date, amount_cents "
+                "FROM transactions WHERE id = ?",
+                (transaction_id,),
+            ).fetchone()
+        if tx is None:
+            return {
+                "success": False,
+                "error": f"transaction {transaction_id} not found",
+                "error_class": "tx_not_found",
+            }
+        with self._db._connect() as conn:
+            existing = conn.execute(
+                "SELECT goal_id FROM goal_contributions WHERE transaction_id = ?",
+                (transaction_id,),
+            ).fetchone()
+        if existing is not None:
+            return {
+                "success": False,
+                "error": f"transaction {transaction_id} already assigned to goal {existing['goal_id']}",
+                "error_class": "conflict",
+            }
+        try:
+            contribution_id = self._db.assign_contribution(goal_id, transaction_id)
+        except ValueError as exc:
+            return {"success": False, "error": str(exc), "error_class": "conflict"}
+        progress = self._db.goal_progress(goal_id)
+        return {
+            "success": True,
+            "contribution_id": contribution_id,
+            "goal_id": goal_id,
+            "transaction_id": transaction_id,
+            "progress": progress,
+        }
+
+    def unassign_goal_contribution(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Entfernt einen Ziel-Beitrag (die Buchung selbst bleibt erhalten).
+
+        Referenz entweder per ``contribution_id`` (exakt) oder per
+        ``goal_id`` + ``transaction_id`` (Pair-Auflösung -- entspricht dem
+        Tool-Schema und ist LLM-freundlich, weil kein Zwischen-Liste-Call
+        nötig ist).
+        """
+        contribution_id = self._coerce_int_param(params.get("contribution_id"))
+        goal_id = self._coerce_int_param(params.get("goal_id"))
+        transaction_id = self._coerce_int_param(params.get("transaction_id"))
+        if contribution_id is None and (goal_id is None or transaction_id is None):
+            return {
+                "success": False,
+                "error": (
+                    "contribution_id required (int) -- oder goal_id + transaction_id"
+                ),
+                "error_class": "missing_param",
+            }
+        if contribution_id is None:
+            contribution_id = self._db.find_contribution_id(goal_id, transaction_id)
+            if contribution_id is None:
+                return {
+                    "success": False,
+                    "error": (
+                        f"no contribution for goal {goal_id} and "
+                        f"transaction {transaction_id}"
+                    ),
+                    "error_class": "contribution_not_found",
+                }
+        try:
+            self._db.unassign_contribution(contribution_id)
+        except ValueError as exc:
+            return {"success": False, "error": str(exc), "error_class": "contribution_not_found"}
+        return {"success": True, "contribution_id": contribution_id}
+
+    def list_goal_contributions(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Alle einer Ziel zugeordneten Buchungen inkl. Fortschritt."""
+        goal_id = self._coerce_int_param(params.get("goal_id"))
+        if goal_id is None:
+            return {"success": False, "error": "goal_id required (int)", "error_class": "missing_param"}
+        if self._db.get_goal(goal_id) is None:
+            return {"success": False, "error": f"goal {goal_id} not found", "error_class": "goal_not_found"}
+        contributions = self._db.list_contributions(goal_id)
+        tx_map: Dict[int, Dict[str, Any]] = {}
+        tx_ids = [c.transaction_id for c in contributions]
+        if tx_ids:
+            placeholders = ",".join("?" * len(tx_ids))
+            with self._db._connect() as conn:
+                rows = conn.execute(
+                    "SELECT id, counterparty, booking_date, amount_cents "
+                    f"FROM transactions WHERE id IN ({placeholders})",
+                    tx_ids,
+                ).fetchall()
+            for r in rows:
+                tx_map[int(r["id"])] = {
+                    "transaction_id": int(r["id"]),
+                    "counterparty": r["counterparty"],
+                    "booking_date": r["booking_date"],
+                    "amount": _from_cents(int(r["amount_cents"])),
+                }
+        items = [
+            {
+                "contribution_id": c.id,
+                "transaction_id": c.transaction_id,
+                "amount": _from_cents(c.amount_cents),
+                "source": c.source,
+                "created_at": c.created_at,
+                "transaction": tx_map.get(c.transaction_id),
+            }
+            for c in contributions
+        ]
+        progress = self._db.goal_progress(goal_id)
+        return {
+            "success": True,
+            "goal_id": goal_id,
+            "count": len(items),
+            "contributions": items,
+            "progress": progress,
+        }
+
+    # ------------------------------------------------------------------
+    # Goals / Sinking Funds (Finance SOTA Phase 2, 2026-09)
+    # Deterministisch: reine DB-Fakten + lineare Fortschritts-Projektion.
+    # ------------------------------------------------------------------
+
+    def _goal_dict(self, goal: Any) -> Dict[str, Any]:
+        """Goal-Datenklasse -> JSON-serialisierbarer Payload (Cents -> Betrag)."""
+        return {
+            "goal_id": goal.id,
+            "name": goal.name,
+            "iban": goal.iban,
+            "currency": goal.currency,
+            "target_amount": _from_cents(goal.target_cents),
+            "target_date": goal.target_date,
+            "monthly_rate": (
+                _from_cents(goal.monthly_rate_cents)
+                if goal.monthly_rate_cents is not None
+                else None
+            ),
+            "status": goal.status,
+            "notes": goal.notes,
+            "created_at": goal.created_at,
+            "updated_at": goal.updated_at,
+        }
+
+    def _goal_projection(self, goal: Any, progress: Dict[str, Any]) -> Dict[str, Any]:
+        """Deterministische Ziel-Projektion (Sinking-Fund-Tempo).
+
+        months_to_target = Restziel / Monatsrate (Ceiling, ganze Monate);
+        projected_month = heute + months_to_target (Kalenderarithmetik);
+        on_track = projected_month <= target_date (nur wenn beide gesetzt).
+        """
+        remaining = int(progress.get("remaining_cents") or 0)
+        rate = int(goal.monthly_rate_cents or 0)
+        if remaining <= 0:
+            months_to_target: Optional[int] = 0
+        elif rate > 0:
+            months_to_target = -(-remaining // rate)  # ceil, ganz
+        else:
+            months_to_target = None
+        projected_month: Optional[str] = None
+        if months_to_target is not None:
+            today = date.today()
+            total = (today.month - 1) + months_to_target
+            projected_month = f"{today.year + total // 12:04d}-{total % 12 + 1:02d}"
+        target_date = goal.target_date
+        on_track: Optional[bool] = None
+        if target_date and projected_month is not None:
+            on_track = projected_month[:7] <= target_date[:7]
+        return {
+            "months_to_target": months_to_target,
+            "projected_month": projected_month,
+            "on_track": on_track,
+        }
+
+    @staticmethod
+    def _coerce_money_amount(value: Any) -> Optional[float]:
+        """LLM-Parameter -> Float-Betrag (kein stiller Fallback, None bei Fehlschlag).
+
+        Akzeptiert Zahlen und Strings wie '1234.56', '1234,56',
+        '1.234,56' (de-Format) bzw. '1,234.56' (us-Format).
+        """
+        if isinstance(value, bool) or value is None:
+            return None
+        if isinstance(value, (int, float)):
+            return float(value)
+        text = str(value).strip().replace("<|\"|>", "").strip('"').strip("'")
+        text = text.replace(" ", "").replace("\u00a0", "")
+        if "," in text and "." in text:
+            if text.rfind(",") > text.rfind("."):
+                text = text.replace(".", "").replace(",", ".")
+            else:
+                text = text.replace(",", "")
+        elif "," in text:
+            text = text.replace(",", ".")
+        try:
+            return float(text)
+        except ValueError:
+            return None
+
+    def upsert_goal(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Erstellt oder aktualisiert ein Sparziel (Schluessel: name + iban)."""
+        name = str(params.get("name") or "").strip()
+        iban = _normalize_iban(str(params.get("iban") or ""))
+        if not name or not iban:
+            return {
+                "success": False,
+                "error": "name and iban are required",
+                "error_class": "missing_param",
+            }
+        target_amount = self._coerce_money_amount(params.get("target_amount"))
+        if target_amount is None or target_amount <= 0:
+            return {
+                "success": False,
+                "error": "target_amount must be a positive number (Betrag in der Wahrung)",
+                "error_class": "invalid_param",
+            }
+        monthly_rate = self._coerce_money_amount(params.get("monthly_rate"))
+        if params.get("monthly_rate") is not None and monthly_rate is None:
+            return {
+                "success": False,
+                "error": "monthly_rate must be a number >= 0",
+                "error_class": "invalid_param",
+            }
+        if monthly_rate is not None and monthly_rate < 0:
+            return {
+                "success": False,
+                "error": "monthly_rate must be >= 0",
+                "error_class": "invalid_param",
+            }
+        status = str(params.get("status") or "active").strip().lower()
+        if status not in VALID_GOAL_STATUSES:
+            return {
+                "success": False,
+                "error": f"status must be one of {sorted(VALID_GOAL_STATUSES)}",
+                "error_class": "invalid_param",
+            }
+        target_date = str(params["target_date"]).strip() if params.get("target_date") else None
+        currency = str(params["currency"]).strip().upper() if params.get("currency") else None
+        try:
+            goal_id = self._db.upsert_goal(
+                name=name,
+                iban=iban,
+                target_cents=_to_cents(target_amount),
+                currency=currency,
+                target_date=target_date,
+                monthly_rate_cents=_to_cents(monthly_rate) if monthly_rate is not None else None,
+                status=status,
+                notes=str(params["notes"]).strip() if params.get("notes") else None,
+            )
+        except ValueError as exc:
+            return {"success": False, "error": str(exc), "error_class": "invalid_goal"}
+        goal = self._db.get_goal(goal_id)
+        progress = self._db.goal_progress(goal_id)
+        return {
+            "success": True,
+            "goal_id": goal_id,
+            "goal": self._goal_dict(goal),
+            "progress": progress,
+            "projection": self._goal_projection(goal, progress),
+        }
+
+    def list_goals(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Liste aller Sparziele, optional nach Status und Konto gefiltert."""
+        status = str(params["status"]).strip().lower() if params.get("status") else None
+        if status is not None and status not in VALID_GOAL_STATUSES:
+            return {
+                "success": False,
+                "error": f"status must be one of {sorted(VALID_GOAL_STATUSES)}",
+                "error_class": "invalid_param",
+            }
+        iban = _normalize_iban(str(params["iban"])) if params.get("iban") else None
+        goals = self._db.list_goals(status=status, iban=iban)
+        items: List[Dict[str, Any]] = []
+        for goal in goals:
+            progress = self._db.goal_progress(goal.id)
+            items.append(
+                {
+                    "goal": self._goal_dict(goal),
+                    "progress": progress,
+                    "projection": self._goal_projection(goal, progress),
+                }
+            )
+        return {"success": True, "count": len(items), "goals": items}
+
+    def get_goal(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Detailansicht eines Sparziels inkl. Fortschritt und Projektion."""
+        goal_id = self._coerce_int_param(params.get("goal_id"))
+        if goal_id is None:
+            return {"success": False, "error": "goal_id required (int)", "error_class": "missing_param"}
+        goal = self._db.get_goal(goal_id)
+        if goal is None:
+            return {
+                "success": False,
+                "error": f"goal {goal_id} not found",
+                "error_class": "goal_not_found",
+            }
+        progress = self._db.goal_progress(goal_id)
+        return {
+            "success": True,
+            "goal": self._goal_dict(goal),
+            "progress": progress,
+            "projection": self._goal_projection(goal, progress),
+        }
+
+    # =================================================================
+    # Finance SOTA Phase 2: Ziel-Projektion + Kandidaten-Erkennung
+    # (deterministisch, kein Future-Leak, Referenzdatum explizit)
+    # =================================================================
+
+    def _history_rate_cents(
+        self, goal: "Goal", reference: date
+    ) -> Optional[int]:
+        """Durchschnittliche Monatsrate aus der Ziel-Beitrags-Historie.
+
+        Nur Buchungsmonate bis (inklusive) des Referenzmonats fließen ein
+        (kein Future-Leak); max. die letzten 12 Monate werden gemittelt.
+        ``None`` wenn keine Historie existiert.
+        """
+        monthly: Dict[Tuple[int, int], int] = {}
+        with self._db._connect() as conn:
+            rows = conn.execute(
+                "SELECT t.booking_date, gc.amount_cents "
+                "FROM goal_contributions gc "
+                "JOIN transactions t ON t.id = gc.transaction_id "
+                "WHERE gc.goal_id = ?",
+                (goal.id,),
+            ).fetchall()
+        for row in rows:
+            try:
+                tx_date = date.fromisoformat(str(row["booking_date"]))
+            except ValueError:
+                continue
+            key = (tx_date.year, tx_date.month)
+            if tx_date > reference:
+                continue  # nach Referenzdatum -> kein Future-Leak
+            monthly[key] = monthly.get(key, 0) + int(row["amount_cents"])
+        keys = sorted(monthly)
+        if not keys:
+            return None
+        recent = keys[-12:]
+        total = sum(monthly[key] for key in recent)
+        return int(round(total / len(recent)))
+
+    def project_goal(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Deterministische Ziel-Projektion (Finance SOTA Phase 2).
+
+        Projektion der Zielentwicklung aus dem Stand zum Referenzdatum
+        (``reference_date``, default heute; Beiträge NACH dem Referenzdatum
+        fließen nie ein) und der Sparrate -- Priorität:
+        ``rate`` (explizit) > geplante ``monthly_rate`` des Ziels >
+        Durchschnitt der Beitrags-Historie (max. 12 Monate). Liefert
+        Erreichbarkeits-Monat, verbleibende Monate, erforderliche Rate
+        für ``target_date``, On-/Off-Track und die Monats-Serie
+        (Horizon ``horizon_months``, 1-60, default 24).
+
+        Parameters
+        ----------
+        goal_id: Ziel-ID (int) -- ODER name + iban zur Auflösung
+        rate: optionale explizite Monatsrate (positiv, Zielwährung)
+        reference_date: 'YYYY-MM-DD' (default heute)
+        horizon_months: 1-60 (default 24)
+        """
+        goal_id = self._coerce_int_param(params.get("goal_id"))
+        name = str(params.get("name") or "").strip()
+        iban = _normalize_iban(str(params.get("iban") or ""))
+        if goal_id is None and not (name and iban):
+            return {
+                "success": False,
+                "error": "goal_id required (int) -- oder name + iban",
+                "error_class": "missing_param",
+            }
+        if goal_id is not None:
+            goal = self._db.get_goal(goal_id)
+        else:
+            goal = next(
+                (
+                    g
+                    for g in self._db.list_goals()
+                    if g.name == name and _normalize_iban(g.iban) == iban
+                ),
+                None,
+            )
+        if goal is None:
+            return {
+                "success": False,
+                "error": "goal not found",
+                "error_class": "goal_not_found",
+            }
+
+        try:
+            reference = self._parse_reference_date(params.get("reference_date"))
+        except ValueError as exc:
+            return {"success": False, "error": str(exc), "error_class": "invalid_reference_date"}
+
+        horizon = self._coerce_int_param(params.get("horizon_months"), default=24)
+        if horizon is None or not 1 <= int(horizon) <= 60:
+            return {
+                "success": False,
+                "error": "horizon_months must be 1..60",
+                "error_class": "invalid_param",
+            }
+        horizon = int(horizon)
+
+        # Referenzdatum-Fortschritt (deterministisch, kein Future-Leak)
+        progress = self._db.goal_progress_asof(goal.id, reference)
+        saved = int(progress["saved_cents"])
+        target = int(progress["target_cents"])
+        remaining = max(0, target - saved)
+
+        # Rate-Auflösung: explizit > geplant > Historie
+        rate_cents: Optional[int] = None
+        method = "none"
+        if params.get("rate") is not None:
+            rate_value = self._coerce_money_amount(params.get("rate"))
+            if rate_value is None or rate_value <= 0:
+                return {
+                    "success": False,
+                    "error": "rate must be a positive number",
+                    "error_class": "invalid_param",
+                }
+            rate_cents = _to_cents(rate_value)
+            method = "explicit"
+        elif goal.monthly_rate_cents is not None and int(goal.monthly_rate_cents) > 0:
+            rate_cents = int(goal.monthly_rate_cents)
+            method = "planned"
+        else:
+            history_cents = self._history_rate_cents(goal, reference)
+            if history_cents is not None and history_cents > 0:
+                rate_cents = history_cents
+                method = "history"
+
+        # Ziel-Termin-Bewertung (deterministisch)
+        overdue = False
+        months_until_target_date: Optional[int] = None
+        required_rate_for_target_date: Optional[float] = None
+        if goal.target_date:
+            target_date = date.fromisoformat(goal.target_date)
+            months_until_target_date = (
+                (target_date.year - reference.year) * 12
+                + (target_date.month - reference.month)
+            )
+            if target_date < reference:
+                overdue = True
+            else:
+                if remaining > 0:
+                    if months_until_target_date == 0:
+                        # Fällig diesen Monat: Restbetrag sofort erforderlich
+                        required_rate_for_target_date = round(_from_cents(remaining), 2)
+                    else:
+                        required_rate_for_target_date = round(
+                            _from_cents(int(round(remaining / months_until_target_date))),
+                            2,
+                        )
+
+        # Monats-Serie (deterministische Kettenfortschreibung)
+        series: List[Dict[str, Any]] = []
+        achieved_month: Optional[str] = reference.strftime("%Y-%m") if remaining == 0 else None
+        months_left_at_rate: Optional[int] = 0 if remaining == 0 else None
+        if rate_cents is not None and rate_cents > 0:
+            balance = saved
+            for step in range(1, horizon + 1):
+                key = self._next_month_key((reference.year, reference.month), step)
+                balance += rate_cents
+                month_label = f"{key[0]:04d}-{key[1]:02d}"
+                if balance >= target and achieved_month is None:
+                    achieved_month = month_label
+                series.append(
+                    {"month": month_label, "balance": round(_from_cents(balance), 2)}
+                )
+            if remaining > 0:
+                months_left_at_rate = int(math.ceil(remaining / rate_cents))
+
+        achieved_now = remaining <= 0
+        if goal.target_date and not overdue:
+            on_track: Optional[bool] = (
+                True
+                if achieved_now
+                else (achieved_month is not None and achieved_month <= goal.target_date[:7])
+            )
+        else:
+            on_track = None if not achieved_now else True
+
+        return {
+            "success": True,
+            "goal": self._goal_dict(goal),
+            "reference_date": reference.isoformat(),
+            "progress": progress,
+            "projection": {
+                "method": method,
+                "rate": round(_from_cents(rate_cents), 2) if rate_cents is not None else None,
+                "remaining": round(_from_cents(remaining), 2),
+                "target_amount": round(_from_cents(target), 2),
+                "currency": goal.currency or "EUR",
+                "achieved": achieved_now,
+                "achieved_month": achieved_month,
+                "months_left_at_rate": months_left_at_rate,
+                "target_date": goal.target_date,
+                "months_until_target_date": months_until_target_date,
+                "required_rate_for_target_date": required_rate_for_target_date,
+                "overdue": overdue,
+                "on_track": on_track,
+                "horizon_months": horizon,
+                "series": series,
+            },
+        }
+
+    def suggest_goal_candidates(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Deterministische Kandidaten-Erkennung für Sparziele (nur lesend).
+
+        Wiederkehrende Auszahlungen mit Periode > 45 Tage (halbjährliche,
+        jährliche, Spar-Übergänge), stabile Beträge (Variationskoeffizient
+        <= 15 %) und OHNE bestehende Ziel-Zuordnung werden als Kandidaten
+        vorgeschlagen. Monatliche Ausgaben sind KEINE Kandidaten (Phase-2-
+        Arbeitshypothesen DoD #5). Währungen werden nicht umgerechnet;
+        Aggregatsummen nur bei einheitlicher Währung.
+
+        Parameters
+        ----------
+        iban: optionales Konten-Filter (IBAN)
+        reference_date: 'YYYY-MM-DD' (default heute; spätere Buchungen
+            fließen nie ein)
+        min_occurrences: min. Vorkommen (default 3, min 2)
+        """
+        iban = _normalize_iban(str(params.get("iban") or "")) or None
+        try:
+            reference = self._parse_reference_date(params.get("reference_date"))
+        except ValueError as exc:
+            return {"success": False, "error": str(exc), "error_class": "invalid_reference_date"}
+        min_occurrences = self._coerce_int_param(params.get("min_occurrences"), default=3)
+        if min_occurrences is None or int(min_occurrences) < 2:
+            return {
+                "success": False,
+                "error": "min_occurrences must be >= 2",
+                "error_class": "invalid_param",
+            }
+        min_occurrences = int(min_occurrences)
+
+        facts, error = self._facts_up_to(iban, reference)
+        if error is not None:
+            return error
+        expenses = [fact for fact in facts if int(fact["amount_cents"]) < 0]
+        groups = self._recurring_groups(expenses, min_occurrences=min_occurrences)
+
+        assigned_ids = set(self._db.assigned_transaction_ids())
+        candidates: List[Dict[str, Any]] = []
+        for group in groups:
+            rows = sorted(
+                (
+                    fact
+                    for fact in expenses
+                    if fact["counterparty"] == group["counterparty"]
+                    and fact["currency"] == group["currency"]
+                ),
+                key=lambda fact: fact["booking_date"],
+            )
+            valid_dates: List[date] = []
+            for fact in rows:
+                try:
+                    valid_dates.append(date.fromisoformat(fact["booking_date"]))
+                except ValueError:
+                    continue
+            if len(valid_dates) < 2:
+                continue
+            gaps = [
+                (later - earlier).days
+                for earlier, later in zip(valid_dates, valid_dates[1:])
+                if (later - earlier).days > 0
+            ]
+            if not gaps:
+                continue
+            avg_period_days = sum(gaps) / len(gaps)
+            if avg_period_days <= 45:
+                continue  # monatlich/wöchentlich sind KEINE Spar-Kandidaten
+            amounts = [abs(_from_cents(int(fact["amount_cents"]))) for fact in rows]
+            average = mean(amounts)
+            if average <= 0:
+                continue
+            cv = pstdev(amounts) / average
+            if cv > 0.15:
+                continue  # unstabile Beträge (σ > 15 % von μ)
+            if any(int(fact["transaction_id"]) in assigned_ids for fact in rows):
+                continue  # bereits einem Ziel zugeordnet
+            candidates.append(
+                {
+                    "counterparty": group["counterparty"],
+                    "currency": group["currency"],
+                    "occurrences": len(rows),
+                    "average_period_days": round(avg_period_days, 1),
+                    "average_amount": round(average, 2),
+                    "amount_stability_cv": round(cv, 4),
+                    "monthly_equivalent": round(average / (avg_period_days / 30.44), 2),
+                    "annual_equivalent": round(average * 365.0 / avg_period_days, 2),
+                    "first_seen": valid_dates[0].isoformat(),
+                    "last_seen": valid_dates[-1].isoformat(),
+                    "already_assigned": False,
+                    "suggestion": (
+                        "Als Sparziel anlegen und diese Buchung je Periode "
+                        "dem Ziel zuordnen"
+                    ),
+                }
+            )
+        candidates.sort(key=lambda item: (-item["monthly_equivalent"], item["counterparty"]))
+        single_currency = len({item["currency"] for item in candidates}) == 1
+        return {
+            "success": True,
+            "method": "recurring_period_gt_45d_stable_unassigned",
+            "reference_date": reference.isoformat(),
+            "count": len(candidates),
+            "candidates": candidates,
+            "total_monthly_equivalent": (
+                round(sum(item["monthly_equivalent"] for item in candidates), 2)
+                if single_currency
+                else None
+            ),
+        }
 
     def expense_anomaly_detection(self, params: Dict[str, Any]) -> Dict[str, Any]:
         try:

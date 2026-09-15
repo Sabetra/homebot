@@ -42,6 +42,9 @@ _REFLECTOR_ACTIONS: tuple = (
     "retry_budget_vs_actual",
     "retry_savings_potential",
     "retry_expense_trend_break",
+    "retry_upcoming_bills",
+    "retry_cash_flow_forecast",
+    "retry_subscription_audit",
 )
 
 class FinanceContinuationDecision(BaseModel):
@@ -61,6 +64,9 @@ class FinanceContinuationDecision(BaseModel):
         "retry_budget_vs_actual",
         "retry_savings_potential",
         "retry_expense_trend_break",
+        "retry_upcoming_bills",
+        "retry_cash_flow_forecast",
+        "retry_subscription_audit",
     ]
     confidence: float = Field(ge=0.0, le=1.0)
     rationale: str = Field(min_length=1)
@@ -199,6 +205,9 @@ class FinanceQueryReflector:
             "- Waehle action=retry_budget_vs_actual, wenn ein Budget-vs-Ist-Vergleich ueber mehrere Monate gefragt ist.\n"
             "- Waehle action=retry_savings_potential, wenn nach Sparpotenzialen gefragt ist.\n"
             "- Waehle action=retry_expense_trend_break, wenn nach Trendbruch/Strukturbruch in Ausgaben gefragt ist.\n"
+            "- Waehle action=retry_upcoming_bills, wenn nach kommenden Faelligkeiten/Rechnungen/naechsten Abos gefragt ist.\n"
+            "- Waehle action=retry_cash_flow_forecast, wenn nach Cashflow-/Guthaben-Prognose oder Guthaben-Entwicklung gefragt ist.\n"
+            "- Waehle action=retry_subscription_audit, wenn nach Abo-/Recurring-Audit mit Kosten und Preisveraenderungen gefragt ist.\n"
             "- Wenn Ergebnisse auf truncation/sample hindeuten (z.B. truncated_possible=true, row_count==applied_limit, nicht aggregierte SQL), ist die Evidenz nicht vollstaendig -> nicht action=done.\n"
             "- Befuelle continuation_args immer mit den Argumenten fuer den naechsten Tool-Aufruf:\n"
             "    * Bei retry_search: {'query_text': '...', 'limit': 1000}\n"
@@ -213,6 +222,9 @@ class FinanceQueryReflector:
             "    * Bei retry_budget_vs_actual: {'start_month': 'YYYY-MM', 'end_month': 'YYYY-MM'}\n"
             "    * Bei retry_savings_potential: {'start_date': '...', 'end_date': '...'}\n"
             "    * Bei retry_expense_trend_break: {'start_date': '...', 'end_date': '...', 'min_history_months': 6}\n"
+            "    * Bei retry_upcoming_bills: {'days_ahead': 30, 'reference_date': 'YYYY-MM-DD'}\n"
+            "    * Bei retry_cash_flow_forecast: {'forecast_months': 6, 'lookback_months': 12, 'confidence_level': 0.8}\n"
+            "    * Bei retry_subscription_audit: {'reference_date': 'YYYY-MM-DD'}\n"
             "- Keine Keyword-Heuristiken; entscheide aus Frage + Tool-Evidenz + Schema-Kontext.\n"
             "- Beruecksichtige den Dialogkontext fuer Folgefragen.\n"
             "- Nutze nur verfuegbare Finance-Tools.\n\n"

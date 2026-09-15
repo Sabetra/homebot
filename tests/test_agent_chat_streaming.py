@@ -126,3 +126,50 @@ def test_stream_adapter_cancellation_never_completes() -> None:
     assert events[-1].partial_text == "Teil"
     assert not any(isinstance(event, RunCompleted) for event in events)
     assert logic.message_history == [{"role": "assistant", "content": "before"}]
+
+
+def test_chat_resets_stale_run_state_before_each_run() -> None:
+    """Regression (2026-09-12): Ein Run darf keinen `last_*`-Zustand aus dem
+    vorherigen Run erben — sonst landet z. B. die AgentTrace eines
+    PLAN_EXECUTE-Runs in der Telemetrie eines SIMPLE-Runs (beobachtet:
+    identische `trace_summary` in 3 Folge-Runs)."""
+    from agent.agent_types import AgentTrace
+
+    logic = AgentChatbotLogic.__new__(AgentChatbotLogic)
+    # Alter Zustand aus einem "früheren" Run:
+    logic.last_trace = AgentTrace(planner_ms=18032, tools_ms=151994)
+    logic.last_sources = [{"title": "stale-source"}]
+    logic.last_graphics = [{"type": "image"}]
+    logic.last_files = [{"name": "stale.py"}]
+    logic.last_followup_questions = ["stale?"]
+    # Kurze Antwort → Follow-Up-Post-Processing wird übersprungen.
+    logic._chat_core = lambda *args, **kwargs: "kurze Antwort"  # type: ignore[assignment]
+
+    logic.chat("Hallo")  # type: ignore[arg-type]
+
+    assert logic.last_trace is None
+    assert logic.last_sources == []
+    assert logic.last_graphics == []
+    assert logic.last_files == []
+
+
+def test_stream_completed_result_has_no_stale_trace() -> None:
+    """E2E: Stale-Trace aus dem Vor-Run darf nicht im RunCompleted-Result
+    auftauchen, wenn der aktuelle Pfad keine Trace erzeugt."""
+    from agent.agent_types import AgentTrace
+
+    logic = AgentChatbotLogic.__new__(AgentChatbotLogic)
+    logic.message_history = [{"role": "assistant", "content": "before"}]
+    logic.last_sources = []
+    logic.last_followup_questions = []
+    logic.last_trace = AgentTrace(planner_ms=999999, ran_tools=["stale_tool"])
+    logic.last_graphics = []
+    logic.last_files = []
+    logic._chat_core = lambda *args, **kwargs: "Antwort ohne Trace"  # type: ignore[assignment]
+
+    events = list(logic.stream_chat_events("Hallo", session_id="session-stale"))
+    terminal = events[-1]
+
+    assert isinstance(terminal, RunCompleted)
+    assert terminal.result.trace is None
+    assert terminal.result.sources == []

@@ -58,12 +58,17 @@ FINANCE_CORE: List[str] = [
 FINANCE_WRITE_TOOLS: List[str] = [
     "finance_apply_rules",
     "finance_assign_category",
+    "finance_assign_goal_contribution",
+    "finance_delete_goal",
     "finance_link_transfer",
     "finance_relink_transfers",
     "finance_repair_statement_header",
     "finance_set_budget",
+    "finance_set_goal_status",
     "finance_suggest_categories",
+    "finance_unassign_goal_contribution",
     "finance_unlink_transfer",
+    "finance_upsert_goal",
 ]
 
 # Spezialisierte Analyse-Tools (read-only) -- gehören zum Finance-Tab-Pool,
@@ -71,17 +76,25 @@ FINANCE_WRITE_TOOLS: List[str] = [
 FINANCE_ANALYTICS: List[str] = [
     "finance_aggregate",
     "finance_budget_vs_actual_analysis",
+    "finance_cash_flow_forecast",
     "finance_check_statement_import_completeness",
     "finance_cost_structure_analysis",
     "finance_detect_statement_settlement_gaps",
     "finance_expense_anomaly_detection",
     "finance_expense_trend_break_detection",
+    "finance_get_goal",
+    "finance_list_goal_contributions",
+    "finance_list_goals",
     "finance_list_rules",
     "finance_list_statements_with_incomplete_balances",
     "finance_list_transfer_candidates",
     "finance_list_transfer_links",
     "finance_recurring_expense_analysis",
+    "finance_project_goal",
     "finance_savings_potential_analysis",
+    "finance_suggest_goal_candidates",
+    "finance_subscription_audit",
+    "finance_upcoming_bills",
 ]
 
 FINANCE_READ_TOOLS: List[str] = FINANCE_CORE + FINANCE_ANALYTICS

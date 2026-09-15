@@ -94,6 +94,15 @@ def _format_eur(value: float) -> str:
     return f"{value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 
+def _format_price_change(change: Optional[dict]) -> str:
+    """Formatiert eine erkannte Preisveraenderung (alt -> neu, %)."""
+    if not change:
+        return "—"
+    pct = change.get("change_pct")
+    pct_text = f" ({pct:+.1f}%)" if isinstance(pct, (int, float)) else ""
+    return f"{_format_eur(float(change.get('old', 0.0)))} → {_format_eur(float(change.get('new', 0.0)))}{pct_text}"
+
+
 def _relink_transfers(db: FinanceDB, *, productive_window_days: int) -> int:
     return db.relink_all_transfers(max_days=productive_window_days)
 
@@ -584,6 +593,171 @@ def _render_analytics_tab(db: FinanceDB) -> None:
                 width='stretch',
                 hide_index=True,
             )
+
+
+def _render_forecast_tab(db: FinanceDB) -> None:
+    """Rendert den Prognosen-Sub-Tab (Phase 1 'Monarch-Core').
+
+    Schedule-first-Hybrid: deterministische wiederkehrende Zahlungen +
+    saisonale Residual-Prognose (Bootstrap-KI) + Guthaben-Projektion.
+    Alles lokal und deterministisch (FinanceTools, kein LLM).
+    """
+    st.subheader(_tr("finance_ui.forecast.subheader", "📈 Prognosen"))
+    accounts = db.list_accounts()
+    if not accounts:
+        st.info(_tr("finance_ui.forecast.empty", "Noch keine Daten. Bitte zuerst einen Auszug importieren."))
+        return
+
+    from finance.tools import FinanceTools
+
+    tools = FinanceTools(db)
+    all_accounts_label = _tr("finance_ui.forecast.all_accounts", "Alle Konten")
+    account_labels = [all_accounts_label] + [a.iban for a in accounts]
+    sel_label = st.selectbox(
+        _tr("finance_ui.forecast.account_label", "Konto"),
+        account_labels,
+        key="finance_forecast_account",
+    )
+    iban_filter = {"iban": sel_label} if sel_label != all_accounts_label else {}
+
+    col_a, col_b, col_c, col_d = st.columns(4)
+    forecast_months = int(col_a.slider(_tr("finance_ui.forecast.horizon", "Prognose-Horizont (Monate)"), 1, 24, 6, key="finance_forecast_horizon"))
+    lookback_months = int(col_b.slider(_tr("finance_ui.forecast.lookback", "Rückblick (Monate)"), 3, 36, 12, key="finance_forecast_lookback"))
+    confidence = float(col_c.slider(_tr("finance_ui.forecast.confidence", "Konfidenz"), 0.50, 0.99, 0.80, 0.01, key="finance_forecast_confidence"))
+    include_balance = bool(col_d.checkbox(_tr("finance_ui.forecast.include_balance", "Guthaben-Prognose"), value=True, key="finance_forecast_balance"))
+
+    forecast = tools.cash_flow_forecast(
+        {
+            "forecast_months": forecast_months,
+            "lookback_months": lookback_months,
+            "confidence_level": confidence,
+            "include_balance": include_balance,
+            **iban_filter,
+        }
+    )
+    if not forecast.get("success"):
+        st.error(_tr("finance_ui.forecast.error", "Prognose fehlgeschlagen: {error}", error=str(forecast.get("error") or "?")))
+        return
+
+    for note in forecast.get("notes") or []:
+        st.caption(note)
+
+    import plotly.graph_objects as go
+
+    balance_info = forecast.get("balance")
+    for result in forecast.get("results") or []:
+        currency = result.get("currency", "?")
+        months = result.get("months") or []
+        st.markdown(_tr("finance_ui.forecast.month_table", "#### Monats-Prognose ({currency})", currency=currency))
+        if not months:
+            st.caption(_tr("finance_ui.forecast.no_forecast", "Keine Währungsreihen für die Prognose verfügbar."))
+            continue
+        df = pd.DataFrame(
+            [
+                {
+                    _tr("finance_ui.forecast.col_month", "Monat"): m["month"],
+                    _tr("finance_ui.forecast.col_income", "Einnahmen"): _format_eur(m.get("income", 0.0)),
+                    _tr("finance_ui.forecast.col_recurring", "Wiederkehrend"): _format_eur(m.get("recurring", 0.0)),
+                    _tr("finance_ui.forecast.col_variable", "Variable Ausgaben"): _format_eur(m.get("variable", 0.0)),
+                    _tr("finance_ui.forecast.col_net", "Netto"): _format_eur(m.get("net", 0.0)),
+                    **({_tr("finance_ui.forecast.col_balance", "Guthaben"): _format_eur(m["balance"])} if "balance" in m else {}),
+                }
+                for m in months
+            ]
+        )
+        st.dataframe(df, width='stretch', hide_index=True)
+
+        if balance_info is not None and all("balance" in m for m in months):
+            x = [m["month"] for m in months]
+            balance_series = [m["balance"] for m in months]
+            low_series = [m.get("balance_low", m["balance"]) for m in months]
+            high_series = [m.get("balance_high", m["balance"]) for m in months]
+            start_balance = balance_info.get("start_balance")
+            if start_balance is not None:
+                x = [x[0]] + x
+                balance_series = [start_balance] + balance_series
+                low_series = [start_balance] + low_series
+                high_series = [start_balance] + high_series
+            fig = go.Figure()
+            fig.add_scatter(x=x, y=low_series, line=dict(width=0), hoverinfo="skip", showlegend=False)
+            fig.add_scatter(
+                x=x,
+                y=high_series,
+                mode="lines",
+                line=dict(width=0),
+                fill="tonexty",
+                fillcolor="rgba(52, 152, 219, 0.25)",
+                name=_tr("finance_ui.forecast.band", "Konfidenzband"),
+            )
+            fig.add_scatter(
+                x=x,
+                y=balance_series,
+                mode="lines+markers",
+                line=dict(color="#2c3e50", width=3),
+                name=_tr("finance_ui.forecast.balance", "Guthaben"),
+            )
+            fig.update_layout(height=340, margin=dict(l=10, r=10, t=40, b=10), legend=dict(orientation="h", yanchor="bottom", y=1.02))
+            fig.add_hline(y=0, line=dict(color="red", width=1, dash="dot"))
+            st.plotly_chart(fig, width='stretch')
+
+    _render_forecast_bills(tools, iban_filter)
+    _render_forecast_audit(tools, iban_filter)
+
+
+def _render_forecast_bills(tools: Any, iban_filter: dict) -> None:
+    """Kommende Faelligkeiten: Projektion der wiederkehrenden Fälligkeiten."""
+    st.markdown(_tr("finance_ui.forecast.bills_title", "### Kommende Fälligkeiten"))
+    window_days = int(st.slider(_tr("finance_ui.forecast.bills_window", "Fenster (Tage)"), 7, 180, 30, 7, key="finance_forecast_bills_window"))
+    bills = tools.upcoming_bills({"days_ahead": window_days, **iban_filter})
+    if not bills.get("success") or not bills.get("count"):
+        st.info(_tr("finance_ui.forecast.bills_empty", "Keine wiederkehrenden Zahlungen im gewählten Fenster."))
+        return
+    df = pd.DataFrame(
+        [
+            {
+                _tr("finance_ui.forecast.col_counterparty", "Gegenseite"): b["counterparty"],
+                _tr("finance_ui.forecast.col_due", "Fällig am"): b["next_due"],
+                _tr("finance_ui.forecast.col_days", "Tage"): b["days_until"],
+                _tr("finance_ui.forecast.col_amount", "Betrag"): _format_eur(b["amount"]),
+                _tr("finance_ui.forecast.col_currency", "Währung"): b["currency"],
+                _tr("finance_ui.forecast.col_category", "Kategorie"): b.get("category") or "—",
+                _tr("finance_ui.forecast.col_subscription", "Abo?"): "✅" if b.get("subscription_like") else "",
+            }
+            for b in bills["bills"]
+        ]
+    )
+    st.dataframe(df, width='stretch', hide_index=True)
+    if bills.get("total_in_window") is not None:
+        st.metric(_tr("finance_ui.forecast.bills_total", "Summe im Fenster"), _format_eur(bills["total_in_window"]))
+
+
+def _render_forecast_audit(tools: Any, iban_filter: dict) -> None:
+    """Abo-/Recurring-Audit: Kosten, Jahreskosten, Preisveraenderungen."""
+    st.markdown(_tr("finance_ui.forecast.audit_title", "### Abonnement- & Wiederkehrende-Audit"))
+    audit = tools.subscription_audit(dict(iban_filter))
+    if not audit.get("success") or not audit.get("count"):
+        st.info(_tr("finance_ui.forecast.audit_empty", "Keine wiederkehrenden Ausgaben erkannt."))
+        return
+    df = pd.DataFrame(
+        [
+            {
+                _tr("finance_ui.forecast.col_counterparty", "Gegenseite"): g["counterparty"],
+                _tr("finance_ui.forecast.col_category", "Kategorie"): g.get("category") or "—",
+                _tr("finance_ui.forecast.col_currency", "Währung"): g["currency"],
+                _tr("finance_ui.forecast.col_monthly", "Monatlich"): _format_eur(g["monthly_cost"]),
+                _tr("finance_ui.forecast.col_annual", "Jährlich"): _format_eur(g["annual_cost"]),
+                _tr("finance_ui.forecast.col_last", "Letzte Zahlung"): g["last_seen"],
+                _tr("finance_ui.forecast.col_price_change", "Preisänderung"): _format_price_change(g.get("price_change")),
+                _tr("finance_ui.forecast.col_subscription", "Abo?"): "✅" if g.get("subscription_like") else "",
+            }
+            for g in audit["groups"]
+        ]
+    )
+    st.dataframe(df, width='stretch', hide_index=True)
+    if audit.get("total_monthly") is not None and audit.get("total_annual") is not None:
+        col_t1, col_t2 = st.columns(2)
+        col_t1.metric(_tr("finance_ui.forecast.audit_total_monthly", "Monatsgesamt"), _format_eur(audit["total_monthly"]))
+        col_t2.metric(_tr("finance_ui.forecast.audit_total_annual", "Jahresgesamt"), _format_eur(audit["total_annual"]))
 
 
 # ---------------------------------------------------------------------------
@@ -1497,6 +1671,7 @@ def render_finance_tab() -> None:
             _tr("finance_ui.tabs.budgets", "🎯 Budgets"),
             _tr("finance_ui.tabs.transfers", "🔁 Transfers"),
             _tr("finance_ui.tabs.analytics", "📊 Auswertungen"),
+            _tr("finance_ui.tabs.forecast", "📈 Prognosen"),
             _tr("finance_ui.tabs.transactions", "📋 Buchungen"),
         ]
     )
@@ -1515,6 +1690,8 @@ def render_finance_tab() -> None:
     with sub_tabs[6]:
         _render_analytics_tab(db)
     with sub_tabs[7]:
+        _render_forecast_tab(db)
+    with sub_tabs[8]:
         _render_transactions_tab(db)
 
 

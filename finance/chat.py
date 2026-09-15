@@ -50,6 +50,12 @@ _FINANCE_SYSTEM_PROMPT = (
     "Sparpotenzial-Analysen.\n"
     "- Nutze finance_expense_trend_break_detection fuer strukturelle "
     "Trendbrueche in Ausgaben.\n"
+    "- Nutze finance_upcoming_bills fuer den Faelligkeits-Kalender kommender "
+    "wiederkehrender Rechnungen/Abos im naechsten Fenster.\n"
+    "- Nutze finance_cash_flow_forecast fuer Cashflow- und Guthaben-Prognosen "
+    "mit Konfidenzband (wiederkehrende Zahlungen als Plan + variable Anteile).\n"
+    "- Nutze finance_subscription_audit fuer Abo-/Recurring-Audits mit "
+    "Monats-/Jahreskosten und Preisveraenderungen.\n"
     "- Wenn der Nutzer eine tabellarische Auflistung einzelner Buchungen "
     "verlangt, nutze finance_query_transactions als Datenquelle fuer die Tabelle.\n"
     "- Wenn eine Frage nach Ausgaben/Kosten/Summen fragt, gib den Betrag als "
@@ -84,6 +90,9 @@ _FINANCE_CHAT_ROUTED_TOOLS: frozenset[str] = frozenset({
     "finance_budget_vs_actual_analysis",
     "finance_savings_potential_analysis",
     "finance_expense_trend_break_detection",
+    "finance_upcoming_bills",
+    "finance_cash_flow_forecast",
+    "finance_subscription_audit",
     "finance_query_transactions",
 })
 
@@ -104,6 +113,9 @@ _SIMPLE_RETRY_DISPATCH: Dict[str, str] = {
     "retry_budget_vs_actual": "finance_budget_vs_actual_analysis",
     "retry_savings_potential": "finance_savings_potential_analysis",
     "retry_expense_trend_break": "finance_expense_trend_break_detection",
+    "retry_upcoming_bills": "finance_upcoming_bills",
+    "retry_cash_flow_forecast": "finance_cash_flow_forecast",
+    "retry_subscription_audit": "finance_subscription_audit",
 }
 _INLINE_RETRY_DISPATCH: frozenset[str] = frozenset({
     "retry_search",
