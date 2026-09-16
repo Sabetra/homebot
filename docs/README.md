@@ -1,9 +1,9 @@
-<!-- last-verified: 2026-09-04 -->
+<!-- last-verified: 2026-09-16 -->
 
 # Dokumentation – Index (Konsolidiert)
 
 Zweck: Zentrale Übersicht aller aktuellen Projekt-Dokumentationen.
-Stand: 2026-08-20 (Doku-Audit)
+Stand: 2026-09-16 (Aktualitätsprüfung; Doku-Audit 2026-08-20)
 
 ---
 

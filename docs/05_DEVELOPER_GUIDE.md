@@ -1,5 +1,5 @@
 # 05 – Developer Guide
-<!-- last-verified: 2026-08-02 -->
+<!-- last-verified: 2026-09-16 -->
 
 > **Stand:** 2026-07-13 | **Consolidation Release 1.0**
 
@@ -76,7 +76,12 @@ streamlit run enhanced_streamlit_bot.py
 ## 3. Testing
 
 ### 3.1 Run Tests
+```powershell
+# Immer über das Projekt-venv (verbindlich, siehe AGENTS.md):
+powershell -ExecutionPolicy Bypass -File .\scripts\run_pytest_venv.ps1 tests/ -q --no-header -p no:cacheprovider
+```
 ```bash
+# Oder direkt im aktivierten venv:
 pytest tests/ -v
 pytest tests/ -k test_name --tb=short
 ```

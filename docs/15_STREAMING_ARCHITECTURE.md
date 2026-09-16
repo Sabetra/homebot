@@ -1,4 +1,4 @@
-<!-- last-verified: 2026-07-25 -->
+<!-- last-verified: 2026-09-16 -->
 # Chat-Streaming-Architektur
 
 > **Stand:** 2026-07-25 | **Status:** Implementiert und verifiziert

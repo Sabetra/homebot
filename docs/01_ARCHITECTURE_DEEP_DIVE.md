@@ -1,4 +1,4 @@
-<!-- last-verified: 2026-07-26 -->
+<!-- last-verified: 2026-09-16 -->
 # ARCHITECTURE DEEP DIVE
 
 > **Stand:** 2026-07-26 | **Consolidation Release 1.2**

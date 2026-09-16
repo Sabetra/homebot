@@ -353,8 +353,8 @@
 
 | Aspekt | Detail |
 |--------|--------|
-| **Zweck** | Fuehrt lesende SQLite-Abfragen sowie 37 exponierte Finance-Tools aus |
-| **Analysepfade** | Kategorie-/Gegenparteikosten, Kostenstruktur, wiederkehrende Ausgaben, Forecast, Anomalien, Budget-vs-Ist, Sparpotenzial, Trendbruch |
+| **Zweck** | Fuehrt lesende SQLite-Abfragen sowie 47 exponierte Finance-Tools aus (inkl. 10 Goals-Tools seit Phase 2, 2026-09-15) |
+| **Analysepfade** | Kategorie-/Gegenparteikosten, Kostenstruktur, wiederkehrende Ausgaben, Forecast, Anomalien, Budget-vs-Ist, Sparpotenzial, Trendbruch, Sparziele (Goals: Fortschritt, Projektion, Kandidaten) |
 | **Invarianten** | Signed integer cents intern; positive Ausgabenpraesentation; Transfers standardmaessig aus; Waehrungen getrennt |
 
 ### 7.8 `finance/chat.py` – Finance-Chat-Engine (~879 Zeilen)
