@@ -75,11 +75,11 @@ Determines best knowledge source:
 
 | Component | File | Lines | Status |
 |-----------|------|-------|--------|
-| ChangeDetector | `agent/change_detector.py` | ~800 | Production |
-| Docling-Parallel | `agent/docling_parallel.py` | ~750 | Production |
-| Multi-Modal RAG | `agent/multimodal_rag.py` | ~900 | Production |
-| StrixKAT Eval | `agent/strixkat_eval.py` | ~1100 | Production |
-| SOTA Pipeline | `agent/sota_pipeline.py` | ~950 | Production |
+| ChangeDetector | `agent/change_detector.py` | 709 | Production |
+| Docling-Parallel | `agent/docling_parallel.py` | 685 | Production |
+| Multi-Modal RAG | `agent/multimodal_rag.py` | 706 | Production |
+| StrixKAT Eval | `agent/strixkat_eval.py` | 1650 | Production |
+| SOTA Pipeline | `agent/sota_pipeline.py` | 580 | Production |
 
 ---
 

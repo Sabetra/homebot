@@ -1,4 +1,4 @@
-<!-- last-verified: 2026-09-12 -->
+<!-- last-verified: 2026-09-16 -->
 # Funktionen.md – Große & Komplexe Funktionen des Projekts
 
 > **Zweck:** Diese Datei fasst alle besonders großen/komplexen Funktionen zusammen, damit sie bei späteren Aufgaben schnell verstanden und bearbeitet werden können.
@@ -227,7 +227,7 @@
 
 ## 3. `agent/strixkat_eval.py` – Evaluation Pipeline
 
-### 3.1 `evaluate()` (~415 Zeilen, Zeile ~133-547)
+### 3.1 `StrixKATEval.evaluate()` (Zeile 853, ~63 Zeilen)
 **SOTA Evaluation-Pipeline.**
 
 | Aspekt | Detail |
@@ -241,15 +241,22 @@
 
 ## 4. `agent/sota_pipeline.py` – SOTA Pipeline
 
-### 4.1 `_run_pipeline_step()` (~398 Zeilen, Zeile ~171-568)
-**Pipeline-Step Execution.**
+**Datei:** `agent/sota_pipeline.py` (580 Zeilen) — dataclasses, kein Pydantic.
+**Zweck:** Verknüpft ChangeDetector, Docling-Parallel, Multi-Modal RAG und StrixKAT Eval zu einer durchgängigen, self-healing Pipeline.
+
+Flow: Quelle geändert (ChangeDetector) → PDF-Extraktion (Docling-Parallel) → Multi-Modal-Chunking (Multi-Modal RAG) → Indexierung (UnifiedRAGStore) → Qualitätsmessung (StrixKAT Eval) → Live oder Auto-Rollback.
+
+### 4.1 `SOTAPipeline.process_document()` (Zeile 229, ~82 Zeilen)
+**Dokumenten-Pipeline: Extraktion → Chunking → Indexierung → Evaluation.**
 
 | Aspekt | Detail |
 |--------|--------|
-| **Zweck** | Führt einen einzelnen Pipeline-Schritt aus (z.B. Retrieval, Generation, Verification) |
-| **Pipeline-Stages** | Retrieval → Generation → Verification → Post-Processing |
-| **Parallel** | Schritte können parallel via ThreadPool ausgeführt werden |
-| **Monitoring** | Jeder Schritt wird getimed + geloggt + gemessen |
+| **Zweck** | Verarbeitet ein einzelnes `PipelineDocument` durch die gesamte Pipeline |
+| **Flow** | Validate → Extract (Docling-Parallel via `run_in_executor`) → Chunk (Multi-Modal RAG, Fallback `_simple_chunk()`) → Index (`unified_rag_store.add_document()`) → Evaluate (StrixKAT, gedrosselt via `eval_interval_sec`) |
+| **Parallel** | `process_batch()` (Zeile 312) verarbeitet Dokumente parallel via `asyncio.gather` |
+| **Self-Healing** | `_run_evaluation()` (Zeile 358) ruft `StrixKAT.evaluate_full_pipeline()` auf; `overall_quality` < `quality_threshold` (Default 0.75) + `auto_rollback` → `_trigger_rollback()` (Zeile 397) → `rollback_to_last_good_state()` |
+| **Datenmodelle** | `PipelineDocument` (Zeile 33), `PipelineResult` (Zeile 48), `PipelineConfig` (Zeile 61) |
+| **Weitere API** | `eval_scheduler` (Zeile 208, lazy `EvalScheduler` + `EvalResultPersistence`), `scan_for_changes()` (421), `full_pipeline_run()` (455), `start_continuous_mode()` (519), `get_pipeline()`-Factory (567) |
 
 ---
 
@@ -489,7 +496,7 @@
 | Aspekt | Detail |
 |--------|--------|
 | **Zweck** | Erzwingt einen expliziten Persistenzvertrag (`AddMessageResult`) und liefert die tatsächlich verwendete Session-ID zurück |
-| **Existenzbeleg** | Direkte Abfrage von `psychological_sessions`; Manager-Cache ist nie autoritativ |
+| **Existenzbeleg** | Direkte Abfrage von `wellbeing_sessions`; Manager-Cache ist nie autoritativ |
 | **Recovery** | Rebind nur mit User-ID aus persistierter Zeile oder exakt gebundenem `SessionContext`; eine Session-ID wird nie als User-ID interpretiert |
 | **Caller-Invariante** | Handler müssen `success` prüfen und `session_id` vor jeder Folgeoperation in ihren Zustand übernehmen |
 | **Safety-Vertrag** | Nach einem User-Write enthält `AddMessageResult` `risk_level` und `safety_action` (`normal`, `probe`, `acute`). `probe` erscheint pro persistierter Safety-Episode höchstens einmal; frisches `acute` wird nie unterdrückt. Handler entscheiden nicht anhand von UI-State. |
@@ -520,7 +527,7 @@
 |--------|--------|
 | **Zweck** | Speichert verschlüsselte User-/Assistant-Interaktionen mit zeitgebundener Request-Deduplizierung sowie optionaler KG-Extraktion |
 | **Transaktion** | `BEGIN IMMEDIATE` serialisiert Parent-Check, Deduplizierung, Insert und Session-Timestamp-Update bis zum Commit |
-| **Integrität** | FK auf `psychological_sessions(id)` und Post-Insert-Invarianten; identische `(session, role, content_hash)`-Writes werden nur innerhalb von 30 Sekunden wiederverwendet |
+| **Integrität** | FK auf `wellbeing_sessions(id)` und Post-Insert-Invarianten; identische `(session, role, content_hash)`-Writes werden nur innerhalb von 30 Sekunden wiederverwendet |
 | **Nachlauf** | KG-Extraktion erfolgt erst nach Commit und nur für geeignete User-Nachrichten. Der Enhanced-Extractor akzeptiert kurze valide JSON-Objekte anhand einer `triples`-Liste statt einer Mindestlänge; `success=False`-Envelopes werden nicht geparst, sondern pro Chunk explizit in den lokalen Fallback geroutet. |
 
 ### 11.6 `wellbeing/wellbeing_db.py` – `delete_user_data()`
@@ -538,13 +545,13 @@
 |--------|--------|
 | **Mood** | Nur User-Turns schreiben Mood-Metadaten, aktualisieren `SessionContext.mood_trend` und triggern `MoodProgressionTracker`; dessen DB-Abfrage filtert zusätzlich `role='user'` |
 | **Treatment** | `_run_treatment_pipeline()` gibt das strukturierte `TurnResult` zurück; der Manager hält das letzte User-Turn-Ergebnis sessiongebunden für den Adapter bereit |
-| **Identität** | Response- und Session-Context-Builder akzeptieren ausschließlich die persistierte `psychological_sessions.user_id`; fehlende Identity ist ein expliziter Fehler |
+| **Identität** | Response- und Session-Context-Builder akzeptieren ausschließlich die persistierte `wellbeing_sessions.user_id`; fehlende Identity ist ein expliziter Fehler |
 
 ### 11.8 Insight-Auswahl und Korrektur-Lifecycle
 
 | Aspekt | Detail |
 |--------|--------|
-| **Schema-Owner** | `WellbeingDatabase` erstellt und migriert `psychological_insights`; Provider hängen nicht von einer vorherigen Extractor-Initialisierung ab |
+| **Schema-Owner** | `WellbeingDatabase` erstellt und migriert `wellbeing_insights`; Provider hängen nicht von einer vorherigen Extractor-Initialisierung ab |
 | **Auswahl** | `UserContextBuilder._select_hybrid_top_n()` kombiniert Provider-Evidenz, Confidence, Query-Relevanz, Wiederholungen und Recency deterministisch mit Typabdeckung |
 | **Korrekturen** | `correct_user_insight()` prüft `insight_id + user_id`, validiert Status und Replacement und schreibt Statusmutation sowie Auditzeile mit strikt verschlüsseltem Grund in einer Transaktion |
 | **Schutz** | Rejected/superseded Insights bleiben von Retrieval und Noisy-OR-Reextraktion ausgeschlossen; nur Menschen dürfen `rejected` reaktivieren, `superseded` bleibt terminal |
@@ -641,7 +648,7 @@
 
 ## 18. `agent/change_detector.py` – Change Detection
 
-**Datei:** `agent/change_detector.py` (662 Zeilen)
+**Datei:** `agent/change_detector.py` (709 Zeilen)
 **Zweck:** P3-2: CHANGE DETECTOR – RAG Quality Pipeline Component. Erkennt Änderungen an Quelldokumenten (PDFs, Docs, Finance DB, Web) mittels SHA-256-Hash-basierter Erkennung und watchdog-basiertem File Watching.
 
 ### Klassen
@@ -724,615 +731,195 @@
 - Integration mit async_startup_service.py
 - Thread-safe Operationen
 
+---
+
+## 19. `agent/multimodal_rag.py` – Multi-Modal RAG Chunking & Indexing
+
+**Zweck:** Content-typen-aware Chunking und Indexierung für multi-modale Inhalte (Text, Tabellen, Figuren, Formeln, Header, Code, Mixed) aus PDF-Dokumenten. Arbeitet eng mit `agent/docling_parallel.py` (Sektion 21) zusammen; die SOTA-Pipeline nutzt die Kompatibilitätsklasse `MultiModalRAG` (§19.4).
+
+**Datei:** `agent/multimodal_rag.py` (706 Zeilen) — dataclasses, kein Pydantic.
+
+### 19.1 Datenmodelle
+
+| # | Klasse / Enum | Zeile | Beschreibung |
+|---|---------------|-------|--------------|
+| 1 | `ContentType` (Enum) | 34 | 7 Mitglieder: `TEXT`, `TABLE`, `FIGURE`, `FORMULA`, `HEADER`, `CODE`, `MIXED` |
+| 2 | `TableStructure` (dataclass) | 48 | Strukturierte Tabelle: `table_id`, `columns`, `rows`, `caption`, Source; Properties `markdown_export` (Zeile 59) und `natural_language` (Zeile 75) |
+| 3 | `FigureDescription` (dataclass) | 92 | Figur/Diagramm: `figure_id`, `caption`, `description`, `alt_text`, Source; Property `index_content` (Zeile 103) |
+| 4 | `FormulaBlock` (dataclass) | 110 | Mathematische Formel: `latex`, Plain-Text-Alternative, `description`; Property `index_content` (Zeile 121) |
+| 5 | `MultiModalChunk` (dataclass) | 131 | Zentrales Chunk: `chunk_id`, `content_type`, `primary_content`, `source`, `page`, `metadata`, `hash`, `sub_chunks`, `cross_references`; Methode `to_vector_payload()` (Zeile 143) |
+
+### 19.2 `MultiModalChunker` (Zeile 160) – Chunking-Engine
+
+| # | Methode | Zeile | Zweck |
+|---|---------|-------|-------|
+| 1 | `__init__()` | 172 | Konfiguration: `chunk_size` (Default 1000), `chunk_overlap` (Default 200) |
+| 2 | `_next_chunk_id()` | 179 | Generiert eindeutige, source-basierte Chunk-IDs |
+| 3 | `chunk_text()` | 187 | Zerlegt Text in Chunks bei Satzgrenzen; nutzt `_split_large_text()` bei Überschreitung von `chunk_size` |
+| 4 | `_create_text_chunk()` | 209 | Erzeugt einen `MultiModalChunk` aus Text mit Metadaten (source, page, hash, timestamp) |
+| 5 | `_split_large_text()` | 220 | Split bei Satzgrenzen mit Overlap `max(1, n // 4)` Sätze (≈25 %) |
+| 6 | `_split_sentences()` | 254 | Satz-Splitting via Regex `(?<=[.!?])\s+(?=[A-Z\xC0-\xD6\xD8-\xDE])` (großes Initial oder Umlaut) |
+| 7 | `chunk_table()` | 266 | Haupt-Chunk (NL-Beschreibung) + Sub-Chunks (pro Zeile) + Markdown-Chunk; Cross-Referenzen |
+| 8 | `_row_to_sentence()` | 317 | Wandelt Tabellenzeile in natürlichsprachlichen Satz um |
+| 9 | `chunk_figure()` | 329 | Erzeugt `MultiModalChunk` für Figur mit `FigureDescription` |
+| 10 | `chunk_formula()` | 350 | Erzeugt `MultiModalChunk` für Formel mit `FormulaBlock` |
+| 11 | `chunk_mixed_content()` | 371 | Chunkt gemischte Sektionen (Text + Tabelle + Figur + Formel) aus Docling-Output |
+| 12 | `_link_cross_references()` | 419 | Verknüpft Chunks derselben Seite via `cross_references` |
+
+### 19.3 `MultiModalRAGIndex` (Zeile 437) – Index & Retrieval
+
+Index-Architektur: 5 parallele Indizes (Zeilen 448–453): `_index` (Haupt: `chunk_id` → Chunk), `_type_index` (`content_type` → Chunks), `_source_index` (Quelle → Chunks), `_page_index` (Seite → Chunks), `_hash_index` (SHA256-Hash → Chunk, Deduplizierung).
+
+| # | Methode | Zeile | Zweck |
+|---|---------|-------|-------|
+| 1 | `__init__()` | 448 | Initialisiert die 5 Indizes + `chunk_counter` |
+| 2 | `add_chunk()` | 459 | Fügt Chunk hinzu (Deduplizierung via SHA256-Hash); True/False bei Erfolg/Duplikat |
+| 3 | `add_chunks()` | 484 | Batch-Hinzufügen; liefert Anzahl neu hinzugefügter Chunks |
+| 4 | `remove_by_source()` | 492 | Löscht alle Chunks einer Quelle |
+| 5 | `get_chunk()` | 522 | O(1)-Abruf via `chunk_id` |
+| 6 | `get_by_source()` | 526 | Alle Chunks einer Quelle |
+| 7 | `get_by_type()` | 531 | Alle Chunks eines `ContentType` |
+| 8 | `get_by_page()` | 536 | Alle Chunks einer Seite |
+| 9 | `get_with_sub_chunks()` | 541 | Chunk + zugehörige Sub-Chunks (Tabellenzeilen) |
+| 10 | `expand_query()` | 555 | Cross-modale Query-Expansion: Text-Query → + "Tabelle", "Figur", "Formel"-Begriffe; optional `include_types`-Filter |
+| 11 | `stats()` | 588 | Statistik: total, pro Typ, pro Quelle, mit Sub-Chunks, Cross-Referenzen |
+| 12 | `clear()` | 604 | Leert alle 5 Indizes |
+
+### 19.4 `MultiModalRAG` (Zeile 613) – Pipeline-Kompatibilität
+
+| # | Element | Zeile | Beschreibung |
+|---|---------|-------|--------------|
+| 1 | `MultiModalRAG.__init__()` | 616 | Erbt von `MultiModalRAGIndex`; hält `MultiModalChunker` (Defaults: chunk_size 1000, overlap 200) |
+| 2 | `chunk_document()` | 629 | Chunkt Dokument in pipeline-kompatible Dicts via `chunker.chunk_text()` → `to_vector_payload()` |
+
+**Nutzung in der SOTA-Pipeline** (`agent/sota_pipeline.py`, 580 Zeilen): Lazy-Property `multimodal_rag` (Zeile 177) mit lazy Import `from .multimodal_rag import MultiModalRAG` (Zeile 180); `chunk_document()`-Aufruf an Zeile 261; Toggle `config.enable_multimodal` (Default `True`).
+
+### 19.5 Factory-Funktionen & Alias
+
+| # | Funktion / Alias | Zeile | Beschreibung |
+|---|------------------|-------|--------------|
+| 1 | `create_chunker()` | 649 | Factory: `MultiModalChunker` mit Defaults (chunk_size=1000, overlap=200) |
+| 2 | `create_index()` | 654 | Factory: leeres `MultiModalRAGIndex` |
+| 3 | `MultimodalRAG` (Alias) | 643 | Backwards-kompatibler Alias: `MultimodalRAG = MultiModalRAG` |
+
 ### SOTA Features
-- Thread-pool parallele Verarbeitung mit memory-aware Batch-Sizing
-- 2-stufiger PDF-Fallback: Docling -> pdfplumber (Root-Cause-Fix 2026-07-14: AdvancedPDFProcessor-Zweig entfernt — rief nie-existierendes `extract_text` und war zirkulär, da der Adapter selbst an Docling delegierte)
+- Content-type-aware Chunking (Text, Tabelle, Figur, Formel, Header, Code, Mixed)
+- Satzgrenzen-Splitting mit Overlap (`max(1, n // 4)` Sätze, ≈25 %)
+- Tabellen: NL-Beschreibung + Markdown-Export + Row-Sub-Chunks
+- 5-facher Index (Haupt, Typ, Quelle, Seite, Hash) für O(1)-Lookups
+- SHA256-basierte Deduplizierung
+- Cross-Reference-Verknüpfung zwischen Chunks derselben Seite
+- Cross-modale Query-Expansion (`expand_query`)
+
+---
+
+## 20. `wellbeing_session/lifecycle/session_lifecycle_manager.py` – Session Lifecycle
+
+**Zweck:** Session-Lifecycle-Manager für die Wellbeing-Support-Sessions: erstellt Sessions in SQLite, verfolgt den Status (active/paused/ended), extrahiert User-Insights und stellt UI-Dialoge für den Session-Abschluss bereit.
+
+### 20.1 Funktionen & Methoden
+
+| # | Funktion / Methode | Zeile | Beschreibung |
+|---|--------------------|-------|--------------|
+| 1 | `_tr(key, default, **kwargs)` | 26 | Helper: i18n-Übersetzung mit Fallback; nutzt `i18n.translate()` oder den Default-String mit `.format(**kwargs)` |
+| 2 | `_insight_type_label(insight_type)` | 38 | Helper: Label für Insight-Typ (z. B. `life_event` → "Lebensereignis", `coping_mechanism` → "Bewältigungsstrategie") |
+| 3 | `_resolve_db_path()` | 43 | Helper: Datenbank-Pfad zentral via `utils/db_path_resolver` (produktive DBs liegen unter dem `.db_root`-Ziel, nicht im Repo) |
+| 4 | `__init__()` | 60 | Initialisiert den `SessionLifecycleManager` |
+| 5 | `cleanup_orphaned_sessions_on_startup()` | 75 | Setzt überlebende "active"/"paused" Sessions aus vorherigen Läufen auf "ended"; liefert Tuple mit 3 Zählwerten |
+| 6 | `create_and_start_new_session(user_name)` | 96 | Erstellt neue Session (INSERT in `wellbeing_sessions`, Status "active"); setzt `current_session_id` im Memory |
+| 7 | `end_current_session(user_name, user_input, ai_response)` | 121 | Schließt Session (Status → "ended"), extrahiert Insights (INSERT in `wellbeing_insights`), speichert Interaktion (INSERT in `session_interactions`), zeigt UI-Dialog |
+| 8 | `_get_db_connection()` | 245 | Context-Manager für SQLite-Connection; WAL/Journal-Mode wird zentral in `database/connection_pool.py` konfiguriert |
+| 9 | `_end_session_fallback(session_id)` | 268 | Setzt Session auf "ended" bei Fehlerschritt (try/except-Log) |
+
+### SOTA Features
+- WAL/Journal-Mode via `database/connection_pool.py` (concurrent reads)
+- 3-Tabelle-Schema: `wellbeing_sessions`, `session_interactions`, `wellbeing_insights`
+- DB-Pfade ausschließlich via `utils/db_path_resolver` (produktive DBs unter `.db_root`, nicht im Repo)
+- i18n-Labels für Insight-Typen (DE/EN/BG)
+- Cleanup von orphaned Sessions bei Startup
+
+---
+
+## 21. `agent/docling_parallel.py` – Docling Parallel Processing
+
+**Zweck:** SOTA-Parallel-Dokumentenprozessor mit thread-pool-basierter Verarbeitung, memory-aware Batch-Sizing und 2-stufigem PDF-Fallback (Docling → pdfplumber).
+
+### 21.1 Klassen & Funktionen (`agent/docling_parallel.py`, 685 Zeilen)
+
+| # | Funktion / Klasse | Zeile | Beschreibung |
+|---|-------------------|-------|--------------|
+| 1 | `DocumentType` (Enum) | 51 | Typen: PDF, DOCX, TXT, MD, UNKNOWN |
+| 2 | `ProcessingStatus` (Enum) | 58 | PENDING, IN_PROGRESS, COMPLETED, FAILED, CANCELLED |
+| 3 | `DocumentChunk` (dataclass) | 66 | `chunk_id`, `content`, `chunk_type` (text/table/figure/formula/header), `page_number`, `metadata`, `embedding_ready`; `to_dict()` (Zeile 75) |
+| 4 | `ProcessingResult` (dataclass) | 86 | `file_path`, `status`, `chunks`, `error_message`, `processing_time_ms`, `document_type`, `page_count`, `hash_sha256`; Properties `success` (Zeile 98), `chunk_count` (Zeile 102); `to_dict()` (Zeile 105) |
+| 5 | `SystemConfig` (Klasse) | 121 | Dynamische Erkennung: `max_workers` (Zeile 124, `cpu_count`), `max_memory_mb` (psutil), `batch_size` (memory-aware, ~200 MB/PDF), `gpu_available` |
+| 6 | `DoclingParallelProcessor` (Klasse) | 172 | Zentrale Klasse |
+| 7 | `.__init__()` | 184 | `max_workers`, `batch_size` Parameter |
+| 8 | `.on_progress(callback)` | 201 | Registriert Progress-Callback |
+| 9 | `._fire_progress()` | 205 | Triggert Callback mit Status |
+| 10 | `.cancel_file()` | 218 | Setzt File auf CANCELLED |
+| 11 | `.cancel_all()` | 223 | Setzt alle Files auf CANCELLED |
+| 12 | `._get_executor()` | 232 | Lazy-Initialisierung ThreadPoolExecutor |
+| 13 | `.shutdown()` | 237 | Beendet Executor (wait=False) |
+| 14 | `._process_single_document()` | 247 | Haupt-Logik: Hash-Check, Typ-Erkennung, Prozessauswahl, Ergebnis-Speicherung |
+| 15 | `.process_single()` | 318 | Öffentliche API für einzelnes Dokument |
+| 16 | `._process_pdf()` | 339 | Dispatcher: Docling zuerst, Fallback auf pdfplumber |
+| 17 | `._process_pdf_docling()` | 346 | Docling-Verarbeitung (primärer Pfad) |
+| 18 | `._process_pdf_fallback()` | 402 | pdfplumber-Verarbeitung (Fallback) |
+| 19 | `._process_docx()` | 434 | python-docx mit Style-Erkennung |
+| 20 | `._process_text()` | 476 | Plaintext-Verarbeitung |
+| 21 | `._get_document_type()` | 501 | Erweiterungs-basierte Typ-Erkennung |
+| 22 | `._compute_hash()` | 513 | SHA256-Hash für Change-Detection |
+| 23 | `.process_batch()` | 524 | Synchron: verarbeitet Batch sequenziell |
+| 24 | `.process_batch_async()` | 568 | Asynchron: verarbeitet Batch parallel via ThreadPool |
+| 25 | `.scan_directory()` | 581 | Scannt Verzeichnis nach unterstützten Dateien |
+| 26 | `.get_status()` | 611 | Status aller Files |
+| 27 | `.get_results()` | 626 | Alle Ergebnisse |
+| 28 | `.get_successful_results()` | 631 | Nur erfolgreiche Ergebnisse |
+| 29 | `.reset_stats()` | 636 | Reset Counter |
+| 30 | `create_processor()` | 653 | Factory-Funktion |
+| 31 | `DoclingParallel` (Alias) | 685 | Backwards-kompatibler Alias: `DoclingParallel = DoclingParallelProcessor` |
+
+### SOTA Features
+- Thread-pool-parallele Verarbeitung mit memory-aware Batch-Sizing
+- 2-stufiger PDF-Fallback: Docling → pdfplumber (Root-Cause-Fix 2026-07-14: AdvancedPDFProcessor-Zweig entfernt — rief nie-existierendes `extract_text` und war zirkulär, da der Adapter selbst an Docling delegierte)
 - DOCX-Verarbeitung mit Style-Erkennung (Heading vs Text)
 - Progress-Callbacks und Cancellation-Support
 - SHA256-Hashing für Change-Detection
-- Async-Kompatibilität via run_in_executor
+- Async-Kompatibilität via `process_batch_async()`
 
 ---
 
-## Modul 21: agent/multimodal_rag.py
+## 22. `wellbeing_session/workflow/langgraph_real.py` – LangGraph Session Pipeline
 
-**Zweck:** Multi-modale Chunking- und Indexierungsbibliothek für RAG. Unterstützt Text, Tabellen, Figuren und Formeln als separate, abfragbare Einheiten mit Cross-Referenzen.
+**Zweck:** SOTA LangGraph-basierte StateGraph-Pipeline für die Wellbeing-Sessions mit 7 Nodes, conditional crisis-routing, Dependency-Injection und persistenter Checkpointer-Unterstützung (MemorySaver/SqliteSaver).
 
-### Data Models
-
-| Funktion / Klasse | Parameter | Rückgabe | Zusammenfassung |
-|---|---|---|---|
-| `ContentType` (Enum) | — | `text`, `table`, `figure`, `formula`, `mixed` | Enum zur Typisierung von Chunks. Jeder Typ wird im Index separat geführt. |
-| `MultiModalChunk` (Pydantic) | `chunk_id`, `source_file`, `primary_content`, `content_type`, `page_number?`, `metadata?`, `sub_chunks?`, `cross_references?`, `hash_sha256?` | — | Zentrales Chunk-Objekt. `to_vector_payload()` exportiert ein Dict für Embedding-Datenbanken. `sub_chunks` enthalten z.B. einzelne Tabellenzeilen. |
-
-### Chunker
-
-| Funktion | Parameter | Rückgabe | Zusammenfassung |
-|---|---|---|---|
-| `MultiModalChunker.__init__` | `chunk_size: int = 1000`, `chunk_overlap: int = 200`, `language: str = "de"` | — | Konfiguriert Chunk-Größe, Overlap und Sprache. |
-| `.chunk_text(text, source, page?)` | text, source, page? | `List[MultiModalChunk]` | Splittet Text an Satzgrenzen (`(?<=[.!?])\s+(?=[A-Z])`). Kleine Texte werden ganz zurückgegeben. |
-| `._split_large_text(text, source, page?)` | text, source, page? | `List[MultiModalChunk]` | Akkumuliert Sätze bis `chunk_size` erreicht; dann neuer Chunk mit 25% Overlap der letzten Sätze. |
-| `._split_sentences(text)` | text | `List[str]` | Regex-basierte Satzsegmentierung, die Abkürzungen teilweise respektiert. |
-| `.chunk_table(table: TableStructure)` | TableStructure | `List[MultiModalChunk]` | Erzeugt einen Haupt-Chunk (Natural-Language-Beschreibung) + Sub-Chunks pro Tabellenzeile + Markdown-Chunk. |
-| `._row_to_sentence(row, columns)` | row, columns | `str` | Konvertiert eine Tabellenzeile in "Spalte1: Wert1; Spalte2: Wert2". |
-| `.chunk_figure(figure: FigureDescription)` | FigureDescription | `MultiModalChunk` | Erzeugt einen Chunk aus `figure.index_content` mit Metadaten (caption, description). |
-| `.chunk_formula(formula: FormulaBlock)` | FormulaBlock | `MultiModalChunk` | Erzeugt einen Chunk aus `formula.index_content` mit LaTeX und Beschreibung. |
-| `.chunk_mixed_content(sections, source)` | `List[Dict]`, source | `List[MultiModalChunk]` | Iteriert über gemischte Sektionen (text/table/figure/formula) und ruft die passenden Chunker auf. Verlinkt Cross-Referenzen pro Seite. |
-| `._link_cross_references(chunks)` | chunks | — | Gruppiert Chunks nach Seite; jeder Chunk bekommt die IDs der anderen Chunks derselben Seite als `cross_references`. |
-
-### Index
-
-| Funktion | Parameter | Rückgabe | Zusammenfassung |
-|---|---|---|---|
-| `MultiModalRAGIndex.__init__` | — | — | Leere Indexe: `_index` ( Haupt-Dict), `_type_index`, `_source_index`, `_page_index`, `_hash_index`. |
-| `.add_chunk(chunk)` | MultiModalChunk | `bool` | Fügt Chunk hinzu; `False` bei Duplikat (gleiche chunk_id). Aktualisiert alle 5 Indexe. |
-| `.add_chunks(chunks)` | `List[MultiModalChunk]` | `int` | Fügt mehrere Chunks hinzu; gibt Anzahl neuer Chunks zurück. |
-| `.remove_by_source(source)` | source | `int` | Entfernt alle Chunks einer Quelle aus allen Indexen. |
-| `.get_chunk(chunk_id)` | chunk_id | `Optional[MultiModalChunk]` | Lookup by ID. |
-| `.get_by_source(source)` | source | `List[MultiModalChunk]` | Alle Chunks einer Datei. |
-| `.get_by_type(content_type)` | ContentType | `List[MultiModalChunk]` | Alle Chunks eines Typs. |
-| `.get_by_page(page)` | page | `List[MultiModalChunk]` | Alle Chunks einer Seite. |
-| `.get_with_sub_chunks(chunk_id)` | chunk_id | `Optional[Dict]` | Chunk mit expandierten Sub-Chunks als Vector-Payload. |
-| `.expand_query(query, include_types?)` | query, include_types? | `str` | Fügt kontextbezogene Suchbegriffe hinzu (z.B. "tabellarische Daten" bei Tabellentermen). |
-| `.stats()` | — | `Dict` | Statistik: total_chunks, by_type, sources, pages_indexed. |
-| `.clear()` | — | — | Löscht den gesamten Index. |
-
-### Compatibility Wrapper
-
-| Funktion | Parameter | Rückgabe | Zusammenfassung |
-|---|---|---|---|
-| `MultiModalRAG.__init__` | `chunk_size=1000`, `chunk_overlap=200`, `include_tables=True`, `include_diagrams=True`, `include_formulas=True`, `language="de"` | — | Erbt von `MultiModalRAGIndex` + hält `MultiModalChunker`. Wird von SOTA-Pipeline verwendet. |
-| `.chunk_document(content, metadata?)` | content, metadata? | `List[Dict]` | Chunkt Dokument in pipeline-kompatible Dicts via `chunker.chunk_text()` -> `to_vector_payload()`. |
-
-### Factory Functions
-
-| Funktion | Parameter | Rückgabe | Zusammenfassung |
-|---|---|---|---|
-| `create_chunker(chunk_size, chunk_overlap)` | chunk_size, chunk_overlap | `MultiModalChunker` | Factory für Standard-Chunker. |
-| `create_index()` | — | `MultiModalRAGIndex` | Factory für leeren Index. |
-
-### SOTA Features
-- 5 Indexe (Haupt, Typ, Quelle, Seite, Hash) für O(1)-Lookups
-- Hash-basierte Deduplizierung (SHA256)
-- Cross-Referenzen zwischen Chunks derselben Seite
-- Query-Expansion mit kontextbezogenen Suchbegriffen
-- Sub-Chunks für granulare Tabellenzeilen-Suche
-- Backwards-kompatible Aliase (`MultimodalRAG = MultiModalRAG`)
-
-### Modul: `agent/multimodal_rag.py` - Multi-Modal RAG Chunking & Indexing
-
-| # | Funktion/Klasse | Zeile | Beschreibung |
-|---|----------------|-------|-------------|
-| 1 | `ContentType` (Enum) | ~18 | Enum für Inhaltstypen: TEXT, TABLE, FIGURE, FORMULA |
-| 2 | `TableStructure` (dataclass) | ~27 | Strukturierte Tabelle mit ID, Spalten, Zeilen, Caption, Source-Tracking |
-| 3 | `TableStructure.index_content` (property) | ~52 | Generiert indexierbaren Text aus Tabellendaten |
-| 4 | `TableStructure.markdown_export` (property) | ~60 | Exportiert Tabelle als Markdown-String |
-| 5 | `TableStructure.natural_language` (property) | ~75 | Konvertiert Tabelle zu natürlichsprachiger Beschreibung |
-| 6 | `FigureDescription` (dataclass) | ~92 | Beschreibung einer Figur/Diagramms mit Caption, Description, Alt-Text |
-| 7 | `FigureDescription.index_content` (property) | ~103 | Generiert indexierbaren Text aus Figur-Beschreibung |
-| 8 | `FormulaBlock` (dataclass) | ~110 | Mathematische Formel mit LaTeX, Plain-Text, Description |
-| 9 | `FormulaBlock.index_content` (property) | ~121 | Generiert indexierbaren Text aus Formel |
-| 10 | `MultiModalChunk` (dataclass) | ~131 | Chunk mit multi-modalem Inhalt (Text, Tabelle, Figur, Formel) |
-| 11 | `MultiModalChunk.to_vector_payload()` | ~143 | Erstellt Payload-Dictionary für Vektor-Indexierung |
-| 12 | `MultiModalChunker.__init__()` | ~172 | Initialisiert Chunker mit chunk_size, overlap, language |
-| 13 | `MultiModalChunker.chunk_text()` | ~187 | Chunkt reinen Text mit Satzgrenzen-Erkennung |
-| 14 | `MultiModalChunker._split_large_text()` | ~220 | Splitet großen Text mit Overlap an Satzgrenzen |
-| 15 | `MultiModalChunker._split_sentences()` | ~254 | Splitet Text in Sätze (respektiert Abkürzungen) |
-| 16 | `MultiModalChunker.chunk_table()` | ~266 | Erstellt Chunks aus strukturierter Tabelle (NL + Markdown + Row-SubChunks) |
-| 17 | `MultiModalChunker.chunk_figure()` | ~329 | Erstellt Chunk für Figur/Diagramm |
-| 18 | `MultiModalChunker.chunk_formula()` | ~350 | Erstellt Chunk für mathematische Formel |
-| 19 | `MultiModalChunker.chunk_mixed_content()` | ~371 | Verarbeitet gemischten Inhalt (Text + Tabellen + Figuren + Formeln) |
-| 20 | `MultiModalChunker._link_cross_references()` | ~419 | Erstellt Cross-References zwischen Chunks derselben Seite |
-| 21 | `MultiModalRAGIndex.__init__()` | ~448 | Initialisiert Index mit Type/Source/Page/Hash-Indizes |
-| 22 | `MultiModalRAGIndex.add_chunk()` | ~459 | Fügt Chunk hinzu (False bei Duplikaten) |
-| 23 | `MultiModalRAGIndex.add_chunks()` | ~484 | Fügt multiple Chunks hinzu, gibt Anzahl neuer Chunks zurück |
-| 24 | `MultiModalRAGIndex.remove_by_source()` | ~492 | Entfernt alle Chunks einer Quelle |
-| 25 | `MultiModalRAGIndex.get_chunk()` | ~522 | Gibt Chunk nach ID zurück |
-| 26 | `MultiModalRAGIndex.get_by_source()` | ~526 | Gibt alle Chunks einer Quelle zurück |
-| 27 | `MultiModalRAGIndex.get_by_type()` | ~531 | Gibt alle Chunks eines bestimmten Typs zurück |
-| 28 | `MultiModalRAGIndex.get_by_page()` | ~536 | Gibt alle Chunks einer bestimmten Seite zurück |
-| 29 | `MultiModalRAGIndex.get_with_sub_chunks()` | ~541 | Gibt Chunk mit expandierten Sub-Chunks zurück |
-| 30 | `MultiModalRAGIndex.expand_query()` | ~555 | Erweitert Query um cross-modal Kontext (Table/Figure/Formula-Hints) |
-| 31 | `MultiModalRAGIndex.stats()` | ~588 | Gibt Index-Statistiken zurück |
-| 32 | `MultiModalRAGIndex.clear()` | ~604 | Leert den gesamten Index |
-| 33 | `MultiModalRAG.__init__()` | ~616 | Kompatibilitäts-Wrapper für SOTA-Pipeline |
-| 34 | `MultiModalRAG.chunk_document()` | ~629 | Chunkt Dokument in pipeline-freundliche Dictionaries |
-| 35 | `create_chunker()` | ~649 | Factory-Funktion: erstellt MultiModalChunker mit Defaults |
-| 36 | `create_index()` | ~654 | Factory-Funktion: erstellt leeren MultiModalRAGIndex |
-
-### SOTA Features
-- Content-type-aware Chunking (Text, Table, Figure, Formula)
-- Sentence-boundary splitting mit Overlap für kohärente Chunks
-- Cross-modal Query Expansion (Query-Hints basierend auf Inhaltstyp)
-- Hash-basierte Deduplizierung (SHA256)
-- Multi-Index-System (Type, Source, Page, Hash)
-- Sub-Chunk-Support für Tabellenzeilen
-- Cross-Reference-Linking zwischen Chunks derselben Seite
-
-<!-- Nächstes Modul: agent/strixkat_eval.py -->
-
-## 21. `agent/multimodal_rag.py` – Multi-Modal RAG Chunking & Indexing (~706 Zeilen)
-
-### Zweck
-Spezifisches Chunking und Indexieren für multi-modale Inhalte (Text, Tabellen, Figuren, Formeln) aus PDF-Dokumenten. Arbeit eng mit `docling_parallel.py` zusammen, um die von Docling extrahierten strukturierten Sektionen in vektor-datenbank-fähige Chunks zu verwandeln.
-
-### Datenmodelle
-
-| Nr. | Klasse / Enum | ~Zeile | Beschreibung |
-|-----|-------------|--------|-------------|
-| 1 | `ContentType` (enum) | ~30 | Enum für Inhaltstypen: `text`, `table`, `figure`, `formula` |
-| 2 | `TableStructure` | ~40 | Pydantic-Modell für Tabellendaten: `table_id`, `columns`, `rows`, `caption`, `source_file`, `page` |
-| 3 | `FigureDescription` | ~55 | Pydantic-Modell für Figuren: `figure_id`, `caption`, `description`, `source_file`, `page` |
-| 4 | `FormulaBlock` | ~68 | Pydantic-Modell für Formeln: `formula_id`, `latex`, `description`, `source_file`, `page` |
-| 5 | `MultiModalChunk` | ~80 | Zentrales Chunk-Modell: `chunk_id`, `content_type`, `primary_content`, `metadata`, `page_number`, `source_file`, `hash_sha256`, `cross_references`, `sub_chunks` |
-
-### `MultiModalChunk` Methoden
-
-| Nr. | Methode | ~Zeile | Beschreibung |
-|-----|---------|--------|-------------|
-| 6 | `MultiModalChunk.to_vector_payload()` | ~120 | Wandelt Chunk in Dictionary für Vektor-Datenbank um (content, metadata, embedding-ready) |
-| 7 | `MultiModalChunk.compute_hash()` | ~135 | Berechnet SHA256-Hash des primären Inhalts |
-| 8 | `MultiModalChunk.generate_id()` | ~142 | Generiert eindeutige Chunk-ID basierend auf Typ+Seite+Index |
-
-### `MultiModalChunker` Klasse (~200 Zeilen)
-
-| Nr. | Methode | ~Zeile | Beschreibung |
-|-----|---------|--------|-------------|
-| 9 | `MultiModalChunker.__init__()` | ~170 | Konfiguration: `chunk_size`, `chunk_overlap`, `language` |
-| 10 | `MultiModalChunker.chunk_text()` | ~185 | Chunkt reinen Text mit Overlap-Support (split by sentences/words) |
-| 11 | `MultiModalChunker.chunk_table()` | ~220 | Wandelt `TableStructure` in Chunks um: jede Zeile wird zu einem eigenen Chunk mit Spalten-Namen als Kontext |
-| 12 | `MultiModalChunker.chunk_figure()` | ~250 | Erzeugt Chunk aus `FigureDescription` (Caption + Description als Inhalt) |
-| 13 | `MultiModalChunker.chunk_formula()` | ~260 | Erzeugt Chunk aus `FormulaBlock` (LaTeX + Description als Inhalt) |
-| 14 | `MultiModalChunker.chunk_mixed_content()` | ~275 | Verarbeitet Liste von gemischten Sektionen (Text/Tabellen/Figuren/Formeln) und erstellt cross-references |
-| 15 | `MultiModalChunker._link_cross_references()` | ~419 | Erstellt Cross-References zwischen Chunks derselben Seite |
-
-### `MultiModalRAGIndex` Klasse (~170 Zeilen)
-
-| Nr. | Methode | ~Zeile | Beschreibung |
-|-----|---------|--------|-------------|
-| 16 | `MultiModalRAGIndex.__init__()` | ~448 | Initialisiert 5 Indizes: `_index` (Haupt), `_type_index`, `_source_index`, `_page_index`, `_hash_index` |
-| 17 | `MultiModalRAGIndex.add_chunk()` | ~459 | Fügt Chunk hinzu; gibt `False` bei Duplikaten (hash-basiert) |
-| 18 | `MultiModalRAGIndex.add_chunks()` | ~484 | Fügt mehrere Chunks hinzu; gibt Anzahl neuer Chunks zurück |
-| 19 | `MultiModalRAGIndex.remove_by_source()` | ~492 | Entfernt alle Chunks einer Quelle (säubert alle 5 Indizes) |
-| 20 | `MultiModalRAGIndex.get_chunk()` | ~522 | Gibt Chunk per ID zurück |
-| 21 | `MultiModalRAGIndex.get_by_source()` | ~526 | Gibt alle Chunks einer Quelle zurück |
-| 22 | `MultiModalRAGIndex.get_by_type()` | ~531 | Gibt alle Chunks eines Content-Typs zurück |
-| 23 | `MultiModalRAGIndex.get_by_page()` | ~536 | Gibt alle Chunks einer Seite zurück |
-| 24 | `MultiModalRAGIndex.get_with_sub_chunks()` | ~541 | Gibt Chunk mit expandierten Sub-Chunks zurück |
-| 25 | `MultiModalRAGIndex.expand_query()` | ~555 | Erweitert Query um cross-modal Kontext (Tabellen-/Figuren-/Formel-Terme erkennen) |
-| 26 | `MultiModalRAGIndex.stats()` | ~588 | Gibt Index-Statistiken zurück (total, by_type, sources, pages_indexed) |
-| 27 | `MultiModalRAGIndex.clear()` | ~604 | Leert den gesamten Index |
-
-### `MultiModalRAG` Klasse (~15 Zeilen)
-
-| Nr. | Methode | ~Zeile | Beschreibung |
-|-----|---------|--------|-------------|
-| 28 | `MultiModalRAG.__init__()` | ~616 | Erbt von `MultiModalRAGIndex`; erstellt `MultiModalChunker`; Flags für tables/diagrams/formulas |
-| 29 | `MultiModalRAG.chunk_document()` | ~629 | Pipeline-Wrapper: chunkt Dokument und gibt Liste von Dicts zurück |
-
-### Factory-Funktionen
-
-| Nr. | Funktion | ~Zeile | Beschreibung |
-|-----|----------|--------|-------------|
-| 30 | `create_chunker()` | ~649 | Erstellt `MultiModalChunker` mit Default-Settings (chunk_size=1000, overlap=200) |
-| 31 | `create_index()` | ~654 | Erstellt leeren `MultiModalRAGIndex` |
-
-### Kompatibilitäts-Aliase
-- `MultimodalRAG = MultiModalRAG` (Zeile ~643) – für case-insensitive Imports im Codebase
-
-### SOTA Features
-- 5-facher Index (Haupt + Typ + Quelle + Seite + Hash) für O(1)-Lookup
-- Hash-basierte Deduplizierung verhindert doppelte Chunks
-- Cross-Reference-Verknüpfung zwischen Chunks derselben Seite
-- Query-Expansion erkennt kontextuelle Hinweise (Tabellen/Figuren/Formeln)
-- Content-Type-Filterung für gezielte Retrieval-Szenarien
-- Vollständige Pydantic-V2-Modelle für Typ-Sicherheit
-
-### agent/multimodal_rag.py
+### 22.1 Klassen & Funktionen (`wellbeing_session/workflow/langgraph_real.py`)
 
 | # | Funktion / Klasse | Zeile | Beschreibung |
-|---|---|---|---|
-| 1 | `ContentType` (Enum) | ~52 | Inhaltstypen: TEXT, TABLE, FIGURE, FORMULA, HEADER, CODE, MIXED |
-| 2 | `TableStructure` (dataclass) | ~61 | Strukturierte Tabellendaten mit ID, Spalten, Zeilen, Caption, Markdown-Export und Natural-Language-Darstellung |
-| 3 | `TableStructure.markdown_export` (property) | ~78 | Generiert Markdown-Tabelle aus columns + rows |
-| 4 | `TableStructure.natural_language` (property) | ~85 | Erstellt Natural-Language-Beschreibung der Tabellendaten (pro Zeile einen Satz) |
-| 5 | `TableStructure.index_content` (property) | ~93 | Kombiniert caption + description + natural_language für Vector-Indexierung |
-| 6 | `FigureDescription` (dataclass) | ~99 | Beschreibung von Abbildungen/Diagrammen mit ID, Caption, Description, Alt-Text, Source |
-| 7 | `FigureDescription.index_content` (property) | ~103 | Kombiniert caption + description + alt_text für Indexierung |
-| 8 | `FormulaBlock` (dataclass) | ~110 | Mathematische Formeln mit LaTeX, Plain-Text-Alternative und Beschreibung |
-| 9 | `FormulaBlock.index_content` (property) | ~121 | Kombiniert description + plain_text (oder latex) für Indexierung |
-| 10 | `MultiModalChunk` (dataclass) | ~131 | Chunk mit mehreren Inhaltstypen: chunk_id, source, primary_content, content_type, page, metadata, hash, sub_chunks, cross_references |
-| 11 | `MultiModalChunk.to_vector_payload()` | ~143 | Erstellt Dictionary-Payload für Vector-Indexierung (chunk_id, content, content_type, source, page, metadata, hash, cross_refs) |
-| 12 | `MultiModalChunker.__init__()` | ~172 | Initialisiert Chunker mit chunk_size, chunk_overlap, language und internem Zähler |
-| 13 | `MultiModalChunker._next_chunk_id()` | ~179 | Generiert eindeutige Chunk-ID basierend auf Source-Datei und Zähler |
-| 14 | `MultiModalChunker.chunk_text()` | ~187 | Chunkt Plain-Text mit Sentence-Boundary-Splitting; bei kleinem Text direkter Return, sonst _split_large_text |
-| 15 | `MultiModalChunker._create_text_chunk()` | ~209 | Erstellt MultiModalChunk aus Text mit SHA256-Hash |
-| 16 | `MultiModalChunker._split_large_text()` | ~220 | Splitet großen Text an Satzgrenzen mit Overlap (25% der aktuellen Sätze als Overlap) |
-| 17 | `MultiModalChunker._split_sentences()` | ~254 | Splitet Text an Satzgrenzen (Regex: .!? + Space + Uppercase), respektiert Unicode-Umlaute |
-| 18 | `MultiModalChunker.chunk_table()` | ~266 | Erstellt Chunks aus TableStructure: Haupt-Chunk (NL-Beschreibung) + Sub-Chunks (pro Zeile) + Markdown-Chunk |
-| 19 | `MultiModalChunker._row_to_sentence()` | ~317 | Konvertiert Tabellenzeile in Natural-Language-Satz ("Spalte: Wert; Spalte: Wert") |
-| 20 | `MultiModalChunker.chunk_figure()` | ~329 | Erstellt Chunk für Abbildung/Diagramm mit Caption, Description als Metadaten |
-| 21 | `MultiModalChunker.chunk_formula()` | ~350 | Erstellt Chunk für mathematische Formel mit LaTeX und Beschreibung als Metadaten |
-| 22 | `MultiModalChunker.chunk_mixed_content()` | ~371 | Verarbeitet gemischte Inhalte (Text + Tabellen + Figuren + Formeln), ruft passende chunk_*-Methode pro Section auf |
-| 23 | `MultiModalChunker._link_cross_references()` | ~419 | Verknüpft Chunks derselben Seite als Cross-References (jeder Chunk kennt die anderen Chunk-IDs der Seite) |
-| 24 | `MultiModalRAGIndex.__init__()` | ~448 | Initialisiert leeren Index mit Hauptindex, Type-Index, Source-Index, Page-Index und Hash-Index |
-| 25 | `MultiModalRAGIndex.add_chunk()` | ~459 | Fügt Chunk hinzu; gibt False bei Duplikat (chunk_id existiert bereits); pflegt alle Indexe |
-| 26 | `MultiModalRAGIndex.add_chunks()` | ~484 | Fügt mehrere Chunks hinzu; gibt Anzahl neuer Chunks zurück |
-| 27 | `MultiModalRAGIndex.remove_by_source()` | ~492 | Entfernt alle Chunks einer Quelle aus allen Indexen; gibt Anzahl entfernter Chunks zurück |
-| 28 | `MultiModalRAGIndex.get_chunk()` | ~522 | Gibt Chunk nach chunk_id zurück |
-| 29 | `MultiModalRAGIndex.get_by_source()` | ~526 | Gibt alle Chunks einer Quelle zurück |
-| 30 | `MultiModalRAGIndex.get_by_type()` | ~531 | Gibt alle Chunks eines Content-Typs zurück |
-| 31 | `MultiModalRAGIndex.get_by_page()` | ~536 | Gibt alle Chunks einer bestimmten Seite zurück |
-| 32 | `MultiModalRAGIndex.get_with_sub_chunks()` | ~541 | Gibt Chunk mit expandierten Sub-Chunks als Dictionary zurück |
-| 33 | `MultiModalRAGIndex.expand_query()` | ~555 | Erweitert Query um Cross-Modal-Kontext: erkennt table/figure/formula-Terme und fügt deutsche Suchbegriffe hinzu |
-| 34 | `MultiModalRAGIndex.stats()` | ~588 | Liefert Index-Statistiken: total_chunks, by_type, sources, pages_indexed |
-| 35 | `MultiModalRAGIndex.clear()` | ~604 | Löscht den gesamten Index |
-| 36 | `MultiModalRAG.__init__()` | ~613 | Kompatibilitäts-Wrapper: erbt von MultiModalRAGIndex, enthält MultiModalChunker-Instanz |
-| 37 | `MultiModalRAG.chunk_document()` | ~629 | Chunkt Dokument-Inhalt in pipeline-freundliche Dictionaries (ruft chunker.chunk_text + to_vector_payload auf) |
-| 38 | `MultimodalRAG` (alias) | ~643 | Backwards-kompatibler Alias für MultiModalRAG |
-| 39 | `create_chunker()` | ~649 | Factory-Funktion: erstellt MultiModalChunker mit Default-Settings (chunk_size=1000, overlap=200) |
-| 40 | `create_index()` | ~654 | Factory-Funktion: erstellt leeren MultiModalRAGIndex |
+|---|-------------------|-------|--------------|
+| 1 | `WellbeingSessionState` (TypedDict) | 156 | State-Definition für die LangGraph-Pipeline |
+| 2 | `_DependencyRegistry` (Klasse) | 104 | Thread-sichere Dependency-Injection-Registry (register/get/clear pro `thread_id`) |
+| 3 | `get_dependency_registry()` | 147 | Singleton-Accessor für die `_DependencyRegistry` |
+| 4 | `_get_dep(state, key)` | 204 | Helper: liest Dependency aus State oder Registry |
+| 5 | `validate_input()` | 210 | Node: validiert User-Input |
+| 6 | `analyze_emotion()` | 259 | Node: Emotionsanalyse via `emotional_analyzer` (Zeile 271) |
+| 7 | `crisis_router()` | 302 | Conditional-Edge-Router: `crisis_response` oder `build_context` |
+| 8 | `crisis_response()` | 309 | Node: Krisen-Response (Fail-Open-Begleitung) |
+| 9 | `build_context()` | 354 | Node: baut Kontext via `context_builder` (Zeile 361) und `context_formatter` (Zeile 362) |
+| 10 | `generate_response()` | 396 | Node: LLM-Response via `langchain_model` (Zeile 407) / `chat_logic` (Zeile 427) |
+| 11 | `enhance_response()` | 448 | Node: Response-Enhancement |
+| 12 | `record_messages()` | 484 | Node: persistiert User- und Assistant-Nachricht via `session_manager` (Zeile 488) |
+| 13 | `build_langgraph_session_graph()` | 527 | Baut StateGraph: validate → analyze → crisis_router → (crisis_response) → build_context → generate → enhance → record |
 
 ### SOTA Features
-- Content-Type-aware Chunking: Text, Tabellen, Figuren, Formeln werden typ-spezifisch verarbeitet
-- Sentence-Boundary-Splitting mit Overlap für natürliche Textgrenzen
-- Tabellen werden als Natural-Language + Markdown + Row-Sub-Chunks indexiert
-- Cross-Reference-Verknüpfung zwischen Chunks derselben Seite
-- Query-Expansion: erkennt Inhaltstyp-Terme und erweitert um deutsche Suchbegriffe
-- SHA256-basierte Deduplizierung
-- Multi-Index-System: Hauptindex + Type-Index + Source-Index + Page-Index + Hash-Index
-
-<!-- Nächstes Modul: agent/strixkat_eval.py -->
-
-## Modul 21: `wellbeing_session/lifecycle/session_lifecycle_manager.py`
-
-### Überblick
-Session-Lifecycle-Manager für psychologische Support-Sessions: erstellt Sessions in SQLite, verfolgt Status (active/paused/ended), extrahiert User-Insights und stellt UI-Dialoge für Session-Abschluss bereit.
-
-### Klassen & Funktionen
-
-| # | Funktion/Klasse | Zeile | Beschreibung |
-|---|----------------|-------|-------------|
-| 1 | `_tr(key, default, **kwargs)` | ~30 | Helper: i18n-Translation mit Fallback; nutzt `i18n.translate()` oder default-String mit `.format(**kwargs)` |
-| 2 | `_insight_type_label(insight_type)` | ~46 | Helper: gibt deutschen Label fuer Insight-Typ zurueck (life_event→"Lebensereignis", coping_mechanism→"Bewaeltigungsstrategie", etc.) |
-| 3 | `_resolve_db_path()` | ~68 | Löst Datenbank-Pfad via `DbPathResolver` (fallback: `data/psychological_sessions.db`) |
-| 4 | `SessionLifecycleManager.__init__()` | ~80 | Initialisiert mit `db_path`, `session_manager`-Referenz und Logger |
-| 5 | `SessionLifecycleManager._get_db_connection()` | ~90 | Context-Manager: öffnet SQLite-Connection mit WAL-Mode + Foreign-Keys; committed/rollback in try/finally |
-| 6 | `SessionLifecycleManager.cleanup_orphaned_sessions_on_startup()` | ~110 | Markiert alle `active` Sessions als `ended` deren `end_time` NULL ist und >24h alt; verhindert Waisen-Sessions nach Crash |
-| 7 | `SessionLifecycleManager.create_and_start_new_session()` | ~145 | Erstellt neue Session in DB: generiert UUID, speichert `start_time`, `status='active'`; zeigt UI-Info-Box; gibt session_id zurueck (None bei Fehler) |
-| 8 | `SessionLifecycleManager.end_current_session()` | ~228 | Beendet Session mit vollem UI-Dialog: Checkbox fuer Insight-Extraktion, Info-Button, Abbrechen/Bestaetigen-Buttons; ruft `extract_insights_func` auf; zeigt erkannte Insights mit Icon + Konfidenz; resettet Session-State; triggert `_end_session_fallback` + `st.rerun()` |
-| 9 | `SessionLifecycleManager._end_session_fallback()` | ~351 | Fallback: stellt sicher dass Session in DB als `ended` markiert ist (UPDATE mit COALESCE für end_time) |
-
-### Wichtige Details
-
-**Session-DB-Schema:**
-- Tabelle: `psychological_sessions`
-- Spalten: `id` (UUID), `start_time`, `end_time`, `status` (active/paused/ended), `updated_at`
-- WAL-Mode fuer concurrent reads
-
-**Insight-Typen und Icons:**
-| Typ | Icon | Label |
-|-----|------|-------|
-| `life_event` | 🎯 | Lebensereignis |
-| `coping_mechanism` | 🛠️ | Bewaeltigungsstrategie |
-| `personality` / `personality_trait` | 🧩 | Persoenlichkeit |
-| `behavioral_pattern` | 🔄 | Verhaltensmuster |
-| `emotional_state` | 💭 | Emotionaler Zustand |
-| `relationship_dynamic` | 👥 | Beziehungsdynamik |
-| `cognitive_pattern` | 💡 | Kognitives Muster |
-
-**UI-Flow (end_current_session):**
-1. Trennlinie + Header "Session-Abschluss"
-2. Spalten-Layout: Checkbox (Insights) | Info-Button
-3. Expandable Info-Text wenn Info-Button gedrueckt
-4. Zwei Buttons: "Zurueck zur Session" (Abbrechen) | "Session jetzt beenden" (Bestaetigen)
-5. Bei Bestaetigung: optional Insights extrahieren → Ergebnisse anzeigen → Session in DB beenden → Session-State resetten → `st.rerun()`
-
-**Error-Handling:**
-- Jeder Schritt in try/except mit Logger + `st.error()` / `st.info()` Feedback
-- Fallback-Methode stellt sicher dass Session auch bei UI-Fehlern in DB beendet wird
-
-<!-- Nächstes Modul: agent/multimodal_rag.py -->
+- LangGraph StateGraph (kein handgefertigter State-Machine-Code)
+- Conditional-Edge-Router für Krisen-Pfad (Fail-Open-Begleitung, 2026-08-20)
+- Dependency-Injection via `_DependencyRegistry` (keine Globals, thread-sicher)
+- TypedDict-State (`WellbeingSessionState`) für saubere Typisierung
+- Persistente Checkpointer-Unterstützung (MemorySaver/SqliteSaver)
 
 ---
-
-## Modul 21: `agent/multimodal_rag.py`
-
-### Überblick
-Multimodales RAG-Chunking- und Indexing-System mit Unterstützung für Text, Tabellen, Abbildungen und Formeln. Bietet strukturierte Chunk-Erzeugung aus gemischtem Dokumenteninhalt sowie einen mehrdimensionalen Index mit Deduplizierung via SHA256-Hashing.
-
-### Klassen & Funktionen
-
-| # | Funktion/Klasse | Zeile | Beschreibung |
-|---|----------------|-------|-------------|
-| 1 | `ContentType` (enum) | ~15 | Enum für Inhaltstypen: TEXT, TABLE, FIGURE, FORMULA, CODE |
-| 2 | `MultiModalChunk` (dataclass) | ~28 | Repräsentiert einen multimodalen Chunk mit chunk_id, content_type, primary_content, source_file, page_number, hash_sha256, sub_chunks, metadata, timestamp |
-| 3 | `MultiModalChunk.to_vector_payload()` | ~60 | Serialisiert Chunk zu Dictionary für Vector-Store (embeddings-fähig) |
-| 4 | `MultiModalChunk.from_dict()` | ~75 | Deserialisiert Chunk aus Dictionary (Classmethod) |
-| 5 | `MultiModalChunker.__init__()` | ~95 | Initialisiert Chunker mit chunk_size, chunk_overlap, language |
-| 6 | `MultiModalChunker.chunk_text()` | ~108 | Chunkt reinen Text mit Overlap-Support (sentence-splitting) |
-| 7 | `MultiModalChunker._split_sentences()` | ~130 | Split Text in Sätze (sprachsensitiv: `.`, `!`, `?`, `。`, `？`) |
-| 8 | `MultiModalChunker.chunk_mixed_content()` | ~155 | Chunkt gemischten Inhalt (Liste von Sektionen mit type, content, table, figure, formula) |
-| 9 | `MultiModalChunker._chunk_table()` | ~195 | Chunkt Tabellen-Daten: erzeugt Textrepräsentation + Metadaten |
-| 10 | `MultiModalChunker._chunk_figure()` | ~218 | Chunkt Abbildungen: extrahiert Caption + Description |
-| 11 | `MultiModalChunker._chunk_formula()` | ~235 | Chunkt Formeln: LaTeX-Content + Beschreibung |
-| 12 | `MultiModalChunker._generate_chunk_id()` | ~250 | Generiert eindeutige chunk_id via SHA256(source + page + type + content_hash) |
-| 13 | `MultiModalChunker._compute_hash()` | ~260 | Berechnet SHA256-Hash von Content für Deduplizierung |
-| 14 | `MultiModalRAGIndex.__init__()` | ~280 | Initialisiert leeren Index mit 5 internen Dictionaries |
-| 15 | `MultiModalRAGIndex.add_chunk()` | ~298 | Fügt einen Chunk hinzu; gibt False bei Duplikat |
-| 16 | `MultiModalRAGIndex.add_chunks()` | ~318 | Fügt mehrere Chunks hinzu; gibt Anzahl neuer Chunks zurück |
-| 17 | `MultiModalRAGIndex.remove_by_source()` | ~328 | Entfernt alle Chunks einer Quelle; pflegt alle Indices konsistent |
-| 18 | `MultiModalRAGIndex.get_chunk()` | ~365 | Gibt Chunk by ID zurück |
-| 19 | `MultiModalRAGIndex.get_by_source()` | ~370 | Gibt alle Chunks einer Quelle zurück |
-| 20 | `MultiModalRAGIndex.get_by_type()` | ~378 | Gibt alle Chunks eines Typs zurück |
-| 21 | `MultiModalRAGIndex.get_by_page()` | ~386 | Gibt alle Chunks einer Seite zurück |
-| 22 | `MultiModalRAGIndex.get_with_sub_chunks()` | ~394 | Gibt Chunk mit expandierten Sub-Chunks zurück |
-| 23 | `MultiModalRAGIndex.expand_query()` | ~410 | Erweitert Query um cross-modale Kontext-Hinweise (Tabelle, Abbildung, Formel) |
-| 24 | `MultiModalRAGIndex.stats()` | ~445 | Gibt Index-Statistiken zurück (total, by_type, sources, pages_indexed) |
-| 25 | `MultiModalRAGIndex.clear()` | ~460 | Löscht den gesamten Index |
-| 26 | `MultiModalRAG.__init__()` | ~472 | Kompatibilitäts-Wrapper für SOTA-Pipeline; initialisiert Chunker + Index |
-| 27 | `MultiModalRAG.chunk_document()` | ~490 | Chunkt Dokument in pipeline-fähige Dictionaries |
-| 28 | `create_chunker()` | ~649 | Factory-Funktion: erstellt MultiModalChunker mit Default-Settings |
-| 29 | `create_index()` | ~654 | Factory-Funktion: erstellt leeren MultiModalRAGIndex |
-| 30 | `MultimodalRAG` (alias) | ~643 | Kompatibilitäts-Alias für alte Import-Namen |
-
-### Index-Architektur
-Der `MultiModalRAGIndex` verwaltet 5 parallele Indizes:
-- `_index`: Haupt-Dictionary (chunk_id -> MultiModalChunk)
-- `_type_index`: content_type -> [chunk_ids]
-- `_source_index`: source_file -> [chunk_ids]
-- `_page_index`: page_number -> [chunk_ids]
-- `_hash_index`: sha256_hash -> chunk_id (für Deduplizierung)
-
-### Query-Expansion-Logik
-Die `expand_query()`-Methode erkennt kontextuelle Begriffe und fügt automatisch Suchhinweise hinzu:
-- **Tabellen-Begriffe**: "tabelle", "table", "daten", "data", "zahlen", "numbers", "werte", "values" → + "tabellarische Daten"
-- **Abbildungs-Begriffe**: "abbildung", "figure", "diagramm", "diagram", "grafik", "chart", "bild", "image" → + "Bildbeschreibung"
-- **Formel-Begriffe**: "formel", "formula", "gleichung", "equation", "berechnung", "calculation" → + "mathematische Formel"
-
-### SOTA Features
-- Multimodales Chunking: Text, Tabellen, Abbildungen, Formeln
-- 5-dimensionales Indexing (ID, Typ, Quelle, Seite, Hash)
-- Hash-basierte Deduplizierung (SHA256)
-- Konsistente Index-Pflege bei Löschoperationen
-- Query-Expansion für cross-modale Suche
-- Pipeline-kompatible Serialisierung (to_vector_payload / from_dict)
-
-<!-- Nächstes Modul: agent/strixkat_eval.py -->
-
-## 21. `agent/multimodal_rag.py` – Multi-Modal Chunking & RAG Index (~706 Zeilen)
-
-**Zweck:** Content-typen-aware Chunking und Indexierung für multi-modale Dokumente (Text, Tabellen, Figuren, Formeln).
-
-### Data Models
-
-| # | Klasse / Enum | Zeile | Zweck |
-|---|--------------|-------|-------|
-| 1 | `ContentType` (Enum) | ~36 | Text / Table / Figure / Formula – Typ-Klassifikation |
-| 2 | `ChunkSubType` (Enum) | ~48 | Paragraph / Sentence / Header / Cell / Caption / Label |
-| 3 | `MultiModalChunk` (dataclass) | ~57 | Chunk mit ID, Source, Content, Type, Page, SubChunks, Cross-References, Hash |
-| 4 | `TableStructure` (dataclass) | ~105 | Tabelle mit ID, Spalten, Zeilen, Caption, Markdown-Export, LaTeX-Export |
-| 5 | `FigureDescription` (dataclass) | ~128 | Figur mit ID, Caption, Description, Index-Content |
-| 6 | `FormulaBlock` (dataclass) | ~141 | Formel mit ID, LaTeX, Description, Index-Content |
-
-### `MultiModalChunk` – Wichtige Methoden
-
-| # | Methode | Zeile | Zweck |
-|---|---------|-------|-------|
-| 7 | `MultiModalChunk.to_vector_payload()` | ~82 | Wandelt Chunk in dictionary für Vector-DB um |
-| 8 | `MultiModalChunk.add_sub_chunk()` | ~95 | Fügt Sub-Chunk hinzu (z.B. Zellen einer Tabellenzeile) |
-
-### `TableStructure` – Wichtige Methoden
-
-| # | Methode | Zeile | Zweck |
-|---|---------|-------|-------|
-| 9 | `TableStructure.to_markdown()` | ~115 | Generiert Markdown-Tabelle |
-| 10 | `TableStructure.to_latex()` | ~123 | Generiert LaTeX-Tabellen-Code |
-
-### `MultiModalChunker` – Chunking-Engine
-
-| # | Methode | Zeile | Zweck |
-|---|---------|-------|-------|
-| 11 | `MultiModalChunker.__init__()` | ~172 | Konfiguration: chunk_size, overlap, language |
-| 12 | `MultiModalChunker.chunk_text()` | ~183 | Splitzt Text in Chunks mit Overlap; erkennt Headers (all-caps) und erstellt SubChunks |
-| 13 | `MultiModalChunker._split_with_overlap()` | ~214 | Splitzt Text in Segmente mit konfigurierbarem Overlap |
-| 14 | `MultiModalChunker._is_header()` | ~226 | Statisch: erkennt Header (all-caps, <=60 chars) |
-| 15 | `MultiModalChunker._next_chunk_id()` | ~230 | Generiert UUID-basierte Chunk-ID |
-| 16 | `MultiModalChunker.chunk_table()` | ~237 | Chunkt Tabelle: 1 Overview-Chunk + pro Zeile Row-Chunk + SubChunks für Zellen |
-| 17 | `MultiModalChunker._row_to_sentence()` | ~317 | Wandelt Tabellenzeile in natürlichsprachigen Satz um |
-| 18 | `MultiModalChunker.chunk_figure()` | ~329 | Erstellt Chunk für Figur/Diagramm |
-| 19 | `MultiModalChunker.chunk_formula()` | ~350 | Erstellt Chunk für mathematische Formel |
-| 20 | `MultiModalChunker.chunk_mixed_content()` | ~371 | Verarbeitet gemischten Content (Text+Tabellen+Figuren+Formeln) + Cross-References |
-| 21 | `MultiModalChunker._link_cross_references()` | ~419 | Verknüpft Chunks derselben Seite gegenseitig |
-
-### `MultiModalRAGIndex` – Index & Retrieval
-
-| # | Methode | Zeile | Zweck |
-|---|---------|-------|-------|
-| 22 | `MultiModalRAGIndex.__init__()` | ~448 | Initialisiert Haupt-Index + Type/Source/Page/Hash-Sub-Indizes |
-| 23 | `MultiModalRAGIndex.add_chunk()` | ~459 | Fügt Chunk hinzu; False bei Duplikat |
-| 24 | `MultiModalRAGIndex.add_chunks()` | ~484 | Fügt mehrere Chunks hinzu; gibt Anzahl neuer Chunks |
-| 25 | `MultiModalRAGIndex.remove_by_source()` | ~492 | Entfernt alle Chunks einer Quelle |
-| 26 | `MultiModalRAGIndex.get_chunk()` | ~522 | Chunk nach ID abrufen |
-| 27 | `MultiModalRAGIndex.get_by_source()` | ~526 | Alle Chunks einer Quelle |
-| 28 | `MultiModalRAGIndex.get_by_type()` | ~531 | Alle Chunks eines Content-Typs |
-| 29 | `MultiModalRAGIndex.get_by_page()` | ~536 | Alle Chunks einer Seite |
-| 30 | `MultiModalRAGIndex.get_with_sub_chunks()` | ~541 | Chunk mit expandierten SubChunks |
-| 31 | `MultiModalRAGIndex.expand_query()` | ~555 | Cross-modal Query-Expansion (Tabellen-/Figur-/Formel-Begriffe erkennen) |
-| 32 | `MultiModalRAGIndex.stats()` | ~588 | Index-Statistiken (Total, by_type, Sources, Pages) |
-| 33 | `MultiModalRAGIndex.clear()` | ~604 | Leert den gesamten Index |
-
-### `MultiModalRAG` – Pipeline-Kompatibilität
-
-| # | Methode | Zeile | Zweck |
-|---|---------|-------|-------|
-| 34 | `MultiModalRAG.__init__()` | ~616 | Erbt von MultiModalRAGIndex + hält MultiModalChunker |
-| 35 | `MultiModalRAG.chunk_document()` | ~629 | Chunkt Dokument und gibt pipeline-freundliche Dicts zurück |
-
-### Factory-Funktionen
-
-| # | Funktion | Zeile | Zweck |
-|---|----------|-------|-------|
-| 36 | `create_chunker()` | ~649 | Erstellt MultiModalChunker mit Default-Settings |
-| 37 | `create_index()` | ~654 | Erstellt leeren MultiModalRAGIndex |
-
-### SOTA Features
-- Content-typen-aware Chunking (Text, Table, Figure, Formula)
-- SubChunk-Hierarchie (Tabelle -> Zeilen -> Zellen)
-- Cross-Reference-Verknüpfung zwischen Chunks derselben Seite
-- Multi-Index (Type, Source, Page, Hash) für effizientes Retrieval
-- Cross-modal Query-Expansion
-- Hash-basierte Deduplizierung
-- Kompatibilitäts-Alias `MultimodalRAG` für bestehende Imports
-
-<!-- Nächstes Modul: agent/strixkat_eval.py -->
-
-## 19. `agent/multimodal_rag.py` – Multimodal RAG
-
-**Datei:** `agent/multimodal_rag.py` (706 Zeilen)
-**Zweck:** Multimodaler RAG-Store mit semantischem Chunking, Content-Fusion und Hybrid-Suche über Text-, Bild- und Code-Inhalte.
-
-### Datenstrukturen
-
-| # | Struktur | Zeile | Art | Zweck |
-|---|----------|-------|-----|-------|
-| 1 | `Chunk` | ~30 | dataclass | Repräsentiert einen Chunk mit ID, Content, Metadaten, Embedding |
-| 2 | `ContentCategory` | ~45 | Enum | Kategorien: TEXT, IMAGE, CODE, TABLE, MIXED |
-| 3 | `ContentFusionResult` | ~55 | dataclass | Ergebnis der Content-Fusion mit fused_text, sources, confidence |
-
-### Funktionen von `SemanticChunker`
-
-| # | Funktion | Zeile | Art | Parameter | Rückgabe | Zweck |
-|---|----------|-------|-----|-----------|----------|-------|
-| 1 | `__init__()` | ~70 | Constructor | `chunk_size`, `chunk_overlap`, `min_sentence_length` | - | Initialisiert Chunker mit Token-Limits |
-| 2 | `chunk_text()` | ~90 | Method | `text: str`, `source: str` | `List[Chunk]` | Zerlegt Text in semantische Chunks |
-| 3 | `chunk_mixed_content()` | ~130 | Method | `sections: List`, `source: str` | `List[Chunk]` | Chunking mixed Content (Text+Bild+Code) |
-| 4 | `stats` | ~180 | Property | - | `Dict` | Statistik über Chunk-Größen |
-
-### Funktionen von `ContentFusionEngine`
-
-| # | Funktion | Zeile | Art | Parameter | Rückgabe | Zweck |
-|---|----------|-------|-----|-----------|----------|-------|
-| 1 | `__init__()` | ~200 | Constructor | `similarity_threshold: float` | - | Initialisiert Fusion-Engine |
-| 2 | `fuse()` | ~215 | Method | `chunks: List[Chunk]` | `ContentFusionResult` | Fusioniert mehrere Chunks zu unified Text |
-| 3 | `_compute_weights()` | ~260 | Private | `chunks` | `List[float]` | Berechnet Gewichte basierend auf Relevanz |
-| 4 | `_merge_similar()` | ~290 | Private | `chunks`, `threshold` | `List[Chunk]` | Merge ähnliche Chunks |
-
-### Funktionen von `MultiModalRAG`
-
-| # | Funktion | Zeile | Art | Parameter | Rückgabe | Zweck |
-|---|----------|-------|-----|-----------|----------|-------|
-| 1 | `__init__()` | ~320 | Constructor | `index_path`, `embedding_dim`, `max_chunks` | - | Initialisiert Multimodal-RAG-Index |
-| 2 | `search()` | ~350 | Method | `query: str`, `top_k: int`, `category_filter` | `List[Chunk]` | Sucht im Index nach relevanten Chunks |
-| 3 | `retrieve()` | ~390 | Method | `query: str`, `top_k: int` | `ContentFusionResult` | Retrieve + Fusion in einem Schritt |
-| 4 | `add_chunks()` | ~430 | Method | `chunks: List[Chunk]` | `int` | Fügt Chunks hinzu, gibt Anzahl zurück |
-| 5 | `add_document()` | ~460 | Method | `file_path: str`, `metadata: Dict` | `int` | Dokument verarbeiten + indizieren |
-| 6 | `stats` | ~510 | Property | - | `Dict` | Index-Statistiken |
-| 7 | `clear()` | ~525 | Method | - | - | Leert den Index |
-
-### Modulebene
-
-| # | Funktion | Zeile | Zweck |
-|---|----------|-------|-------|
-| 1 | `compute_similarity()` | ~560 | Berechnet Kosinus-Ähnlichkeit zwischen zwei Vektoren |
-| 2 | `truncate_text()` | ~580 | Trunkiert Text auf maximale Token-Anzahl |
-
-### SOTA Features
-- Semantisches Chunking (nicht nur feste Größen)
-- Multimodale Unterstützung (Text, Bilder, Code, Tabellen)
-- Content-Fusion mit gewichteter Merge-Strategie
-- Persistenter Index (überlebt Restarts)
-
-<!-- Nächstes Modul: agent/docling_parallel.py -->
-
----
-
-## Modul 20: `agent/docling_parallel.py`
-
-### Überblick
-SOTA-Parallel-Dokumentenprozessor mit thread-pool basierter Verarbeitung, memory-aware Batch-Sizing, Progress-Callbacks, Cancellation-Support und Fallback auf Basis-Prozessor.
-
-### Klassen & Funktionen
-
-| # | Funktion/Klasse | Zeile | Beschreibung |
-|---|----------------|-------|-------------|
-| 1 | `DocumentType` (enum) | ~15 | Enum für Dokumenttypen: PDF, DOCX, TXT, MD, UNKNOWN |
-| 2 | `ProcessingStatus` (enum) | ~25 | Enum für Status: PENDING, IN_PROGRESS, COMPLETED, FAILED, CANCELLED |
-| 3 | `DocumentChunk` (dataclass) | ~35 | Repräsentiert einen Dokumenten-Abschnitt mit chunk_id, content, chunk_type, page_number, metadata |
-| 4 | `DocumentChunk.to_dict()` | ~75 | Serialisiert DocumentChunk zu Dictionary |
-| 5 | `ProcessingResult` (dataclass) | ~86 | Ergebnis der Verarbeitung eines Dokuments inkl. Status, Chunks, Fehler, Zeit, Hash |
-| 6 | `ProcessingResult.success` (property) | ~98 | Gibt True zurück wenn Status COMPLETED ist |
-| 7 | `ProcessingResult.chunk_count` (property) | ~102 | Gibt Anzahl der Chunks zurück |
-| 8 | `ProcessingResult.to_dict()` | ~105 | Serialisiert ProcessingResult zu Dictionary |
-| 9 | `SystemConfig` (class) | ~121 | Erkennt System-Kapazitäten und konfiguriert entsprechend |
-| 10 | `SystemConfig._detect_max_workers()` | ~130 | Erkennt CPU-Anzahl für Max-Worker |
-| 11 | `SystemConfig._detect_max_memory()` | ~136 | Erkennt verfügbaren RAM in MB (via psutil oder Default 50GB) |
-| 12 | `SystemConfig._calculate_batch_size()` | ~145 | Berechnet optimale Batch-Größe basierend auf verfügbarer Memory (~200MB/PDF) |
-| 13 | `SystemConfig._detect_gpu()` | ~152 | Prüft GPU-Verfügbarkeit via torch.cuda |
-| 14 | `SystemConfig.to_dict()` | ~160 | Serialisiert SystemConfig zu Dictionary |
-| 15 | `DoclingParallelProcessor.__init__()` | ~184 | Initialisiert Prozessor mit max_workers, batch_size, Locks, Callbacks, Stats |
-| 16 | `DoclingParallelProcessor.on_progress()` | ~201 | Registriert einen Progress-Callback: callback(file_path, status, total_processed) |
-| 17 | `DoclingParallelProcessor._fire_progress()` | ~205 | Feuert alle registrierten Progress-Callbacks |
-| 18 | `DoclingParallelProcessor.cancel_file()` | ~218 | Storniert Verarbeitung für eine spezifische Datei |
-| 19 | `DoclingParallelProcessor.cancel_all()` | ~223 | Storniert alle ausstehenden Verarbeitungen |
-| 20 | `DoclingParallelProcessor._get_executor()` | ~232 | Gibt ThreadPoolExecutor zurück (lazy initialization) |
-| 21 | `DoclingParallelProcessor.shutdown()` | ~237 | Schaltet den Executor sicher |
-| 22 | `DoclingParallelProcessor._process_single_document()` | ~247 | Verarbeitet ein einzelnes Dokument im Thread-Pool (Typ-Erkennung, Hash, Chunks) |
-| 23 | `DoclingParallelProcessor.process_single()` | ~318 | Kompatibilitäts-Wrapper für SOTA-Pipeline (gibt Dict mit content, metadata, chunks) |
-| 24 | `DoclingParallelProcessor._process_pdf()` | ~339 | Routet PDF-Verarbeitung zu Docling oder Fallback |
-| 25 | `DoclingParallelProcessor._process_pdf_docling()` | ~346 | Verarbeitet PDF mit Docling (SOTA): extrahiert Text, Tabellen, Figuren pro Seite |
-| 26 | `DoclingParallelProcessor._process_pdf_fallback()` | ~402 | Fallback: AdvancedPDFProcessor -> pdfplumber -> Error |
-| 27 | `DoclingParallelProcessor._process_docx()` | ~451 | Verarbeitet DOCX via python-docx: Paragraphen (mit Style-Erkennung) + Tabellen |
-| 28 | `DoclingParallelProcessor._process_text()` | ~493 | Verarbeitet Text/Markdown-Dateien (split by \n\n) |
-| 29 | `DoclingParallelProcessor._get_document_type()` | ~517 | Statische Methode: erkennt Dokumenttyp aus Dateierweiterung |
-| 30 | `DoclingParallelProcessor._compute_hash()` | ~529 | Statische Methode: berechnet SHA256-Hash einer Datei |
-| 31 | `DoclingParallelProcessor.process_batch()` | ~541 | Verarbeitet mehrere Dokumente parallel via ThreadPoolExecutor + as_completed |
-| 32 | `DoclingParallelProcessor.process_batch_async()` | ~585 | Async-Wrapper für Batch-Verarbeitung (run_in_executor) |
-| 33 | `DoclingParallelProcessor.scan_directory()` | ~598 | Scannt Verzeichnis nach verarbeitbaren Dateien (rekursiv oder flach) |
-| 34 | `DoclingParallelProcessor.get_status()` | ~628 | Gibt aktuellen Verarbeitungsstatus als Dictionary zurück |
-| 35 | `DoclingParallelProcessor.get_results()` | ~643 | Gibt alle ProcessingResults zurück |
-| 36 | `DoclingParallelProcessor.get_successful_results()` | ~648 | Gibt nur erfolgreiche Results zurück |
-| 37 | `DoclingParallelProcessor.reset_stats()` | ~653 | Setzt Statistiken zurück |
-| 38 | `DoclingParallelProcessor.__del__()` | ~661 | Cleanup: shutdown() aufrufen |
-| 39 | `create_processor()` | ~670 | Factory-Funktion: erstellt DoclingParallelProcessor mit auto-erkannter Konfiguration |
-| 40 | `DoclingParallel` (alias) | ~702 | Kompatibilitäts-Alias für orchestrator.py Import |
-
-### SOTA Features
-- Thread-pool parallele Verarbeitung mit memory-aware Batch-Sizing
-- 3-stufiger PDF-Fallback: Docling -> AdvancedPDFProcessor -> pdfplumber
-
----
-
-## Modul 22: `wellbeing_session/workflow/langgraph_real.py` – LangGraph Session Pipeline
-
-### Überblick
-SOTA LangGraph-basierte StateGraph-Pipeline für psychologische Sessions mit 7 Nodes, conditional crisis-routing, dependency injection und persistenter Checkpointer-Unterstützung (MemorySaver/SqliteSaver).
-
-### Klassen & Funktionen
-
-| # | Funktion/Klasse | Zeile | Beschreibung |
-|---|----------------|-------|-------------|
-| 1 | `PsychSessionState` (TypedDict) | ~1 | State-Schema: user_input, session_id, is_valid, errors, dominant_emotion, emotional_markers, is_crisis, comprehensive_context, formatted_context, ai_response, enhanced_response, node_trace, node_timings |
-| 2 | `_registry` (ThreadSafeRegistry) | ~12 | Thread-lokale Dependency-Injection (emotional_analyzer, langchain_model, chat_logic, session_manager, context_builder) |
-| 3 | `_get_dep()` | ~178 | Resolve Dependency aus Registry via thread_id |
-| 4 | `validate_input()` | ~184 | Node: Validiert user_input und session_id |
-| 5 | `analyze_emotion()` | ~211 | Node: Emotion-Analyse via emotional_analyzer mit Fallback |
-| 6 | `crisis_router()` | ~253 | Conditional Edge: crisis_response vs build_context |
-| 7 | `crisis_response()` | ~260 | Node: Generiert Krisen-Text mit Helpline-Info (i18n-fähig) |
-| 8 | `build_context()` | ~281 | Node: Baut psychologischen Kontext via context_builder |
-| 9 | `generate_response()` | ~323 | Node: 3-Strategie-Fallback (LangChain → chat_logic → pre_generated) |
-| 10 | `enhance_response()` | ~376 | Node: Emotionale Anreicherung mit Emoji-Prefix + Kontext-Notiz |
-| 11 | `record_messages()` | ~404 | Node: Persistiert User/Assistant Messages in Session-DB |
-| 12 | `build_langgraph_session_graph()` | ~447 | Graph-Builder: kompiliert StateGraph mit Checkpointer |
-
-### SOTA Features
-- LangGraph StateGraph mit typed state (Pydantic/TypedDict)
-- Conditional routing (crisis detection → sofortige Krisen-Intervention)
-- 3-stufige LLM-Strategie mit Graceful Degradation
-- Dependency Injection via ThreadSafeRegistry (keine Globals)
-- Persistent Checkpointer (MemorySaver default, SqliteSaver optional)
-- Node-timing tracing für Performance-Monitoring
-- i18n-Unterstützung für Crisis-Texte (DE/EN/BG)
 
 ## N. `scripts/dependency_vulnerability_scanner.py` — Dependency Vulnerability Scanner
 
