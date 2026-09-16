@@ -400,8 +400,13 @@ Dependencies, kein Future-Leak.
   AGPL-Lizenzcheck), keine LLM-Generierung (Arithmetik unzuverlässig, nicht
   reproduzierbar), keine externen APIs/Cloud. Bewertung der Varianten in 5
   Kategorien × 1–7: `docs_archive/finance_sota_phase1_workdoc_20260912.md`.
-- **Phase 2 (in Arbeit):** Goals/Sinking Funds mit SQLite-Tabellen;
-  verifizierte DAO-/Tool-Vertraege und Tests siehe §19.
+- **Phase 2 (abgeschlossen 2026-09-15):** Goals/Sinking Funds mit SQLite-Tabellen;
+  UI-Tab „🎯 Sparziele" (Anlage, Status, Projektion, Zuordnung, Kandidaten —
+  `finance/tab.py::_render_goals_tab`), 77 i18n-Keys DE/EN/BG, +47 Tab-Regressionstests.
+  Verifizierte DAO-/Tool-Vertraege und Tests siehe §19. Deklarierter Rest (in
+  Phase 3 uebernommen): kein automatischer Stopp am Zielbetrag/-termin im
+  Prognose-Overlay (siehe oben). Doku: funktionen.md („Sparziele-Tab"-Sektion);
+  Workdoc: docs_archive/WORKDOC_FINANCE_SOTA_PHASE2.md.
 - **Phase 3 (offen):** Szenario-What-If-Engine, ML-Experimente,
   Anomalie-Erkennung 2.0.
 - Bootstrap-KI bei sehr kurzer Historie (< 12 Monate) ist grob — wird per

@@ -45,6 +45,7 @@ Stand: 2026-08-20 (Doku-Audit)
 | [../docs_archive/WORKDOC_SCOPE_B_RENAME_PLAN_20260831.md](../docs_archive/WORKDOC_SCOPE_B_RENAME_PLAN_20260831.md) | **Archiviertes Workdoc (2026-08-31, finalisiert 2026-09-01)** – Scope-B-Rename: Exekutions- & Rollback-Plan (Wellbeing-Repositionierung) inkl. C6/C7/C8-Entscheidungen (2026-09-01) + Tier-C-Residual-Risiken |
 | [../docs_archive/WORKDOC_LEGAL_DSGVO_PSYCH_20260831.md](../docs_archive/WORKDOC_LEGAL_DSGVO_PSYCH_20260831.md) | **Archiviertes Workdoc (2026-08-31, finalisiert 2026-09-01)** – Legal & Compliance CH/EU/DE + Mental-Health-Positionierung (Public Launch): Screening-Optionen, Scope-B-Rename-Plan (B-Phase), Content-Neupositionierung |
 | [../docs_archive/WORKDOC_HOMEBOT_RENAME_20260904.md](../docs_archive/WORKDOC_HOMEBOT_RENAME_20260904.md) | **Archiviertes Workdoc (2026-09-04, abgeschlossen 2026-09-04)** – Bot6→Homebot-Release: selektiver aktiver Rename, Live-DB-Migration (Marker + MOVE), Reword/Force-Push, Advisory-Scan (18 Advisories), DoD 8/8 ✅ |
+| [../docs_archive/WORKDOC_FINANCE_SOTA_PHASE2.md](../docs_archive/WORKDOC_FINANCE_SOTA_PHASE2.md) | **Archiviertes Workdoc (2026-09-15)** – Finance SOTA Phase 2: Goals/Sinking Funds — DB-Design (5 Kategorien × 1–7), DoD 1–11 (DoD#6 als deklarierter Rest in Phase 3), 10 Goal-Tools, UI-Tab „🎯 Sparziele“, 77 i18n-Keys, 1448/1448 Pre-Commit-Suite — abgeschlossen 2026-09-15 |
 
 ## Archiv
 

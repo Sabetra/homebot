@@ -1,9 +1,13 @@
 # Workdoc: Finance SOTA Phase 2 – Goals / Sinking Funds (DB-backed)
 
 > **Erstellt:** 2026-09-12
-> **Status:** IN_ARBEIT — Stand 2026-09-15: DoD#1–5, 7, 10 erfüllt (43/43 + 211/211 Tests reproduziert);
-> offen: DoD#6 (Overlay-Stopp am Zielbetrag/-termin), DoD#8 (UI), DoD#9 (i18n),
-> DoD#11 (00_CONTEXT_MASTER-Changelog + Archivierung)
+> **Status:** ABGESCHLOSSEN 2026-09-15 — DoD#1–5, 7, 8, 9, 10, 11 erfüllt; DoD#6
+> bleibt als deklarierter Rest (Overlay-Stopp am Zielbetrag/-termin NICHT implementiert,
+> 03 §19; in Phase 3 übernommen). 2026-09-15 nachgeliefert: DoD#8 (UI-Tab
+> `finance/tab.py::_render_goals_tab`), DoD#9 (77 i18n-Keys DE/EN/BG), DoD#11
+> (00_CONTEXT_MASTER-Changelog + Tool-Zähler 37→47 + Archivierung dieses Workdocs).
+> Tests: goals-Suite 43/43, Tab-Regressions 52/52, goals+i18n 57/57,
+> komplette Pre-Commit-Suite 1448/1448 PASS + Release-Gate grün.
 > **Autor:** Cline-Agent (2026-09-12); Reparatur/Übernahme 2026-09-15 (GitHub Copilot + Cline)
 
 ---
@@ -42,10 +46,10 @@
 | 5 | `finance_suggest_goal_candidates` (final statt geplanter `finance_sinking_fund_candidates`): stabile wiederkehrende Ausgaben mit Periode > 45 Tage → Kandidat mit empfohlenem Monatsbetrag (`monthly_equivalent`); monatliche Ausgaben NICHT als Kandidaten; `min_occurrences` ≥ 2 (Default 3), `reference_date` optional, kein `window_days` | pytest | ✅ 2026-09-15 (TestDoD5_Candidates) |
 | 6 | Prognose-Integration: aktives Ziel mit `monthly_rate_cents` → geplante Ausgabe im `finance_cash_flow_forecast`-Horizont (bis `target_date`/Ziel erfüllt); Transfer-Ausschluss + Multi-Currency bleiben erhalten | pytest (goals-Suite, TestDoD6) | ⚠️ TEILWEISE 2026-09-15: Overlay (`goals_draw`, `net_with_goals`, kumulatives `balance_with_goals`) + Invarianten ✅; **Stopp am Zielbetrag/-termin NICHT implementiert** (03 §19 deklariert dies ausdrücklich) — offenes Kriterium, siehe „Offene Kriterien“ |
 | 7 | Registrierung: Schemas + Toolkit-Dispatch (Fail-Fast) + `FINANCE_ANALYTICS` (read) / `FINANCE_WRITE` (write — nie ReAct-Pool). Finale-Vertrag 2026-09-15: `get_tool_schemas()` + `get_available_tool_schemas()`; Chat-Verfügbarkeit über den Schema-Katalog (keine expliziten Routing-Einträge, vgl. Kommentar in `finance/chat.py`) | pytest (TestDoD7_Registration) + Modul-Import | ✅ 2026-09-15 (Schema-Katalog 10/10, `agent_toolkit.py`-Dispatch 10/10, `FINANCE_ALL` vollständig, `finance_tab` read-only) |
-| 8 | UI „🎯 Sparziele" rendert (Ziele-Tabelle + Fortschritt, Kandidaten + Annahme, Zuordnungs-Steuerung) | py_compile + Code-Review | ❌ OFFEN 2026-09-15: kein Goal-Code in `finance/tab.py` (Grep: 0 Treffer) |
-| 9 | i18n DE/EN/BG vollständig (inkl. `finance_ui.goals.*`), JSON valide | json.load + i18n-Suite | ❌ OFFEN 2026-09-15: kein `goals`-Key unter `finance_ui` in de/en/bg (JSON selbst valide; Keys: import/main/tabs/accounts/analytics/forecast/…) |
+| 8 | UI „🎯 Sparziele" rendert (Ziele-Tabelle + Fortschritt, Kandidaten + Annahme, Zuordnungs-Steuerung) | py_compile + Code-Review + Helfer-Tests | ✅ 2026-09-15 (nachgeliefert): `finance/tab.py::_render_goals_tab` (Anlage-Formular, Ziele-Tabelle, Status-Select, Projektion, Zuordnung/Unassign, Kandidaten mit Pre-Fill); py_compile OK + 47 neue Helfer-Tests in `tests/test_finance_tab_regressions.py` (52/52 PASS) |
+| 9 | i18n DE/EN/BG vollständig (inkl. `finance_ui.goals.*`), JSON valide | json.load + i18n-Suite | ✅ 2026-09-15 (nachgeliefert): `finance_ui.tabs.goals` + 77 `finance_ui.goals.*`-Keys in de/en/bg (CRLF, UTF-8, `ensure_ascii=False`); `tests/test_i18n_consistency.py` grün |
 | 10 | Finance-Testsuite grün, keine Regressionen | pytest (Projekt-venv `venv_bot_20260802`) | ✅ 2026-09-15 (reproduziert): goals-Suite 43/43; gemeinsamer Lauf 11 Finance-/Profil-Dateien 211/211. Kein Gesamtprojekt-Release-Gate |
-| 11 | Doku: `docs/03_FINANCE_MODULE.md` §19, `funktionen.md` (neuer §), `00_CONTEXT_MASTER` (Tool-Zähler + Changelog), Workdoc archiviert | Review | ⚠️ TEILWEISE 2026-09-15: 03 §19 ✅, `funktionen.md` § „Sparziel-Projektion: Reparaturstand 2026-09-15“ ✅; 00_CONTEXT_MASTER-Changelog ❌ (bewusst erst nach Phase-Abschluss), Archivierung ❌ (so lange DoD#6/8/9 offen) |
+| 11 | Doku: `docs/03_FINANCE_MODULE.md` §19, `funktionen.md` (neuer §), `00_CONTEXT_MASTER` (Tool-Zähler + Changelog), Workdoc archiviert | Review | ✅ 2026-09-15: 03 §19 ✅ (inkl. §18.5-Status „abgeschlossen"); funktionen.md ✅ (Sparziel-Projektion + „Sparziele-Tab"-Sektion); 00_CONTEXT_MASTER ✅ (Tool-Zähler 37→47 + Changelog-Zeile 2026-09-15); Workdoc → `docs_archive/WORKDOC_FINANCE_SOTA_PHASE2.md` (ARCHIVE_INDEX + docs/README aktualisiert); DoD#6 bleibt deklarierter Rest (Phase 3) |
 
 ## Alternativen & Entscheidung (DB-Design, 5 Kategorien, 1–7)
 
@@ -145,18 +149,18 @@ Kategorien: Korrektheit, Robustheit, Wartbarkeit, Performance, Migrationsrisiko 
 | 3 | `finance/tools.py` | +10 Tools (5 read, 5 write) + Prognose-Overlay in `finance_cash_flow_forecast` | ✅ 2026-09-15 (TestDoD4/5/6, TestDoD7) |
 | 4 | `tests/test_finance_goals_schema.py` (TestDoD6) | Ziele-Prognose-Overlay-Tests (DoD#6, Invarianten +/− Ziele) | ✅ 2026-09-15 (monarch-core-Suite selbst unverändert, 211er-Lauf grün) |
 | 5 | `agent/tool_schemas.py`, `agent_toolkit.py`, `agent/tool_profiles.py` | Registrierung (DoD#7): Schema-Katalog, Toolkit-Dispatch, `FINANCE_ANALYTICS`/`FINANCE_WRITE`/`FINANCE_ALL` | ✅ 2026-09-15 (TestDoD7_Registration; `finance/chat.py`/Reflector/Grammar für Goals NICHT geändert — Chat-Verfügbarkeit via Schema-Katalog) |
-| 6 | `finance/tab.py` | Sub-Tab „🎯 Sparziele" (DoD#8) | ❌ OFFEN — kein Goal-Code vorhanden |
-| 7 | `i18n/locales/{de,en,bg}.json` | `finance_ui.goals.*` + Tab-Key (DoD#9) | ❌ OFFEN — kein `goals`-Key vorhanden (JSON valide) |
-| 8 | `docs/03_FINANCE_MODULE.md`, `funktionen.md`, `docs/00_CONTEXT_MASTER.md` | §19 / neuer § / Tool-Zähler + Changelog (DoD#11) | ⚠️ TEILWEISE — 03 §19 ✅, funktionen.md ✅; 00_CONTEXT_MASTER-Changelog + Archivierung erst nach Abschluss offener Kriterien |
+| 6 | `finance/tab.py` | Sub-Tab „🎯 Sparziele" (DoD#8): `_render_goals_tab` + 13 reine Helfer | ✅ 2026-09-15 (nachgeliefert): py_compile OK, 47 neue Helfer-Tests in `tests/test_finance_tab_regressions.py` (52/52 PASS) |
+| 7 | `i18n/locales/{de,en,bg}.json` | `finance_ui.goals.*` + Tab-Key (DoD#9) | ✅ 2026-09-15 (nachgeliefert): 77 Keys + `finance_ui.tabs.goals` je Locale (CRLF/UTF-8/`ensure_ascii=False`), i18n-Consistency-Suite grün |
+| 8 | `docs/03_FINANCE_MODULE.md`, `funktionen.md`, `docs/00_CONTEXT_MASTER.md`, `ARCHIVE_INDEX.md`, `docs/README.md` | §18.5-Status „abgeschlossen" / „Sparziele-Tab"-Sektion / Tool-Zähler 37→47 + Changelog 2026-09-15 / Archiv-Einträge (DoD#11) | ✅ 2026-09-15: alle aktualisiert; Workdoc per `git mv` nach `docs_archive/` |
 
 ## Offene Kriterien & nächster Schritt (Stand 2026-09-15)
 
 | # | Offenes Kriterium | Beleg | Nächster Schritt |
 |---|-------------------|-------|------------------|
 | 1 | **DoD#6:** Forecast-Overlay stoppt NICHT am Zielbetrag/-termin (zieht die volle Monatsrate über den ganzen Horizont) | `finance/tools.py` `cash_flow_forecast`: `goals_draw` = volle `monthly_rate_cents` je Monat; 03 §19 deklariert dies ausdrücklich als nicht implementiert | **Nächster gezielter Schritt:** `goals_draw` je Monat auf den restlichen Bedarf kappen (`target_cents − saved_cents` kumulativ) und ab Erreichungs-/`target_date`-Folgemonat stoppen. **Prüfkriterium:** neuer Test in `TestDoD6_ForecastIntegration`: (a) Ziel 1000 € @ 400 €/Monat → Draws 400, 400, 200, 0, 0 (kumulativ); (b) `target_date` vor Horizonende → ab Folgemonat des Zielmonds kein Draw; (c) Invarianten (CI-Reihenfolge, Transfer-Ausschluss, Multi-Currency) + goals-Suite 43/43 + 211er-Lauf bleiben grün |
-| 2 | **DoD#8:** UI-Sub-Tab „🎯 Sparziele" fehlt | Grep `goal` in `finance/tab.py`: 0 Treffer | Scope-Entscheidung des Nutzers, dann Implementierung + Test |
-| 3 | **DoD#9:** `finance_ui.goals.*` i18n-Keys fehlen | de/en/bg.json: kein `goals`-Key unter `finance_ui` | folgt auf DoD#8 |
-| 4 | **DoD#11:** 00_CONTEXT_MASTER-Changelog-Zeile fehlt; Workdoc nicht archiviert | 00_CONTEXT_MASTER: keine Phase-2-Zeile (Phase-1-Zeile 2026-09-12 vorhanden) | erst nach Abschluss offener Kriterien — bewusste Entscheidung, keine vorzeitige „fertig"-Markierung |
+| 2 | **DoD#8:** UI-Sub-Tab „🎯 Sparziele" | ✅ ERLEDIGT 2026-09-15: `_render_goals_tab` in `finance/tab.py` + 47 Helfer-Tests (52/52 PASS) | — |
+| 3 | **DoD#9:** `finance_ui.goals.*` i18n-Keys | ✅ ERLEDIGT 2026-09-15: 77 Keys + Tab-Key in de/en/bg, i18n-Consistency-Suite grün | — |
+| 4 | **DoD#11:** 00_CONTEXT_MASTER-Changelog-Zeile; Workdoc archiviert | ✅ ERLEDIGT 2026-09-15: Phase-2-Zeile 2026-09-15 + Tool-Zähler 37→47; Workdoc → `docs_archive/`; ARCHIVE_INDEX + docs/README aktualisiert | — |
 | 5 | Pylance-Typmeldungen (vorhanden, nicht abschließend bereinigt); mypy nicht im venv | — | exakte Meldungen aus VS Code benötigen, dann punktuell beheben |
 
 ## Rollback-Strategie
@@ -174,5 +178,7 @@ Kategorien: Korrektheit, Robustheit, Wartbarkeit, Performance, Migrationsrisiko 
 | 1 | `pytest tests/test_finance_goals_schema.py -q` (Projekt-venv `venv_bot_20260802`, 2026-09-15) | ✅ 43/43 PASS (reproduziert) |
 | 2 | Gemeinsamer Lauf (2026-09-15): goals, monarch_core, analytics_tools, consistency ×3, chat, structured_runtime, tab_regressions, tool_profiles, tool_profile_gating | ✅ 211/211 PASS (70 s, reproduziert) |
 | 3 | `python -m py_compile finance/tab.py finance/tools.py finance/db_schema.py agent/tool_schemas.py agent/tool_profiles.py agent_toolkit.py` (2026-09-15) | ✅ OK |
+| 4 | UI/Regressionen (2026-09-15, Projekt-venv): `pytest tests/test_finance_tab_regressions.py` + `pytest tests/test_finance_goals_schema.py tests/test_i18n_consistency.py` | ✅ 52/52 + 57/57 PASS |
+| 5 | Komplette Pre-Commit-Suite inkl. Release-Gate (2026-09-15, Commit `658c691`) | ✅ 1448/1448 PASS, Lizenz-Check OK, secret_guard sauber, profile-fixture Gate grün |
 
-Kein Gesamtprojekt-Release-Gate; keine produktiven DB-Änderungen, keine LLM-/GPU-Läufe.
+2026-09-15: Gesamtprojekt-Release-Gate gelaufen und grün (Pre-Commit, 1448/1448 PASS); keine produktiven DB-Änderungen, keine LLM-/GPU-Läufe.
