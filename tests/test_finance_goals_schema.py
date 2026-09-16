@@ -709,6 +709,132 @@ class TestDoD6_ForecastIntegration:
         assert res["goals"]["monthly_draw_by_currency"] == {"EUR": 250.0}
         assert achieved is not None
 
+    def test_goals_draw_caps_at_remaining_amount(self, goals_db, goals_tools):
+        """DoD#6: Draws werden an den verbleibenden Zielbetrag capped."""
+        _import(
+            goals_db,
+            iban=EUR_IBAN,
+            currency="EUR",
+            transactions=[
+                _tx("2026-07-15", -500.0, "Miete"),
+                _tx("2026-08-15", -500.0, "Miete"),
+            ],
+            tag="fc-cap",
+            period_start="2026-07-01",
+            opening_balance=10000.0,
+        )
+        goals_db.upsert_goal(name="Car", iban=EUR_IBAN, target_cents=100000, monthly_rate_cents=40000)
+        res = goals_tools.cash_flow_forecast(
+            {"forecast_months": 5, "include_goals": True, "reference_date": "2026-08-31", "iban": EUR_IBAN}
+        )
+        months = res["results"][0]["months"]
+        assert [m["goals_draw"] for m in months] == [400.0, 400.0, 200.0, 0.0, 0.0]
+        assert sum(m["goals_draw"] for m in months) == 1000.0  # exakt der Restbetrag
+        assert res["goals"]["goals"][0]["last_draw_month"] == 3
+        assert res["goals"]["monthly_draw_by_currency"] == {"EUR": 400.0}
+        for step, month in enumerate(months, start=1):
+            assert month["balance_with_goals"] == round(
+                month["balance"] - sum(m["goals_draw"] for m in months[:step]), 2
+            )
+
+    def test_goals_draw_stops_at_target_date(self, goals_db, goals_tools):
+        """DoD#6: Nach dem Zielmonat keine weiteren Draws mehr."""
+        _import(
+            goals_db,
+            iban=EUR_IBAN,
+            currency="EUR",
+            transactions=[
+                _tx("2026-07-15", -500.0, "Miete"),
+                _tx("2026-08-15", -500.0, "Miete"),
+            ],
+            tag="fc-date",
+            period_start="2026-07-01",
+            opening_balance=10000.0,
+        )
+        # 4 Monate wuerden zum Fuellen reichen (1000/250); Zielmonat Nov 2026 => 3 Schritte
+        goals_db.upsert_goal(
+            name="Car", iban=EUR_IBAN, target_cents=100000,
+            monthly_rate_cents=25000, target_date="2026-11-30")
+        res = goals_tools.cash_flow_forecast(
+            {"forecast_months": 5, "include_goals": True, "reference_date": "2026-08-31", "iban": EUR_IBAN}
+        )
+        assert [m["goals_draw"] for m in res["results"][0]["months"]] == [250.0, 250.0, 250.0, 0.0, 0.0]
+        assert res["goals"]["goals"][0]["last_draw_month"] == 3
+
+    def test_goals_draw_none_when_target_date_passed(self, goals_db, goals_tools):
+        """DoD#6: Bereits ueberlaufenes target_date => keine Draws mehr."""
+        _import(
+            goals_db,
+            iban=EUR_IBAN,
+            currency="EUR",
+            transactions=[
+                _tx("2026-07-15", -500.0, "Miete"),
+                _tx("2026-08-15", -500.0, "Miete"),
+            ],
+            tag="fc-past",
+            period_start="2026-07-01",
+            opening_balance=10000.0,
+        )
+        goals_db.upsert_goal(
+            name="Car", iban=EUR_IBAN, target_cents=100000,
+            monthly_rate_cents=25000, target_date="2026-08-15")
+        res = goals_tools.cash_flow_forecast(
+            {"forecast_months": 3, "include_goals": True, "reference_date": "2026-08-31", "iban": EUR_IBAN}
+        )
+        assert res["goals"]["count"] == 1
+        assert res["goals"]["goals"][0]["last_draw_month"] == 0
+        assert res["goals"]["monthly_draw_by_currency"] == {}
+        for month in res["results"][0]["months"]:
+            assert "goals_draw" not in month
+
+    def test_goals_draw_multi_goal_same_currency(self, goals_db, goals_tools):
+        """DoD#6: Mehrere Ziele gleicher Waehrung: Summe der capped Schedules."""
+        _import(
+            goals_db,
+            iban=EUR_IBAN,
+            currency="EUR",
+            transactions=[
+                _tx("2026-07-15", -500.0, "Miete"),
+                _tx("2026-08-15", -500.0, "Miete"),
+            ],
+            tag="fc-multi",
+            period_start="2026-07-01",
+            opening_balance=10000.0,
+        )
+        goals_db.upsert_goal(name="A", iban=EUR_IBAN, target_cents=60000, monthly_rate_cents=20000)
+        goals_db.upsert_goal(name="B", iban=EUR_IBAN, target_cents=10000, monthly_rate_cents=5000)
+        res = goals_tools.cash_flow_forecast(
+            {"forecast_months": 5, "include_goals": True, "reference_date": "2026-08-31", "iban": EUR_IBAN}
+        )
+        assert [m["goals_draw"] for m in res["results"][0]["months"]] == [250.0, 250.0, 200.0, 0.0, 0.0]
+        assert res["goals"]["monthly_draw_by_currency"] == {"EUR": 250.0}
+
+    def test_goals_draw_with_existing_savings(self, goals_db, goals_tools):
+        """DoD#6: Zugeordnete Buchungen kuerzen den Restbetrag (as-of-Fortschritt)."""
+        _import(
+            goals_db,
+            iban=EUR_IBAN,
+            currency="EUR",
+            transactions=[
+                _tx("2026-07-15", -500.0, "Miete"),
+                _tx("2026-08-15", -500.0, "Miete"),
+                _tx("2026-08-20", 200.0, "Sparplan Auto"),
+            ],
+            tag="fc-saved",
+            period_start="2026-07-01",
+            opening_balance=10000.0,
+        )
+        goal_id = goals_db.upsert_goal(
+            name="Car", iban=EUR_IBAN, target_cents=100000, monthly_rate_cents=40000)
+        goals_db.assign_contribution(goal_id, _tx_ids_by_counterparty(goals_db, "Sparplan Auto")[0])
+        res = goals_tools.cash_flow_forecast(
+            {"forecast_months": 5, "include_goals": True, "reference_date": "2026-08-31", "iban": EUR_IBAN}
+        )
+        goal_view = res["goals"]["goals"][0]
+        assert goal_view["saved"] == 200.0
+        assert goal_view["remaining"] == 800.0
+        assert [m["goals_draw"] for m in res["results"][0]["months"]] == [400.0, 400.0, 0.0, 0.0, 0.0]
+
 
 GOAL_TOOL_NAMES = (
     "finance_upsert_goal",

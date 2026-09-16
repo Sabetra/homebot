@@ -54,6 +54,44 @@ SUBSCRIPTION_CATEGORY_HINTS = (
 )
 
 
+def _goal_draw_schedule_cents(
+    target_cents: int,
+    saved_cents: int,
+    rate_cents: int,
+    target_date: Optional[str],
+    reference: date,
+    forecast_months: int,
+) -> List[int]:
+    """Deterministische Monats-Ziehung (Cents) für ein einzelnes Sparziel.
+
+    Cap (DoD#6): Ziehungen sind auf den Restbetrag (``target - saved``)
+    begrenzt und optional durch ``target_date`` abgegrenzt (keine Ziehung
+    ab dem Folgemonat des Zieltermins). Schritt ``k`` entspricht dem
+    (k-1)-ten Folgemonat des Referenzdatums (gleiche Konvention wie
+    :meth:`FinanceTools.project_goal`).
+
+    Rückgabe: Liste der Länge ``forecast_months`` (ab Erreichen des
+    Ziels null), Summe = min(Restbetrag, Rate * Anzahl_Schritte).
+    """
+    schedule = [0] * max(0, int(forecast_months))
+    remaining = max(0, int(target_cents) - int(saved_cents))
+    if remaining <= 0 or rate_cents <= 0:
+        return schedule
+    last_step = -(-int(remaining) // int(rate_cents))  # Deckel: Monate bis gefüllt
+    if target_date:
+        try:
+            target = date.fromisoformat(str(target_date))
+            months_to_target = (target.year - reference.year) * 12 + (
+                target.month - reference.month
+            )
+            last_step = min(last_step, months_to_target)
+        except ValueError:
+            pass  # ungültiges target_date: Cap nur über den Betrag (DAO prüft ISO)
+    for step in range(1, max(0, min(last_step, len(schedule))) + 1):
+        schedule[step - 1] = min(int(rate_cents), int(remaining) - int(rate_cents) * (step - 1))
+    return schedule
+
+
 class FinanceTools:
     """Sammlung der Finance-Tool-Methoden, von ``AgentToolkit`` delegiert."""
 
@@ -850,7 +888,9 @@ class FinanceTools:
         Ziele (Sinking Funds) als deterministische planmaessige Ziehung auf
         die Monats-Prognosen (goals_draw, net_with_goals,
         balance_with_goals) -- opt-in, damit das Phase-1-Verhalten
-        unveraendert bleibt.
+        unveraendert bleibt. Ziehungen sind pro Ziel capped: Restbetrag
+        (target - saved) und optional target_date (keine Ziehung ab dem
+        Folgemonat des Zieltermins).
         """
         try:
             reference = self._parse_reference_date(params.get("reference_date"))
@@ -906,12 +946,15 @@ class FinanceTools:
             notes.append("Guthaben-Prognose entfällt: Konto führt mehrere Währungen")
 
         goals_overlay: Optional[Dict[str, Any]] = None
-        goals_draw_by_currency: Dict[str, int] = {}
+        goals_draw_steps: Dict[str, List[int]] = {}
         if include_goals:
             # Sinking Funds: aktiven Zielen mit geplanter Monatsrate wird eine
             # deterministische planmaessige Ziehung pro Prognose-Monat
             # zugerechnet (Status "active" + Rate > 0; kein Future-Leak,
             # Fortschritt nur bis Referenzdatum).
+            # Cap pro Ziel (DoD#6): Ziehung endet, wenn der Restbetrag
+            # (target - saved) aufgebraucht ist oder target_date erreicht
+            # wurde (keine Ziehung ab dem Folgemonat des Zieltermins).
             active_goals = [
                 goal
                 for goal in self._db.list_goals(status="active")
@@ -927,6 +970,18 @@ class FinanceTools:
             goals: List[Dict[str, Any]] = []
             for goal in sorted(active_goals, key=lambda item: (item.currency or "", item.name)):
                 progress = self._db.goal_progress_asof(goal.id, reference)
+                saved_cents = int(progress["saved_cents"])
+                schedule = _goal_draw_schedule_cents(
+                    goal.target_cents,
+                    saved_cents,
+                    int(goal.monthly_rate_cents),
+                    goal.target_date,
+                    reference,
+                    forecast_months,
+                )
+                last_draw_month = max(
+                    (i for i, cents in enumerate(schedule, start=1) if cents > 0), default=0
+                )
                 goals.append(
                     {
                         "goal_id": goal.id,
@@ -936,17 +991,20 @@ class FinanceTools:
                         "monthly_rate": round(_from_cents(int(goal.monthly_rate_cents)), 2),
                         "target_amount": round(_from_cents(goal.target_cents), 2),
                         "target_date": goal.target_date,
-                        "saved": round(_from_cents(progress["saved_cents"]), 2),
+                        "saved": round(_from_cents(saved_cents), 2),
                         "remaining": round(
-                            _from_cents(max(0, goal.target_cents - progress["saved_cents"])), 2
+                            _from_cents(max(0, goal.target_cents - saved_cents)), 2
                         ),
+                        "last_draw_month": last_draw_month,
                     }
                 )
                 if goal.currency:
-                    goals_draw_by_currency[goal.currency] = (
-                        goals_draw_by_currency.get(goal.currency, 0)
-                        + int(goal.monthly_rate_cents)
-                    )
+                    cur_steps = goals_draw_steps.setdefault(goal.currency, [0] * forecast_months)
+                    for idx in range(len(cur_steps)):
+                        cur_steps[idx] += schedule[idx]
+            goals_draw_by_currency = {
+                cur: steps[0] for cur, steps in goals_draw_steps.items() if steps and steps[0] > 0
+            }
             goals_overlay = {
                 "count": len(goals),
                 "goals": goals,
@@ -956,8 +1014,8 @@ class FinanceTools:
                 },
             }
             notes.append(
-                "Goals-Overlay: geplante Monatsraten aktiver Ziele als planmaessige "
-                "Ziehung eingerechnet"
+                "Goals-Overlay: geplante Monatsraten aktiver Ziele (capped durch "
+                "Restbetrag/Zieltermin) als planmaessige Ziehung eingerechnet"
                 if goals
                 else "Goals-Overlay: keine aktiven Ziele mit geplanter Monatsrate"
             )
@@ -972,20 +1030,19 @@ class FinanceTools:
                 fit_state, reference_key, forecast_months, confidence, balance_start
             )
             if include_goals and goals_draw_by_currency.get(currency):
-                draw = round(_from_cents(goals_draw_by_currency[currency]), 2)
+                steps = goals_draw_steps[currency]
+                cumulative_cents = 0
                 for step, month in enumerate(months, start=1):
+                    draw_cents = steps[step - 1] if step - 1 < len(steps) else 0
+                    cumulative_cents += draw_cents
+                    draw = round(_from_cents(draw_cents), 2)
                     month["goals_draw"] = draw
                     month["net_with_goals"] = round(month["net"] - draw, 2)
                     if "balance" in month:
-                        month["balance_with_goals"] = round(
-                            month["balance"] - draw * step, 2
-                        )
-                        month["balance_low_with_goals"] = round(
-                            month["balance_low"] - draw * step, 2
-                        )
-                        month["balance_high_with_goals"] = round(
-                            month["balance_high"] - draw * step, 2
-                        )
+                        cum = round(_from_cents(cumulative_cents), 2)
+                        month["balance_with_goals"] = round(month["balance"] - cum, 2)
+                        month["balance_low_with_goals"] = round(month["balance_low"] - cum, 2)
+                        month["balance_high_with_goals"] = round(month["balance_high"] - cum, 2)
             results.append(
                 {
                     "currency": currency,

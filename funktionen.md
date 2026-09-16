@@ -2052,7 +2052,7 @@ neuen Dependencies, kein Future-Leak.
 | **i18n** | `finance_ui.forecast.*` (43 Keys) + `finance_ui.tabs.forecast` (DE/EN/BG) |
 | **Tests** | `tests/test_finance_monarch_core.py` — 26 Tests (saisonales Residual-Verhalten, Balance-Ketten-Korrektheit, CI-Reihenfolge, kein Future-Leakage, Transfer-Ausschluss, Multi-Currency, Anker-/Fenster-Logik, Audit-Klassifikation/-Totale); breitere Finance-Suite (13 Finance-Dateien + i18n + tool-profiles) 2026-09-12: **220/220 PASS** |
 | **Abgelehnte Varianten** | ML (Prophet/ARIMA/XGBoost: Overfit bei 12–36 Monatspunkten, schwere Dependencies, Non-Determinismus, AGPL-Lizenzcheck) · LLM als Prognose-Engine (Arithmetik unzuverlässig, nicht reproduzierbar) · externe APIs/Cloud. Bewertung: 5 Kategorien (Korrektheit/Robustheit/Wartbarkeit/Performance/Migrationsrisiko) × 1–7 im Workdoc |
-| **Grenzen & Next** | KI bei < 12 Monaten Historie grob (per `notes` deklariert). **Phase 2 (in Arbeit):** DB-backed Goals/Sinking Funds, verifizierte Vertraege siehe `docs/03_FINANCE_MODULE.md` §19. **Phase 3 (offen):** Szenario-What-If-Engine, ML-Experimente, Anomalie-Erkennung 2.0. Doku: `docs/03_FINANCE_MODULE.md` §18; Workdoc: `docs_archive/finance_sota_phase1_workdoc_20260912.md`. |
+| **Grenzen & Next** | KI bei < 12 Monaten Historie grob (per `notes` deklariert). **Phase 2 (fertig 2026-09-15):** DB-backed Goals/Sinking Funds inkl. UI-Tab „🎯 Sparziele" (siehe unten), verifizierte Vertraege siehe `docs/03_FINANCE_MODULE.md` §19. **Phase 3 (offen):** Szenario-What-If-Engine, ML-Experimente, Anomalie-Erkennung 2.0. Doku: `docs/03_FINANCE_MODULE.md` §18; Workdoc: `docs_archive/finance_sota_phase1_workdoc_20260912.md`. |
 
 ### Sparziel-Projektion: Reparaturstand 2026-09-15
 
@@ -2062,3 +2062,18 @@ Erreichte Ziele liefern Restlaufzeit 0; vergangene Zieltermine behalten ihre
 vorzeichenbehaftete Monatsdifferenz. DAO-Waehrungsdefault und API-Testvertraege
 sind in `docs/03_FINANCE_MODULE.md` §19 dokumentiert. Sparziel-Suite: 43 Tests,
 gemeinsame Finance-/Profil-Regressionspruefung: 211 Tests bestanden.
+
+### Sparziele-Tab (Goals / Sinking Funds UI, 2026-09-15)
+
+Neuer Finance-Sub-Tab „🎯 Sparziele" (`finance/tab.py::_render_goals_tab`) für
+Sinking-Fund-Ziele: pro Ziel ein Konto, ein Zielbetrag und optional Monatsrate,
+Zieldatum, Notizen; Status `active`/`paused`/`achieved`/`archived`.
+
+| Aspekt | Detail |
+|--------|--------|
+| **Zweck** | Wiederauffangbare Großausgaben (Urlaub, Kfz, Reparaturen) als Sparziele führen, Buchungen gezielt einem Ziel zuordnen und Fortschritt/Projektion sichtbar machen |
+| **Datenmodell** | `goals` (Ziel + akkumulierter Stand, `progress_cents`/`remaining_cents`/`progress_pct`) + `goal_contributions` (Buchung ↔ Ziel, `db_schema.py`); Fortschritt wird aus zugeordneten Buchungen abgeleitet, nie doppelt gezählt |
+| **API** | `FinanceTools`: `list_goals` · `upsert_goal` · `set_goal_status` · `delete_goal` · `assign_goal_contribution` · `unassign_goal_contribution` · `list_goal_contributions` · `project_goal` (Projektion, Restlaufzeit, On-/Off-Track) · `suggest_goal_candidates` (wiederkehrende Zahlungen > 45 Tage, stabile Beträge, unzugeordnet) |
+| **UI** | Konto-Guard (`goals.need_accounts`) · Anlage-Formular (Name, Konto, Zielbetrag, Monatsrate, Zieldatum, Notizen) mit Validierung (`_validate_goal_form`) · Ziele-Tabelle (Ziel/Gespart/Offen/%/Rate/Status) · pro Ziel: Status-Select, Projektions-Zeile (`_projection_headline_key`-Priorität: erreicht > overdue > on/off-Track > Monate/Monat), zugeordnete Buchungen mit Unassign, Buchungen-Zuordnen (nur noch freie, `_assignable_transactions`), Löschen (Bestätigung) · Kandidaten-Vorschläge mit Pre-Fill-Anlage (`_candidate_goal_params`: annual → monthly → average) |
+| **i18n** | `finance_ui.tabs.goals` + `finance_ui.goals.*` (77 Keys, DE/EN/BG); alle Strings über `_tr()` mit Fallback |
+| **Tests** | `tests/test_finance_goals_schema.py` (43 Tests: Schema/API/Projektion) · `tests/test_finance_tab_regressions.py` (+47 reine-Helfer-Tests: Status-Labels, Formular-Validierung, Cents-Konvertierung, Tabellen-Mapping, Kandidaten-Parameter, Projektions-Priorität, Selectbox-Filter) · `tests/test_i18n_consistency.py` (Key-Parität DE/EN/BG) — 2026-09-15: 52/52 + 57/57 PASS |

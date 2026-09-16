@@ -1114,9 +1114,595 @@ def _render_budgets_tab(db: FinanceDB) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Sub-Tab: Buchungen (Detail-Liste)
+# Sub-Tab: Sparziele (Sinking Funds, Finance SOTA Phase 2)
 # ---------------------------------------------------------------------------
 
+_GOAL_STATUS_KEYS: tuple[tuple[str, str], ...] = (
+    ("active", "finance_ui.goals.status_active"),
+    ("paused", "finance_ui.goals.status_paused"),
+    ("achieved", "finance_ui.goals.status_achieved"),
+    ("archived", "finance_ui.goals.status_archived"),
+)
+
+
+def _goal_status_label(status: Any) -> str:
+    """i18n-Label für einen Ziel-Status (unbekannter Status: Rohwert)."""
+    text = str(status or "").strip()
+    for value, key in _GOAL_STATUS_KEYS:
+        if value == text:
+            return _tr(key, value)
+    return text
+
+
+def _validate_goal_form(name: Any, target_amount: Any) -> Optional[str]:
+    """Validiert das Anlege-Formular; liefert i18n-Fehler-Key oder ``None``."""
+    if not str(name or "").strip():
+        return "finance_ui.goals.name_required"
+    try:
+        amount = float(target_amount)
+    except (TypeError, ValueError):
+        return "finance_ui.goals.target_invalid"
+    if not amount > 0:
+        return "finance_ui.goals.target_invalid"
+    return None
+
+
+def _goal_form_error_text(error_key: Optional[str]) -> str:
+    """i18n-Fehlertext zu einem Fehler-Key aus ``_validate_goal_form``."""
+    if error_key == "finance_ui.goals.name_required":
+        return _tr("finance_ui.goals.name_required", "Name und Konto sind erforderlich.")
+    return _tr("finance_ui.goals.target_invalid", "Zielbetrag muss positiv sein.")
+
+
+def _progress_amount(progress: Any, key: str) -> Optional[float]:
+    """Cents-Feld eines ``goal_progress``-Dicts in Betrag (None wenn nicht numerisch)."""
+    if not isinstance(progress, dict):
+        return None
+    cents = progress.get(key)
+    if isinstance(cents, bool) or not isinstance(cents, (int, float)):
+        return None
+    return round(float(cents) / 100.0, 2)
+
+
+def _fmt_money(value: Any) -> str:
+    """None-/Fehler-sichere Mengendarstellung (2 Nachkommastellen, DE-Format)."""
+    try:
+        return _format_eur(float(value))
+    except (TypeError, ValueError):
+        return "–"
+
+
+def _goal_table_rows(items: Any) -> list[dict[str, Any]]:
+    """Zeilen für die Ziel-Liste aus ``list_goals``-Items (rein, testbar)."""
+    rows: list[dict[str, Any]] = []
+    for item in items or []:
+        if not isinstance(item, dict):
+            continue
+        goal = item.get("goal") or {}
+        progress = item.get("progress") or {}
+        rows.append(
+            {
+                _tr("finance_ui.goals.col_name", "Name"): str(goal.get("name") or ""),
+                _tr("finance_ui.goals.col_account", "Konto"): str(goal.get("iban") or ""),
+                _tr("finance_ui.goals.col_target", "Ziel (€)"): goal.get("target_amount"),
+                _tr("finance_ui.goals.col_saved", "Gespart (€)"): _progress_amount(progress, "progress_cents"),
+                _tr("finance_ui.goals.col_remaining", "Offen (€)"): _progress_amount(progress, "remaining_cents"),
+                _tr("finance_ui.goals.col_pct", "%"): progress.get("progress_pct"),
+                _tr("finance_ui.goals.col_rate", "Monatsrate (€)"): goal.get("monthly_rate"),
+                _tr("finance_ui.goals.col_target_date", "Zieldatum"): str(goal.get("target_date") or ""),
+                _tr("finance_ui.goals.col_status", "Status"): _goal_status_label(goal.get("status")),
+            }
+        )
+    return rows
+
+
+def _candidate_table_rows(candidates: Any) -> list[dict[str, Any]]:
+    """Zeilen für die Kandidaten-Tabelle aus ``suggest_goal_candidates`` (rein, testbar)."""
+    rows: list[dict[str, Any]] = []
+    for candidate in candidates or []:
+        if not isinstance(candidate, dict):
+            continue
+        rows.append(
+            {
+                _tr("finance_ui.goals.candidates_col_counterparty", "Gegenseite"): str(candidate.get("counterparty") or ""),
+                _tr("finance_ui.goals.candidates_col_occurrences", "Vorkommen"): candidate.get("occurrences"),
+                _tr("finance_ui.goals.candidates_col_avg", "Ø Betrag"): candidate.get("average_amount"),
+                _tr("finance_ui.goals.candidates_col_monthly", "Monats-Äquivalent"): candidate.get("monthly_equivalent"),
+            }
+        )
+    return rows
+
+
+def _assignable_transactions(txs: Any, assigned_ids: Any) -> list:
+    """Buchungen, die noch keinem Ziel zugeordnet sind (Reihenfolge bleibt erhalten).
+
+    ``assigned_ids`` akzeptiert IDs (``int``) und/oder Objekte mit ``.id``.
+    """
+    assigned: set = set()
+    for entry in assigned_ids or []:
+        tx_id = entry if isinstance(entry, int) and not isinstance(entry, bool) else getattr(entry, "id", None)
+        if tx_id is not None:
+            assigned.add(tx_id)
+    options = []
+    for tx in txs or []:
+        tx_id = getattr(tx, "id", None)
+        if tx_id is not None and tx_id not in assigned:
+            options.append(tx)
+    return options
+
+
+def _transaction_option_label(tx: Any) -> str:
+    """Selectbox-Label einer Buchung: ``Datum · Gegenseite (±Betrag)``."""
+    if isinstance(tx.amount_cents, bool) or not isinstance(tx.amount_cents, (int, float)):
+        amount_text = "0.00"
+    else:
+        amount = tx.amount_cents / 100.0
+        sign = "+" if amount > 0 else ("-" if amount < 0 else "")
+        amount_text = f"{sign}{_fmt_money(abs(amount))}"
+    return f"{tx.booking_date or '?'} · {tx.counterparty or ''} ({amount_text})"
+
+
+def _candidate_goal_params(candidate: Any, iban: str) -> dict[str, Any]:
+    """``upsert_goal``-Parameter aus einem Kandidaten-Vorschlag (rein, testbar).
+
+    Ziel = Jahres-Äquivalent (Default), Monatsrate = Monats-Äquivalent;
+    beide fallen auf den Ø-Betrag zurück.
+    """
+    candidate = candidate if isinstance(candidate, dict) else {}
+    average = float(candidate.get("average_amount") or 0.0)
+    target = candidate.get("annual_equivalent") or candidate.get("monthly_equivalent") or average
+    rate = candidate.get("monthly_equivalent") or average
+    return {
+        "name": str(candidate.get("counterparty") or "").strip(),
+        "iban": iban,
+        "target_amount": round(float(target), 2),
+        "monthly_rate": round(float(rate), 2),
+    }
+
+
+def _projection_headline_key(projection: Any) -> str:
+    """i18n-Key der Haupt-Projektions-Nachricht (deterministische Priorität)."""
+    if not isinstance(projection, dict):
+        return "finance_ui.goals.projection_none"
+    if projection.get("achieved"):
+        return "finance_ui.goals.projection_achieved_now"
+    if projection.get("overdue"):
+        return "finance_ui.goals.projection_overdue"
+    if projection.get("on_track") is True:
+        return "finance_ui.goals.projection_on_track"
+    if projection.get("on_track") is False:
+        return "finance_ui.goals.projection_off_track"
+    if projection.get("rate") is None:
+        return "finance_ui.goals.projection_none"
+    if projection.get("achieved_month"):
+        return "finance_ui.goals.projection_achieved"
+    if projection.get("months_left_at_rate") is not None:
+        return "finance_ui.goals.projection_months_left"
+    return "finance_ui.goals.projection_none"
+
+
+def _projection_headline_text(projection: Any) -> str:
+    """i18n-Text zur ``_projection_headline_key`` (mit Parametern)."""
+    projection = projection if isinstance(projection, dict) else {}
+    key = _projection_headline_key(projection)
+    if key == "finance_ui.goals.projection_achieved_now":
+        return _tr(key, "✅ Ziel bereits erreicht.")
+    if key == "finance_ui.goals.projection_overdue":
+        return _tr(
+            key,
+            "⚠️ Zieldatum ({date}) überschritten — Rest {remaining}",
+            date=projection.get("target_date"),
+            remaining=_fmt_money(projection.get("remaining")),
+        )
+    if key == "finance_ui.goals.projection_on_track":
+        return _tr(key, "✅ On-Track")
+    if key == "finance_ui.goals.projection_off_track":
+        return _tr(key, "⚠️ Off-Track")
+    if key == "finance_ui.goals.projection_achieved":
+        return _tr(key, "✅ Ziel erreicht im Monat {month}", month=projection.get("achieved_month"))
+    if key == "finance_ui.goals.projection_months_left":
+        return _tr(key, "Noch {months} Monate bei geplanter Rate.", months=projection.get("months_left_at_rate"))
+    return _tr(key, "Keine Rate (geplant oder aus Historie) — Projektion nicht möglich.")
+
+
+def _render_goals_tab(db: FinanceDB) -> None:
+    """Rendert den Sparziele-Sub-Tab (Sinking Funds, deterministisch)."""
+    st.subheader(_tr("finance_ui.goals.subheader", "🎯 Sparziele (Sinking Funds)"))
+    st.caption(
+        _tr(
+            "finance_ui.goals.caption",
+            "Sparziele mit Zielbetrag, optionaler Monatsrate und Zieldatum. "
+            "Fortschritt = Summe der zugeordneten Buchungen.",
+        )
+    )
+
+    accounts = db.list_accounts()
+    if not accounts:
+        st.info(_tr("finance_ui.goals.need_accounts", "Keine Konten vorhanden. Bitte zuerst einen Kontoauszug importieren."))
+        return
+
+    from finance.tools import FinanceTools
+
+    tools = FinanceTools(db)
+    _render_goals_create_form(tools, accounts)
+    _render_goals_list(db, tools)
+    _render_goals_candidates(tools, accounts)
+
+
+def _render_goals_create_form(tools: Any, accounts: list) -> None:
+    st.markdown(_tr("finance_ui.goals.form_title", "### Neues Sparziel"))
+    with st.form("finance_goals_create", clear_on_submit=True):
+        name = st.text_input(
+            _tr("finance_ui.goals.name", "Name"),
+            placeholder=_tr("finance_ui.goals.name_placeholder", "z. B. Auto, Urlaub, Renovierung"),
+            key="finance_goals_new_name",
+        )
+        account = st.selectbox(
+            _tr("finance_ui.goals.account", "Konto"),
+            [a.iban for a in accounts],
+            key="finance_goals_new_iban",
+        )
+        target_amount = st.number_input(
+            _tr("finance_ui.goals.target_amount", "Zielbetrag"),
+            min_value=0.0,
+            step=100.0,
+            format="%.2f",
+            key="finance_goals_new_target",
+        )
+        st.caption(
+            _tr(
+                "finance_ui.goals.monthly_rate_hint",
+                "Geplante monatliche Einzahlung. Leer lassen = aus Beitrags-Historie schätzen.",
+            )
+        )
+        monthly_rate = st.number_input(
+            _tr("finance_ui.goals.monthly_rate", "Monatsrate (optional)"),
+            min_value=0.0,
+            step=50.0,
+            format="%.2f",
+            key="finance_goals_new_rate",
+        )
+        st.caption(
+            _tr("finance_ui.goals.target_date_hint", "Datum, bis zu dem das Ziel erreicht sein soll (YYYY-MM-DD).")
+        )
+        target_date = st.text_input(_tr("finance_ui.goals.target_date", "Zieldatum (optional)"), key="finance_goals_new_date")
+        notes = st.text_input(_tr("finance_ui.goals.notes", "Notizen (optional)"), key="finance_goals_new_notes")
+        status = st.selectbox(
+            _tr("finance_ui.goals.status", "Status"),
+            ["active", "paused"],
+            format_func=_goal_status_label,
+            key="finance_goals_new_status",
+        )
+        submitted = st.form_submit_button(_tr("finance_ui.goals.create_button", "➕ Ziel anlegen"))
+
+    if not submitted:
+        return
+
+    error_key = _validate_goal_form(name, target_amount)
+    if error_key is not None:
+        st.error(_goal_form_error_text(error_key))
+        return
+
+    params: dict[str, Any] = {
+        "name": str(name).strip(),
+        "iban": account,
+        "target_amount": float(target_amount),
+        "status": status,
+    }
+    if monthly_rate and float(monthly_rate) > 0:
+        params["monthly_rate"] = float(monthly_rate)
+    if str(target_date or "").strip():
+        params["target_date"] = str(target_date).strip()
+    if str(notes or "").strip():
+        params["notes"] = str(notes).strip()
+
+    result = tools.upsert_goal(params)
+    if not result.get("success"):
+        st.error(
+            _tr("finance_ui.goals.save_error", "Ziel konnte nicht gespeichert werden: {error}", error=result.get("error"))
+        )
+        return
+    st.success(_tr("finance_ui.goals.create_success", "Sparziel „{name}“ angelegt.", name=params["name"]))
+    st.rerun()
+
+
+def _render_goals_list(db: FinanceDB, tools: Any) -> None:
+    result = tools.list_goals({})
+    if not result.get("success"):
+        st.error(
+            _tr("finance_ui.goals.list_error", "Ziele konnten nicht geladen werden: {error}", error=result.get("error"))
+        )
+        return
+    items: list = result.get("goals") or []
+    if not items:
+        st.info(_tr("finance_ui.goals.none", "Noch keine Sparziele angelegt."))
+        return
+
+    st.markdown(_tr("finance_ui.goals.goals_list_title", "### Deine Sparziele"))
+    import pandas as pd
+
+    st.dataframe(pd.DataFrame(_goal_table_rows(items)), width='stretch', hide_index=True)
+
+    for item in items:
+        goal = (item or {}).get("goal") or {}
+        goal_id = goal.get("goal_id")
+        if goal_id is None:
+            continue
+        with st.expander(str(goal.get("name") or f"Ziel {goal_id}")):
+            _render_goal_detail(db, tools, goal)
+
+
+def _render_goal_detail(db: FinanceDB, tools: Any, goal: dict[str, Any]) -> None:
+    """Detail-Blatt eines Ziels: Status, Projektion, Beiträge, Zuordnung, Löschen."""
+    goal_id: int = goal["goal_id"]
+    name = str(goal.get("name") or "")
+
+    # --- Status ---
+    status_options = [value for value, _ in _GOAL_STATUS_KEYS]
+    current = str(goal.get("status") or "active")
+    if current not in status_options:
+        current = "active"
+    new_status = st.selectbox(
+        _tr("finance_ui.goals.status", "Status"),
+        status_options,
+        index=status_options.index(current),
+        format_func=_goal_status_label,
+        key=f"finance_goals_status_{goal_id}",
+    )
+    if new_status != current:
+        res = tools.set_goal_status({"goal_id": goal_id, "status": new_status})
+        if res.get("success"):
+            st.success(
+                _tr(
+                    "finance_ui.goals.status_changed",
+                    "Status von „{name}“ → {status}.",
+                    name=name,
+                    status=_goal_status_label(new_status),
+                )
+            )
+            st.rerun()
+        st.error(_tr("finance_ui.goals.save_error", "Ziel konnte nicht gespeichert werden: {error}", error=res.get("error")))
+
+    _render_goal_projection(tools, goal)
+    _render_goal_contributions(tools, goal)
+    _render_goal_assign(db, tools, goal)
+
+    # --- Löschen (Frage + Button) ---
+    st.caption(_tr("finance_ui.goals.delete_confirm", "Sparziel „{name}“ endgültig löschen?", name=name))
+    if st.button(_tr("finance_ui.goals.delete_button", "🗑️"), key=f"finance_goals_delete_{goal_id}"):
+        res = tools.delete_goal({"goal_id": goal_id})
+        if res.get("success"):
+            st.success(_tr("finance_ui.goals.delete_success", "Sparziel „{name}“ gelöscht.", name=name))
+            st.rerun()
+        st.error(_tr("finance_ui.goals.delete_error", "Löschen fehlgeschlagen: {error}", error=res.get("error")))
+
+
+def _render_goal_projection(tools: Any, goal: dict[str, Any]) -> None:
+    st.markdown(_tr("finance_ui.goals.projection_title", "### Projektion"))
+    goal_id: int = goal["goal_id"]
+    horizon = int(
+        st.slider(
+            _tr("finance_ui.goals.projection_horizon", "Horizont (Monate)"),
+            1,
+            60,
+            24,
+            key=f"finance_goals_horizon_{goal_id}",
+        )
+    )
+    if not st.button(
+        _tr("finance_ui.goals.projection_button", "📈 Projektion berechnen"), key=f"finance_goals_project_{goal_id}"
+    ):
+        return
+    res = tools.project_goal({"goal_id": goal_id, "horizon_months": horizon})
+    if not res.get("success"):
+        st.error(_tr("finance_ui.goals.projection_error", "Projektion konnte nicht berechnet werden: {error}", error=res.get("error")))
+        return
+
+    projection = res.get("projection") or {}
+    key = _projection_headline_key(projection)
+    text = _projection_headline_text(projection)
+    if key == "finance_ui.goals.projection_overdue":
+        st.warning(text)
+    elif key in (
+        "finance_ui.goals.projection_on_track",
+        "finance_ui.goals.projection_achieved_now",
+        "finance_ui.goals.projection_achieved",
+    ):
+        st.success(text)
+    else:
+        st.info(text)
+
+    if projection.get("rate") is not None:
+        st.caption(f"{_tr('finance_ui.goals.col_rate', 'Monatsrate (€)')}: {_fmt_money(projection.get('rate'))}")
+    if projection.get("required_rate_for_target_date") is not None:
+        st.caption(
+            _tr(
+                "finance_ui.goals.projection_required_rate",
+                "Erforderliche Rate bis {date}: {amount}/Monat",
+                date=projection.get("target_date"),
+                amount=_fmt_money(projection.get("required_rate_for_target_date")),
+            )
+        )
+    series = [s for s in (projection.get("series") or []) if isinstance(s, dict)]
+    if series:
+        st.markdown(_tr("finance_ui.goals.projection_series_title", "#### Projektions-Verlauf"))
+        import pandas as pd
+
+        st.dataframe(
+            pd.DataFrame(
+                [
+                    {
+                        _tr("finance_ui.goals.projection_col_month", "Monat"): s.get("month"),
+                        _tr("finance_ui.goals.projection_col_balance", "Stand"): s.get("balance"),
+                    }
+                    for s in series
+                ]
+            ),
+            width='stretch',
+            hide_index=True,
+        )
+
+
+def _render_goal_contributions(tools: Any, goal: dict[str, Any]) -> None:
+    goal_id: int = goal["goal_id"]
+    st.markdown(_tr("finance_ui.goals.contributions_title", "### Zugeordnete Beiträge"))
+    res = tools.list_goal_contributions({"goal_id": goal_id})
+    if not res.get("success"):
+        st.error(
+            _tr(
+                "finance_ui.goals.contributions_error",
+                "Beiträge konnten nicht geladen werden: {error}",
+                error=res.get("error"),
+            )
+        )
+        return
+    contributions = [c for c in (res.get("contributions") or []) if isinstance(c, dict)]
+    if not contributions:
+        st.info(_tr("finance_ui.goals.contributions_empty", "Keine Buchungen diesem Ziel zugeordnet."))
+        return
+
+    import pandas as pd
+
+    def _tx_field(contribution: dict[str, Any], field: str) -> Any:
+        tx = contribution.get("transaction")
+        return tx.get(field) if isinstance(tx, dict) else None
+
+    st.dataframe(
+        pd.DataFrame(
+            [
+                {
+                    _tr("finance_ui.goals.contributions_col_date", "Datum"): _tx_field(c, "booking_date"),
+                    _tr("finance_ui.goals.contributions_col_counterparty", "Gegenseite"): _tx_field(c, "counterparty"),
+                    _tr("finance_ui.goals.contributions_col_amount", "Betrag"): c.get("amount"),
+                }
+                for c in contributions
+            ]
+        ),
+        width='stretch',
+        hide_index=True,
+    )
+
+    for c in contributions:
+        tx_id = c.get("transaction_id")
+        if tx_id is None:
+            continue
+        if st.button(
+            "✖",
+            key=f"finance_goals_unassign_{goal_id}_{tx_id}",
+            help=_tr("finance_ui.goals.unassign_button", "Zuordnung aufheben"),
+        ):
+            res = tools.unassign_goal_contribution({"goal_id": goal_id, "transaction_id": tx_id})
+            if res.get("success"):
+                st.success(_tr("finance_ui.goals.unassign_success", "Beitrag entfernt."))
+                st.rerun()
+            st.error(_tr("finance_ui.goals.unassign_error", "Zuordnung konnte nicht aufgehoben werden: {error}", error=res.get("error")))
+
+
+def _render_goal_assign(db: FinanceDB, tools: Any, goal: dict[str, Any]) -> None:
+    goal_id: int = goal["goal_id"]
+    st.markdown(_tr("finance_ui.goals.assign_title", "### Beitrag zuordnen"))
+    res = tools.list_goal_contributions({"goal_id": goal_id})
+    if not res.get("success"):
+        st.error(_tr("finance_ui.goals.assign_error", "Zuordnung fehlgeschlagen: {error}", error=res.get("error")))
+        return
+    assigned_ids: set[int] = set()
+    for c in res.get("contributions") or []:
+        if isinstance(c, dict) and c.get("transaction_id") is not None:
+            assigned_ids.add(int(c["transaction_id"]))
+
+    iban = str(goal.get("iban") or "").strip()
+    account = next((a for a in db.list_accounts() if str(a.iban or "").strip() == iban), None)
+    if account is None:
+        st.error(
+            _tr("finance_ui.goals.assign_error", "Zuordnung fehlgeschlagen: {error}", error="Konto nicht gefunden")
+        )
+        return
+    txs = db.query_transactions(account_id=account.id, limit=500)
+    options = _assignable_transactions(txs, assigned_ids)
+    if not options:
+        st.info(_tr("finance_ui.goals.assign_empty", "Keine freien Buchungen auf diesem Konto."))
+        return
+
+    labels = [_transaction_option_label(tx) for tx in options]
+    label = st.selectbox(
+        _tr("finance_ui.goals.assign_select", "Buchung"),
+        labels,
+        key=f"finance_goals_assign_select_{goal_id}",
+    )
+    if st.button(
+        _tr("finance_ui.goals.assign_button", "➕ Zuordnen"), key=f"finance_goals_assign_btn_{goal_id}"
+    ):
+        tx = options[labels.index(label)]
+        res = tools.assign_goal_contribution({"goal_id": goal_id, "transaction_id": tx.id})
+        if res.get("success"):
+            st.success(
+                _tr(
+                    "finance_ui.goals.assign_success",
+                    "Buchung „{date}“ ({counterparty}) zugeordnet.",
+                    date=str(tx.booking_date or ""),
+                    counterparty=str(tx.counterparty or ""),
+                )
+            )
+            st.rerun()
+        st.error(_tr("finance_ui.goals.assign_error", "Zuordnung fehlgeschlagen: {error}", error=res.get("error")))
+
+
+def _render_goals_candidates(tools: Any, accounts: list) -> None:
+    st.markdown(_tr("finance_ui.goals.candidates_title", "### Vorschläge aus deinen Buchungen"))
+    st.caption(_tr("finance_ui.goals.candidates_caption", "Wiederkehrende Auszahlungen, die ein Sparziel sein könnten."))
+    iban = st.selectbox(
+        _tr("finance_ui.goals.account", "Konto"),
+        [a.iban for a in accounts],
+        key="finance_goals_cand_iban",
+    )
+    if not st.button(
+        _tr("finance_ui.goals.candidates_button", "🔍 Kandidaten ermitteln"), key="finance_goals_cand_run"
+    ):
+        return
+    res = tools.suggest_goal_candidates({"iban": iban, "min_occurrences": 3})
+    if not res.get("success"):
+        st.error(_tr("finance_ui.goals.candidates_error", "Kandidaten konnten nicht ermittelt werden: {error}", error=res.get("error")))
+        return
+    candidates = [c for c in (res.get("candidates") or []) if isinstance(c, dict)]
+    if not candidates:
+        st.info(_tr("finance_ui.goals.candidates_empty", "Keine wiederkehrenden Muster gefunden."))
+        return
+
+    import pandas as pd
+
+    st.dataframe(pd.DataFrame(_candidate_table_rows(candidates)), width='stretch', hide_index=True)
+
+    for index, candidate in enumerate(candidates):
+        if not st.button(
+            _tr("finance_ui.goals.candidates_create", "➕ Als Ziel anlegen"),
+            key=f"finance_goals_cand_use_{index}",
+        ):
+            continue
+        params = _candidate_goal_params(candidate, iban)
+        if not params["name"]:
+            st.error(_tr("finance_ui.goals.name_required", "Name und Konto sind erforderlich."))
+            continue
+        if not params["target_amount"] > 0:
+            st.error(_tr("finance_ui.goals.target_invalid", "Zielbetrag muss positiv sein."))
+            continue
+        created = tools.upsert_goal(params)
+        if created.get("success"):
+            st.success(
+                _tr(
+                    "finance_ui.goals.candidates_create_success",
+                    "Sparziel ({target}) angelegt.",
+                    target=_fmt_money(params["target_amount"]),
+                )
+            )
+            st.rerun()
+        st.error(
+            _tr("finance_ui.goals.candidates_create_error", "Ziel konnte nicht angelegt werden: {error}", error=created.get("error"))
+        )
+
+
+# ---------------------------------------------------------------------------
+# Sub-Tab: Buchungen (Detail-Liste)
+# ---------------------------------------------------------------------------
 
 def _render_transactions_tab(db: FinanceDB) -> None:
     st.subheader(_tr("finance_ui.transactions.subheader", "📋 Buchungen"))
@@ -1669,6 +2255,7 @@ def render_finance_tab() -> None:
             _tr("finance_ui.tabs.accounts", "🏦 Konten"),
             _tr("finance_ui.tabs.categorization", "🏷️ Kategorisierung"),
             _tr("finance_ui.tabs.budgets", "🎯 Budgets"),
+            _tr("finance_ui.tabs.goals", "🎯 Sparziele"),
             _tr("finance_ui.tabs.transfers", "🔁 Transfers"),
             _tr("finance_ui.tabs.analytics", "📊 Auswertungen"),
             _tr("finance_ui.tabs.forecast", "📈 Prognosen"),
@@ -1686,12 +2273,14 @@ def render_finance_tab() -> None:
     with sub_tabs[4]:
         _render_budgets_tab(db)
     with sub_tabs[5]:
-        _render_transfers_tab(db)
+        _render_goals_tab(db)
     with sub_tabs[6]:
-        _render_analytics_tab(db)
+        _render_transfers_tab(db)
     with sub_tabs[7]:
-        _render_forecast_tab(db)
+        _render_analytics_tab(db)
     with sub_tabs[8]:
+        _render_forecast_tab(db)
+    with sub_tabs[9]:
         _render_transactions_tab(db)
 
 

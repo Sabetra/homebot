@@ -39,3 +39,290 @@ def test_relink_transfers_uses_productive_settlement_window() -> None:
     assert callable(relink)
     assert relink(db, productive_window_days=45) == 3
     assert db.received_max_days == 45
+
+
+# ---------------------------------------------------------------------------
+# Sparziele (Goals / Sinking Funds, Finance SOTA Phase 2) — pure helpers
+# ---------------------------------------------------------------------------
+
+
+def test_goal_status_label_maps_known_statuses() -> None:
+    assert finance_tab._goal_status_label("active") == "aktiv"
+    assert finance_tab._goal_status_label("paused") == "pausiert"
+    assert finance_tab._goal_status_label("achieved") == "erreicht"
+    assert finance_tab._goal_status_label("archived") == "archiviert"
+
+
+@pytest.mark.parametrize("status", [None, "", "unknown_status"])
+def test_goal_status_label_unknown_returns_raw(status: object) -> None:
+    assert finance_tab._goal_status_label(status) == str(status or "")
+
+
+@pytest.mark.parametrize("name", ["", "   ", None])
+def test_validate_goal_form_requires_name(name: object) -> None:
+    assert finance_tab._validate_goal_form(name, "100") == "finance_ui.goals.name_required"
+
+
+@pytest.mark.parametrize("target", [None, "", "abc", 0, 0.0, -5])
+def test_validate_goal_form_requires_positive_target(target: object) -> None:
+    assert finance_tab._validate_goal_form("Urlaub", target) == "finance_ui.goals.target_invalid"
+
+
+def test_validate_goal_form_accepts_valid_input() -> None:
+    assert finance_tab._validate_goal_form("Urlaub", "1000.50") is None
+    assert finance_tab._validate_goal_form("Urlaub", 2500) is None
+
+
+def test_goal_form_error_text_maps_error_keys() -> None:
+    name_error = finance_tab._goal_form_error_text("finance_ui.goals.name_required")
+    target_error = finance_tab._goal_form_error_text("finance_ui.goals.target_invalid")
+
+    assert name_error == "Name und Konto sind erforderlich."
+    assert target_error == "Zielbetrag muss positiv sein."
+    assert name_error != target_error
+
+
+@pytest.mark.parametrize(
+    ("progress", "expected"),
+    [
+        ({"progress_cents": 1550}, 15.5),
+        ({"progress_cents": 0}, 0.0),
+        ({"other": 1}, None),
+        ({}, None),
+        (None, None),
+        ("nope", None),
+    ],
+)
+def test_progress_amount_converts_cents(progress: object, expected: float | None) -> None:
+    assert finance_tab._progress_amount(progress, "progress_cents") == expected
+
+
+@pytest.mark.parametrize(
+    ("cents", "expected"),
+    [
+        (True, None),  # Bool ist KEIN numerisches Cents-Feld
+        ("1500", None),
+        (1234.5, 12.35),
+    ],
+)
+def test_progress_amount_rejects_non_numeric(cents: object, expected: float | None) -> None:
+    assert finance_tab._progress_amount({"progress_cents": cents}, "progress_cents") == expected
+
+
+def test_fmt_money_formats_and_handles_invalid() -> None:
+    assert finance_tab._fmt_money(1234.5) == "1.234,50"
+    assert finance_tab._fmt_money(0) == "0,00"
+    assert finance_tab._fmt_money(None) == "–"
+    assert finance_tab._fmt_money("abc") == "–"
+
+
+def test_goal_table_rows_skips_invalid_items() -> None:
+    assert finance_tab._goal_table_rows(None) == []
+    assert finance_tab._goal_table_rows(["nope", 42, ["nested"]]) == []
+
+
+def test_goal_table_rows_maps_goal_and_progress() -> None:
+    items = [
+        {
+            "goal": {
+                "goal_id": 1,
+                "name": "Urlaub",
+                "iban": "DE02120300000000202051",
+                "target_amount": 3000.0,
+                "target_date": "2026-08-01",
+                "monthly_rate": 250.0,
+                "status": "active",
+            },
+            "progress": {
+                "progress_cents": 150000,
+                "remaining_cents": 150000,
+                "progress_pct": 50.0,
+            },
+        }
+    ]
+
+    rows = finance_tab._goal_table_rows(items)
+
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["Name"] == "Urlaub"
+    assert row["Konto"] == "DE02120300000000202051"
+    assert row["Ziel (€)"] == 3000.0
+    assert row["Gespart (€)"] == 1500.0
+    assert row["Offen (€)"] == 1500.0
+    assert row["%"] == 50.0
+    assert row["Monatsrate (€)"] == 250.0
+    assert row["Zieldatum"] == "2026-08-01"
+    assert row["Status"] == "aktiv"
+
+
+def test_goal_table_rows_tolerates_missing_parts() -> None:
+    row = finance_tab._goal_table_rows([{"goal": {"name": "X"}, "progress": None}])[0]
+
+    assert row["Name"] == "X"
+    assert row["Konto"] == ""
+    assert row["Gespart (€)"] is None
+    assert row["Offen (€)"] is None
+    assert row["Monatsrate (€)"] is None
+    assert row["Zieldatum"] == ""
+    assert row["Status"] == ""
+
+
+def test_candidate_table_rows_skips_invalid_items() -> None:
+    assert finance_tab._candidate_table_rows(None) == []
+    assert finance_tab._candidate_table_rows(["nope", 7]) == []
+
+
+def test_candidate_table_rows_maps_fields() -> None:
+    rows = finance_tab._candidate_table_rows(
+        [
+            {
+                "counterparty": "Handwerker",
+                "occurrences": 3,
+                "average_amount": 1200.0,
+                "monthly_equivalent": 100.0,
+            }
+        ]
+    )
+
+    assert len(rows) == 1
+    assert rows[0]["Gegenseite"] == "Handwerker"
+    assert rows[0]["Vorkommen"] == 3
+    assert rows[0]["Ø Betrag"] == 1200.0
+    assert rows[0]["Monats-Äquivalent"] == 100.0
+
+
+class _FakeTx:
+    """Minimales Transaction-Doppel für die Goals-Selectbox-Helfer."""
+
+    def __init__(
+        self,
+        tx_id: int | None,
+        amount_cents: object,
+        booking_date: str | None = "2026-01-05",
+        counterparty: str = "Gegenseite",
+    ) -> None:
+        self.id = tx_id
+        self.amount_cents = amount_cents
+        self.booking_date = booking_date
+        self.counterparty = counterparty
+
+
+def test_assignable_transactions_filters_assigned_ids() -> None:
+    txs = [_FakeTx(1, -10000), _FakeTx(2, -20000), _FakeTx(3, -3000)]
+
+    assert finance_tab._assignable_transactions(txs, {2}) == [txs[0], txs[2]]
+    assert finance_tab._assignable_transactions(txs, None) == txs
+    assert finance_tab._assignable_transactions(txs, [1, 2, 3]) == []
+    assert finance_tab._assignable_transactions(txs, {True}) == txs  # Bool ist keine tx-ID
+
+
+def test_assignable_transactions_accepts_objects_with_id() -> None:
+    class _Ref:
+        def __init__(self, tx_id: int) -> None:
+            self.id = tx_id
+
+    txs = [_FakeTx(1, -10000), _FakeTx(2, -20000)]
+
+    assert finance_tab._assignable_transactions(txs, [_Ref(1)]) == [txs[1]]
+
+
+def test_assignable_transactions_drops_entries_without_id() -> None:
+    txs = [_FakeTx(None, -10000), _FakeTx(2, -20000)]
+
+    assert finance_tab._assignable_transactions(txs, set()) == [txs[1]]
+
+
+def test_transaction_option_label_signs_and_fallbacks() -> None:
+    positive = finance_tab._transaction_option_label(_FakeTx(1, 12345, "2026-01-05", "Sparrück"))
+    negative = finance_tab._transaction_option_label(_FakeTx(2, -9900, "2026-02-01", "Bank"))
+    invalid = finance_tab._transaction_option_label(_FakeTx(3, "n/a", None, ""))
+
+    assert positive == "2026-01-05 · Sparrück (+123,45)"
+    assert negative == "2026-02-01 · Bank (-99,00)"
+    assert invalid == "? ·  (0.00)"
+
+
+def test_candidate_goal_params_prefers_annual_and_monthly() -> None:
+    candidate = {
+        "counterparty": "  Kfz-Versicherung  ",
+        "average_amount": 500.0,
+        "monthly_equivalent": 42.0,
+        "annual_equivalent": 510.0,
+    }
+
+    params = finance_tab._candidate_goal_params(candidate, "DE02120300000000202051")
+
+    assert params == {
+        "name": "Kfz-Versicherung",
+        "iban": "DE02120300000000202051",
+        "target_amount": 510.0,
+        "monthly_rate": 42.0,
+    }
+
+
+def test_candidate_goal_params_falls_back_to_average() -> None:
+    params = finance_tab._candidate_goal_params({"counterparty": "X", "average_amount": 300.5}, "IBAN")
+
+    assert params["name"] == "X"
+    assert params["target_amount"] == 300.5
+    assert params["monthly_rate"] == 300.5
+
+
+def test_candidate_goal_params_non_dict_is_safe() -> None:
+    params = finance_tab._candidate_goal_params(None, "IBAN")
+
+    assert params == {"name": "", "iban": "IBAN", "target_amount": 0.0, "monthly_rate": 0.0}
+
+
+def test_projection_headline_key_priority() -> None:
+    headline = finance_tab._projection_headline_key
+
+    # Kein Dict / ungültig
+    assert headline(None) == "finance_ui.goals.projection_none"
+    assert headline("nope") == "finance_ui.goals.projection_none"
+    # Erreicht schlägt Overdue (Priorität)
+    assert headline({"achieved": True, "overdue": True}) == "finance_ui.goals.projection_achieved_now"
+    # Overdue
+    assert headline(
+        {"overdue": True, "target_date": "2026-01-01", "remaining": 500.0}
+    ) == "finance_ui.goals.projection_overdue"
+    # On-/Off-Track (explizit)
+    assert headline({"on_track": True}) == "finance_ui.goals.projection_on_track"
+    assert headline({"on_track": False}) == "finance_ui.goals.projection_off_track"
+    # Keine Rate -> keine Projektion (on_track=None bleibt unentschieden)
+    assert headline({"rate": None, "achieved_month": "2026-10"}) == "finance_ui.goals.projection_none"
+    # Erreichbarkeits-Monat
+    assert headline({"rate": 100.0, "achieved_month": "2026-10"}) == "finance_ui.goals.projection_achieved"
+    # Verbleibende Monate
+    assert headline({"rate": 100.0, "months_left_at_rate": 3}) == "finance_ui.goals.projection_months_left"
+    # Rate vorhanden, aber keine Ableitung möglich
+    assert headline({"rate": 100.0}) == "finance_ui.goals.projection_none"
+
+
+@pytest.mark.parametrize(
+    "projection",
+    [
+        None,
+        {"achieved": True},
+        {"overdue": True, "target_date": "2026-01-01", "remaining": 500.0},
+        {"on_track": True},
+        {"on_track": False},
+        {"rate": None},
+        {"rate": 100.0, "achieved_month": "2026-10"},
+        {"rate": 100.0, "months_left_at_rate": 3},
+    ],
+)
+def test_projection_headline_text_is_nonempty(projection: object) -> None:
+    text = finance_tab._projection_headline_text(projection)
+
+    assert isinstance(text, str)
+    assert text.strip()
+
+
+def test_projection_headline_text_overdue_includes_date() -> None:
+    text = finance_tab._projection_headline_text(
+        {"overdue": True, "target_date": "2026-01-01", "remaining": 500.0}
+    )
+
+    assert "2026-01-01" in text
