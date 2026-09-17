@@ -192,4 +192,95 @@ forecast_plan_journal   -- Undo via Gegenrevision; ueberlebt Item-Loeschung
 | 2026-09-16 | AP1: models.py-Vokabular, db_schema.py (Tabellen/DAO), tools.py (API + Prognose), Tests, UI, i18n |
 | 2026-09-16 | Verifikation: 42/42 plan_items, 88/88 monarch_core+tab_regressions, 92/92 erweiterte Suiten, Kombi-Lauf 222/222 PASS; py_compile OK; i18n-Parität 37×3 Locales; check_licenses --strict OK |
 | 2026-09-16 | Fix: `finance/tab.py` importierte nicht existierende `RevisionConflictError` (Import + except) → `PlanRevisionConflict` (SSoT `db_schema.py:223`); vorher ImportError bei Collection von `test_finance_tab_regressions.py`, danach grün |
-| 2026-09-16 | AP1 ABGESCHLOSSEN (alle DoD-Punkte ✅). Nächste Etappe: AP2 (Detektion) — bewusst nicht in diesem Schritt |
+| 2026-09-16 | AP1 ABGESCHLOSSEN (alle DoD-Punkte ✅). Commit 832c2f4, Push auf origin/main |
+| 2026-09-16 | AP2 S1 (Engine): `finance/series_engine.py` implementiert + `tests/test_series_engine.py` 60/60 PASS; 5 Root-Cause-Fixes (Details unten). Commit folgt in derselben Session |
+
+## AP2 — Serien, Erkennungen und Ist-Abgleich (Start 2026-09-17)
+
+### AP2-Auftrag (Prompt §6 AP2, Zeile 163)
+
+* Serienexpansion, Ausnahmen und Geltungsbereiche implementieren
+* Erkennungskandidaten mit Quellen; Bestätigen/Ablehnen/Korrigieren; Pause/Ende
+* Kalender listet **ALLE** Vorkommen im Fenster (F01)
+* Abo-Monatsäquivalent ≠ echte Fälligkeitssumme (F02); saubere Labels
+* F01–F04/F08 **am gemeinsamen Modell** beheben (Prompt §5.2 kanonische
+  Planvorkommen-Folge), nicht nur Tabellenzahlen
+* Ist-Matching: konservative Kandidaten + Nutzerbestätigung; Mehrdeutigkeit
+  melden; Reimport darf manuelle Serie/Ausnahme NICHT löschen
+* Ausschluss vom statistischen Rest + stabile Quellenbindung testen
+* Wiederkehrende Einnahmen (Gehalt) explizit planbar
+
+**Gate (AP2):** bestätigte Quartalsrechnung → richtige Vorkommen/Kosten
+(120/Quartal ⇒ 40/Monat, 480/Jahr, nächste Fälligkeit korrekt);
+Skip/Verschieben ändert Kalender, Monatsnetto und Saldo exakt einmal;
+gleiche Empfänger verschiedener Konten/Währungen bleiben isoliert.
+
+### AP2-Baseline (Code-Fakten, 2026-09-17)
+
+| Fakt | Beleg |
+|------|-------|
+| `upcoming_bills` projiziert exakt 1 `next_due` je Gruppe; `total_in_window` = nur deren Summe (F01) | `finance/tools.py:788-870` |
+| `_next_due_on_or_after` behandelt alles als monatsbasiert; Quarterly/Weekly/Jährlich fachlich falsch (F01) | `finance/tools.py:637-654` |
+| `subscription_audit`: `monthly_cost` = Betrag pro Zahlung, `annual_cost = monthly * 12` — Quarterly 120 ⇒ 120/Monat, 1440/Jahr (F02; Soll: 40/Monat, 480/Jahr) | `finance/tools.py:1387-1395` |
+| `_recurring_groups` gruppiert NUR `(currency, counterparty)` — kein Konto (F03); `amounts = [abs(...)]` mischt beide Vorzeichen (F04) | `finance/tools.py:2863-2893` |
+| `list_analysis_facts` liefert `transaction_id`, aber KEINE `account_id`/`iban` (F03) | `finance/db_schema.py:2287-2351` |
+| F08: Forecast fit historische Monatsrate; Serie erscheint zusätzlich zum gefitteten Pendant (Doppelzählung, §5.2) | `finance/tools.py:872+` |
+| AP1-Patterns wiederverwendbar: `forecast_plan_items`-Schema (L536-576), DAO (L3379-4000), `PlanRevisionConflict` (L223), i18n `finance_ui.forecast.plan.*` | `finance/db_schema.py` |
+| Test-Setup: `FinanceDB(str(tmp_path/…))`, `upsert_bank`/`upsert_account`, `persist_statement_import` | `tests/test_finance_plan_items.py` |
+
+### AP2-Stufenplan (jeweils grün validiert)
+
+| Stufe | Inhalt | Status |
+|-------|--------|--------|
+| S1 | Gemeinsames Modell: `recurring_series` + `series_exceptions` + `series_candidates` + `series_occurrence_links` + Journal (Schema/DAO), `finance/series_engine.py` (Expansion/Detektion/Matching, rein deterministisch), Tools-API (list/confirm/reject/pause/end/skip/move/amount/calendar/detect) | Engine fertig (60/60 grün); DAO entworfen (ungetestet); Tools-API offen |
+| S2 | F01/F02-Fix in `upcoming_bills`/`subscription_audit` (additive Keys + korrekte Fenster-/Monatäquivalent-Logik), F08: opt-in `include_series` in `cash_flow_forecast` (Byte-Kompatibilität Default) | offen |
+| S3 | UI (Serien-/Kandidaten-Sektion in Forecast-Tab) + i18n `finance_ui.forecast.series.*` DE/EN/BG + AppTest + Vollvalidierung | offen |
+
+### AP2-Entscheidungen (bewusst, dokumentiert)
+
+| # | Entscheidung | Begründung |
+|---|-------------|------------|
+| S1-1 | Neue Tabelle `recurring_series` (keine Wiederverwendung von `forecast_plan_items`) | Serie ≠ Einmalplanung: Rhythmus/Anker/Ausnahmen/Quellen sind eigene Semantik (§5.1) |
+| S1-2 | Ausnahmen pro (series_id, ORIGINAL-Termin, Typ): skip/move/amount; Move ändert Identität nicht | §5.1: „Verschieben ändert nicht die Identität; erneute Expansion erzeugt weder Dublette noch Verlust der Ausnahme" |
+| S1-3 | Kandidaten-Fingerprint aus fachlichem Scope (iban, currency, direction, counterparty, cadence, anchor) — kein Zeilenindex/Anzeigetext | §5.1: „Fingerprint aus fachlichem Scope und Quellen" |
+| S1-4 | 2+ Beobachtungen ⇒ Kandidat (Vorschlag), NIE automatische Bestätigung | §5.4: „Zwei Buchungen erzeugen einen prüfbaren Vorschlag, keinen sicheren Vertrag" |
+| S1-5 | Ist-Matching 1:1 (UNIQUE beide Seiten); Mehrdeutige/gesplittete Treffer nur melden, nie verknüpfen | §5.1: „vorerst nur 1:1 Abgleich" |
+| S1-6 | `list_analysis_facts` um `account_id`/`iban` ERWEITERN (additive Keys, bestehende Keys unverändert) | F03-Fix am Modell, nicht an der Oberfläche |
+
+### S1-Fortschritt: series_engine (Fix-Session, 2026-09-16)
+
+**Status:** `finance/series_engine.py` (659 Zeilen, rein deterministisch, keine
+DB-Abhängigkeit) implementiert und grün validiert:
+`tests/test_series_engine.py` **60/60 PASS** (0.3 s), `py_compile` OK.
+Die 5 Test-Fehlmuster des vorherigen Arbeitsstands sind beseitigt (Details unten).
+
+**Public API (Stage 1):**
+
+| API | Zweck |
+|-----|-------|
+| `clamp_day(year, month, anchor_day)` | Anker-Tag → Kalendermonat; Anker 29..31 ⇒ Monatsende (2026-06-29 ⇒ 2026-06-30, Anker 31 im Februar ⇒ 28/29) |
+| `SeriesSpec` (frozen) | validierte Serien-Definition: cadence, period_n, anchor, effective_from/to, amount_cents > 0 (Vorzeichen aus direction) |
+| `SeriesException` (frozen) | skip / move / amount pro (series_id, ORIGINAL-Termin); Move ersetzt nur das Datum (Identität bleibt) |
+| `expand_series(spec, window, exceptions)` | deterministische Expansion; sortiert, dedupliziert, Cap `_MAX_OCCURRENCES` (2000) |
+| `next_occurrences(spec, count, on_or_after)` | nächste N Vorkommen (Suchfenster 3 Jahre; respektiert effective_to + Ausnahmen) |
+| `candidate_fingerprint(...)` | stabiler 8-Dimensionen-Scope: iban, currency, direction, counterparty, cadence, period_n, anchor_day, anchor_date — normalisiert, kein Anzeigetext |
+| `estimate_cadence(dates)` | konservativer Schätzer (Wochen-Multiplen mit k=1-Mehrheit, Kalendermonate mit Lücken-Toleranz, yearly); inkonsistent ⇒ None |
+| `detect_candidates(facts)` | Gruppierung nach (iban, currency, direction, counterparty); 2+ Belege ⇒ prüfbarer Kandidat (status 'pending', NIE auto-confirmed); Betrag = aktuellste Beobachtung (F02) |
+| `match_occurrence` / `match_occurrences` | konservatives 1:1; Standard-Fenster ±1 Tag; Mehrdeutigkeit bleibt ungematcht (nur melden, nie raten) |
+
+**Fixes dieser Session (5 Root-Causes, jeweils mit Test abgedeckt):**
+
+| # | Alt-Verhalten (Root Cause) | Neu-Verhalten |
+|---|---------------------------|---------------|
+| 1 | `clamp_day` clampete nur überlappende Tage (min-Anker): Anker 29 blieb im Juni 29 | Anker ≥ 29 ⇒ Monatsende (Prompt-Beispiel: 2026-06-29 ⇒ 2026-06-30) |
+| 2 | `estimate_cadence` (Wochen): Einzel-Rundung `round(mean/7)` + ±2-Tage-Toleranz ⇒ Misch-Multiplen (z. B. 7 + 14 Tage) fielen durch, 14-Tage-Rhythmus konnte als Monat durchgehen | exakte 7-Tage-Multiplen mit k=1-Mehrheit (14-Tage-Rhythmus ⇒ `n_weeks 2`); Monats-Branch nur noch bei stabiler Tag-Komponente (±3 Tage) |
+| 3 | `estimate_cadence` (Monate): Anker = `max(Tage)`, keine Lücken-Toleranz ⇒ unregelmäßige Beobachtungen lieferten falschen Rhythmus oder keinen | Anker = häufigster Tag (Majority); komplette Kalendermonate mit ganzzahliger Lücken-Toleranz (Lücken = ganze Perioden) |
+| 4 | `detect_candidates`: Scope-Normierung (IBAN/Counterparty) driftete gegenüber dem Fingerprint (F03) | eine Normierung für Gruppierung, Kandidaten-Felder und Fingerprint (`_norm_scope` + `candidate_fingerprint` auf denselben Werten) |
+| 5 | `match_occurrences`: Standard-Fenster ±7 Tage zu großzügig für 1:1 (T8) | Standard-Fenster ±1 Tag; pro Beleg bleibt `tolerance_cents` explizit setzbar |
+
+**Arbeitsbaum-Status (wichtig für nächste Session):**
+`finance/db_schema.py` enthält +1505 Zeilen Serien-DAO aus vorangegangener Arbeit
+(Tabellen `recurring_series`, `recurring_series_candidates`, `series_exceptions`,
+`series_occurrence_links`, `series_journal`; Upsert/Journal/Undo-Logik) —
+**noch KEINE Tests**. Bewusst NICHT zusammen mit der Engine committet.
+Nächste Session: DAO-Tests (T01–T14) → Tools-API (S1-Finale) → S2 (F01/F02/F08).

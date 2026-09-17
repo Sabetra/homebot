@@ -10,6 +10,16 @@ Schema-Prinzipien:
 * Alle Betrge werden als ganzzahlige Cents (``INTEGER``) gespeichert;
   Float-Arithmetik auf Geldbetrgen ist nicht akzeptabel (Rundungsfehler
   bei Aggregation).
+
+Recurring-series-Modell (AP2 Stage 2):
+* ``recurring_series`` — kanonische Serie (source: manual|detected,
+  ``candidate_fingerprint`` verknüpft mit Kandidaten).
+* ``series_candidates`` — UNIQUE ``fingerprint``; pending/confirmed/rejected.
+* ``series_exceptions`` — skip/move/amount, key = Serie + ORIGINAL-Termin.
+* ``series_occurrence_links`` — konservativ 1:1 (Occurrence <-> Transaktion).
+* ``series_journal`` — vorher/nachher-Snapshots, Basis für Undo.
+* Deterministische Engine: ``finance/series_engine.py`` (expand_series,
+  next_due, apply_exceptions, detect_candidates, match_actuals).
 """
 
 from __future__ import annotations
@@ -301,6 +311,148 @@ class PlanJournalEntry:
 
 
 # ---------------------------------------------------------------------------
+# Forecast UX AP2 (2026-09-17): Recurring Series — Datenklassen
+# ---------------------------------------------------------------------------
+
+
+class SeriesRevisionConflict(ValueError):
+    """Optimistic-Concurrency-Konflikt bei Serien-Updates.
+
+    ``expected_revision`` entspricht nicht der aktuellen ``revision``:
+    ein paralleler Write hat die Serie zwischenzeitlich geaendert.
+    Die DAO ueberschreibt NICHT (Gate: keine stille Ueberschreibung).
+    """
+
+    def __init__(
+        self,
+        series_id: int,
+        expected_revision: Optional[int],
+        actual_revision: int,
+    ) -> None:
+        super().__init__(
+            f"Recurring-Series {series_id}: Revision-Konflikt "
+            f"(expected={expected_revision}, actual={actual_revision})"
+        )
+        self.series_id = series_id
+        self.expected_revision = expected_revision
+        self.actual_revision = actual_revision
+
+
+@dataclass(frozen=True)
+class RecurringSeries:
+    """Wiederkehrende Einnahme/Ausgabe (Forecast UX AP2, 2026-09-17).
+
+    * ``cadence``/``period_n``: strukturiert validierter Rhythmus
+      (monthly, n_months 2..11, weekly, n_weeks 2..52, yearly).
+      Zweimonatlich ist NICHT zweimal monatlich.
+    * ``anchor_day``/``anchor_date``: urspruenglicher Anker bleibt erhalten;
+      Expansion clamped auf echte Kalendermonate.
+    * ``amount_cents`` > 0 (Vorzeichen via ``direction``).
+    * ``status``: 'active' | 'paused' | 'ended' (nur 'active' fliesst in
+      die Prognose).
+    * ``source``: 'manual' | 'detected' (Bestaetigung eines Kandidaten).
+    * ``revision``: optimistic lock, Start 1, bei jedem Write +1.
+    * ``client_token``: UI-Idempotenz.
+    * Bewusst KEINE Buchungen: eine Serie ist eine Prognose-Annahme.
+    """
+
+    id: int
+    iban: str
+    currency: str
+    direction: str                         # 'income' | 'expense'
+    cadence: str                           # VALID_CADENCES
+    period_n: int                          # >= 1
+    anchor_day: int                        # 1..31
+    anchor_date: str                       # ISO
+    amount_cents: int                      # > 0
+    counterparty: str = ""
+    category_id: Optional[int] = None
+    title: Optional[str] = None
+    status: str = "active"                 # 'active' | 'paused' | 'ended'
+    source: str = "manual"                 # 'manual' | 'detected'
+    candidate_fingerprint: Optional[str] = None
+    effective_from: Optional[str] = None
+    effective_to: Optional[str] = None
+    evidence_json: Optional[str] = None
+    revision: int = 1
+    client_token: Optional[str] = None
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class SeriesExceptionRow:
+    """Ausnahme pro Serie + ORIGINAL-Termin (skip/move/amount).
+
+    ``move``: ``new_due_date`` gesetzt, Identitaet bleibt erhalten.
+    ``amount``: ``amount_cents`` > 0 ersetzt den Serien-Betrag.
+    """
+
+    id: int
+    series_id: int
+    original_due_date: str
+    exception_type: str                    # 'skip' | 'move' | 'amount'
+    new_due_date: Optional[str] = None
+    amount_cents: Optional[int] = None
+    revision: int = 1
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class SeriesCandidateRow:
+    """Erkennungskandidat (stabil per ``fingerprint``, 2+ Belege => low)."""
+
+    id: int
+    fingerprint: str
+    iban: str
+    currency: str
+    direction: str
+    counterparty: str
+    cadence: str
+    period_n: int
+    anchor_day: int
+    anchor_date: str
+    amount_cents: int
+    evidence_json: str
+    confidence: str                        # 'low' | 'medium' | 'high'
+    status: str = "pending"                # 'pending' | 'confirmed' | 'rejected'
+    series_id: Optional[int] = None
+    detected_at: Optional[str] = None
+    reviewed_at: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class SeriesOccurrenceLink:
+    """Ist-Abgleich einer Serie auf eine Buchung (vorerst strikt 1:1)."""
+
+    id: int
+    series_id: int
+    occurrence_date: str                   # ISO
+    transaction_id: int
+    status: str = "matched"
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class SeriesJournalEntry:
+    """Aenderungs-Journal einer Serie (Undo via Gegenrevision).
+
+    Referenziert die Serie OHNE Foreign Key: Eintraege ueberleben die
+    Loeschung und machen damit 'deleted' wieder rueckgaengig.
+    """
+
+    id: int
+    series_id: int
+    action: str
+    before_json: Optional[str] = None
+    after_json: Optional[str] = None
+    revision: int = 1
+    created_at: Optional[str] = None
+
+
+# ---------------------------------------------------------------------------
 # Schema
 # ---------------------------------------------------------------------------
 
@@ -573,6 +725,115 @@ _SCHEMA_STATEMENTS: Tuple[str, ...] = (
     )
     """,
     "CREATE INDEX IF NOT EXISTS fpj_item ON forecast_plan_journal (plan_item_id, id)",
+    # ------------------------------------------------------------------
+    # Recurring series (Forecast UX AP2, 2026-09-17): wochen-/monats-
+    # beziehungsgebundene Serien mit Ausnahmen, Erkennungskandidaten,
+    # Ist-Links (1:1) und Aenderungs-Journal (Undo via Gegenrevision).
+    # CREATE ... IF NOT EXISTS => fuer Altdatenbanken automatisch
+    # additiv (analog forecast_plan_items, AP1).
+    # ------------------------------------------------------------------
+    """
+    CREATE TABLE IF NOT EXISTS recurring_series (
+        id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+        iban                  TEXT NOT NULL,
+        currency              TEXT NOT NULL DEFAULT 'EUR',
+        direction             TEXT NOT NULL CHECK (direction IN ('income', 'expense')),
+        cadence               TEXT NOT NULL
+                              CHECK (cadence IN ('monthly', 'n_months', 'weekly', 'n_weeks', 'yearly')),
+        period_n              INTEGER NOT NULL DEFAULT 1,
+        anchor_day            INTEGER NOT NULL CHECK (anchor_day BETWEEN 1 AND 31),
+        anchor_date           TEXT NOT NULL,
+        amount_cents          INTEGER NOT NULL CHECK (amount_cents > 0),
+        counterparty          TEXT NOT NULL DEFAULT '',
+        category_id           INTEGER REFERENCES categories(id) ON DELETE SET NULL,
+        title                 TEXT,
+        status                TEXT NOT NULL DEFAULT 'active'
+                              CHECK (status IN ('active', 'paused', 'ended')),
+        source                TEXT NOT NULL DEFAULT 'manual'
+                              CHECK (source IN ('manual', 'detected')),
+        candidate_fingerprint TEXT,
+        effective_from        TEXT,
+        effective_to          TEXT,
+        evidence_json         TEXT,
+        revision              INTEGER NOT NULL DEFAULT 1,
+        client_token          TEXT UNIQUE,
+        created_at            TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at            TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS rs_iban_status ON recurring_series (iban, status)",
+    "CREATE INDEX IF NOT EXISTS rs_status ON recurring_series (status)",
+    """
+    CREATE TABLE IF NOT EXISTS series_exceptions (
+        id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+        series_id           INTEGER NOT NULL REFERENCES recurring_series(id) ON DELETE CASCADE,
+        original_due_date   TEXT NOT NULL,
+        exception_type      TEXT NOT NULL CHECK (exception_type IN ('skip', 'move', 'amount')),
+        new_due_date        TEXT,
+        amount_cents        INTEGER CHECK (amount_cents > 0),
+        revision            INTEGER NOT NULL DEFAULT 1,
+        created_at          TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at          TEXT NOT NULL DEFAULT (datetime('now')),
+        UNIQUE (series_id, original_due_date)
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS se_series ON series_exceptions (series_id, original_due_date)",
+    """
+    CREATE TABLE IF NOT EXISTS series_candidates (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        fingerprint     TEXT NOT NULL UNIQUE,
+        iban            TEXT NOT NULL,
+        currency        TEXT NOT NULL,
+        direction       TEXT NOT NULL CHECK (direction IN ('income', 'expense')),
+        counterparty    TEXT NOT NULL,
+        cadence         TEXT NOT NULL
+                        CHECK (cadence IN ('monthly', 'n_months', 'weekly', 'n_weeks', 'yearly')),
+        period_n        INTEGER NOT NULL DEFAULT 1,
+        anchor_day      INTEGER NOT NULL CHECK (anchor_day BETWEEN 1 AND 31),
+        anchor_date     TEXT NOT NULL,
+        amount_cents    INTEGER NOT NULL CHECK (amount_cents > 0),
+        evidence_json   TEXT NOT NULL,
+        confidence      TEXT NOT NULL DEFAULT 'low'
+                        CHECK (confidence IN ('low', 'medium', 'high')),
+        status          TEXT NOT NULL DEFAULT 'pending'
+                        CHECK (status IN ('pending', 'confirmed', 'rejected')),
+        series_id       INTEGER REFERENCES recurring_series(id),
+        detected_at     TEXT NOT NULL DEFAULT (datetime('now')),
+        reviewed_at     TEXT
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS sc_status ON series_candidates (status)",
+    """
+    CREATE TABLE IF NOT EXISTS series_occurrence_links (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        series_id       INTEGER NOT NULL REFERENCES recurring_series(id) ON DELETE CASCADE,
+        occurrence_date TEXT NOT NULL,
+        transaction_id  INTEGER NOT NULL,
+        status          TEXT NOT NULL DEFAULT 'matched',
+        created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at      TEXT NOT NULL DEFAULT (datetime('now')),
+        UNIQUE (series_id, occurrence_date),
+        UNIQUE (transaction_id)
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS sol_txn ON series_occurrence_links (transaction_id)",
+    """
+    CREATE TABLE IF NOT EXISTS series_journal (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        series_id       INTEGER NOT NULL,
+        action          TEXT NOT NULL CHECK (action IN (
+                            'created', 'updated', 'deleted', 'restored',
+                            'status_changed',
+                            'exception_added', 'exception_updated', 'exception_removed',
+                            'link_added', 'link_removed'
+                        )),
+        before_json     TEXT,
+        after_json      TEXT,
+        revision        INTEGER NOT NULL,
+        created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS sj_series ON series_journal (series_id, id)",
 )
 
 _FINANCE_SCHEMA_CATALOG_KEY = "schema_context_v1"
@@ -4003,6 +4264,1250 @@ class FinanceDB:
                 ),
             )
         return self._plan_item_from_row(new_row)
+
+    # -- recurring series (Forecast UX AP2, 2026-09-17) ----------------
+    # Kanonische Serien-Expansions-Logik liegt in finance/series_engine.py
+    # (rein, deterministisch, ohne DB). Diese DAO persistiert Serien,
+    # Ausnahmen, Erkennungskandidaten, Ist-Links (1:1) und das Journal.
+
+    @staticmethod
+    def _series_from_row(row: sqlite3.Row) -> RecurringSeries:
+        return RecurringSeries(
+            id=int(row["id"]),
+            iban=row["iban"],
+            currency=row["currency"],
+            direction=row["direction"],
+            cadence=row["cadence"],
+            period_n=int(row["period_n"]),
+            anchor_day=int(row["anchor_day"]),
+            anchor_date=row["anchor_date"],
+            amount_cents=int(row["amount_cents"]),
+            counterparty=row["counterparty"] or "",
+            category_id=row["category_id"],
+            title=row["title"],
+            status=row["status"],
+            source=row["source"],
+            candidate_fingerprint=row["candidate_fingerprint"],
+            effective_from=row["effective_from"],
+            effective_to=row["effective_to"],
+            evidence_json=row["evidence_json"],
+            revision=int(row["revision"]),
+            client_token=row["client_token"],
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
+        )
+
+    @staticmethod
+    def _series_exception_from_row(row: sqlite3.Row) -> SeriesExceptionRow:
+        return SeriesExceptionRow(
+            id=int(row["id"]),
+            series_id=int(row["series_id"]),
+            original_due_date=row["original_due_date"],
+            exception_type=row["exception_type"],
+            new_due_date=row["new_due_date"],
+            amount_cents=row["amount_cents"],
+            revision=int(row["revision"]),
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
+        )
+
+    @staticmethod
+    def _series_candidate_from_row(row: sqlite3.Row) -> SeriesCandidateRow:
+        return SeriesCandidateRow(
+            id=int(row["id"]),
+            fingerprint=row["fingerprint"],
+            iban=row["iban"],
+            currency=row["currency"],
+            direction=row["direction"],
+            counterparty=row["counterparty"],
+            cadence=row["cadence"],
+            period_n=int(row["period_n"]),
+            anchor_day=int(row["anchor_day"]),
+            anchor_date=row["anchor_date"],
+            amount_cents=int(row["amount_cents"]),
+            evidence_json=row["evidence_json"],
+            confidence=row["confidence"],
+            status=row["status"],
+            series_id=row["series_id"],
+            detected_at=row["detected_at"],
+            reviewed_at=row["reviewed_at"],
+        )
+
+    @staticmethod
+    def _series_link_from_row(row: sqlite3.Row) -> SeriesOccurrenceLink:
+        return SeriesOccurrenceLink(
+            id=int(row["id"]),
+            series_id=int(row["series_id"]),
+            occurrence_date=row["occurrence_date"],
+            transaction_id=int(row["transaction_id"]),
+            status=row["status"],
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
+        )
+
+    @staticmethod
+    def _series_journal_from_row(row: sqlite3.Row) -> SeriesJournalEntry:
+        return SeriesJournalEntry(
+            id=int(row["id"]),
+            series_id=int(row["series_id"]),
+            action=row["action"],
+            before_json=row["before_json"],
+            after_json=row["after_json"],
+            revision=int(row["revision"]),
+            created_at=row["created_at"],
+        )
+
+    @staticmethod
+    def _series_snapshot(row: sqlite3.Row) -> Dict[str, Any]:
+        """Kompletter Serien-Snapshot (JSON, ohne client_token) fürs Journal."""
+        return {
+            "id": int(row["id"]),
+            "iban": row["iban"],
+            "currency": row["currency"],
+            "direction": row["direction"],
+            "cadence": row["cadence"],
+            "period_n": int(row["period_n"]),
+            "anchor_day": int(row["anchor_day"]),
+            "anchor_date": row["anchor_date"],
+            "amount_cents": int(row["amount_cents"]),
+            "counterparty": row["counterparty"],
+            "category_id": row["category_id"],
+            "title": row["title"],
+            "status": row["status"],
+            "source": row["source"],
+            "candidate_fingerprint": row["candidate_fingerprint"],
+            "effective_from": row["effective_from"],
+            "effective_to": row["effective_to"],
+            "evidence_json": row["evidence_json"],
+            "revision": int(row["revision"]),
+            "created_at": row["created_at"],
+        }
+
+    @staticmethod
+    def _load_series_snapshot(raw: Optional[str]) -> Optional[Dict[str, Any]]:
+        if raw is None:
+            return None
+        try:
+            data = json.loads(raw)
+        except (TypeError, ValueError):
+            return None
+        return data if isinstance(data, dict) else None
+
+    @staticmethod
+    def _series_exception_payload(exc: SeriesExceptionRow) -> Dict[str, Any]:
+        """Exceptions-Payload fuer das Journal (vorher/nachher)."""
+        return {
+            "id": exc.id,
+            "series_id": exc.series_id,
+            "original_due_date": exc.original_due_date,
+            "exception_type": exc.exception_type,
+            "new_due_date": exc.new_due_date,
+            "amount_cents": exc.amount_cents,
+            "note": exc.note,
+            "revision": exc.revision,
+        }
+
+    @staticmethod
+    def _validate_series_fields(
+        *,
+        iban: Optional[str] = None,
+        currency: Optional[str] = None,
+        direction: Optional[str] = None,
+        cadence: Optional[str] = None,
+        period_n: Optional[int] = None,
+        anchor_day: Optional[int] = None,
+        anchor_date: Optional[str] = None,
+        amount_cents: Optional[int] = None,
+        effective_from: Optional[str] = None,
+        effective_to: Optional[str] = None,
+        status: Optional[str] = None,
+        source: Optional[str] = None,
+    ) -> None:
+        """Feld-Validierung an der DAO-Grenze (fail-fast, laute Fehler)."""
+        if iban is not None and (not isinstance(iban, str) or not iban.strip()):
+            raise ValueError("iban must be a non-empty string")
+        if currency is not None and (
+            not isinstance(currency, str) or len(currency) != 3 or not currency.isalpha()
+        ):
+            raise ValueError(f"currency must be a 3-letter code, got {currency!r}")
+        if direction is not None and direction not in ("income", "expense"):
+            raise ValueError(f"direction must be 'income' or 'expense', got {direction!r}")
+        if cadence is not None:
+            if cadence not in VALID_CADENCES:
+                raise ValueError(
+                    f"cadence must be one of {sorted(VALID_CADENCES)}, got {cadence!r}"
+                )
+            if cadence in ("n_months", "n_weeks") and period_n is None:
+                raise ValueError(f"cadence {cadence!r} requires period_n")
+            if period_n is not None:
+                if (
+                    isinstance(period_n, bool)
+                    or not isinstance(period_n, int)
+                    or period_n < 1
+                ):
+                    raise ValueError(f"period_n must be int >= 1, got {period_n!r}")
+                if cadence == "n_months" and not 2 <= period_n <= 11:
+                    raise ValueError(f"n_months requires period_n 2..11, got {period_n}")
+                if cadence == "n_weeks" and not 2 <= period_n <= 52:
+                    raise ValueError(f"n_weeks requires period_n 2..52, got {period_n}")
+                if cadence in ("monthly", "weekly", "yearly") and period_n != 1:
+                    raise ValueError(f"{cadence} requires period_n == 1, got {period_n}")
+        if anchor_day is not None and (
+            isinstance(anchor_day, bool)
+            or not isinstance(anchor_day, int)
+            or not 1 <= anchor_day <= 31
+        ):
+            raise ValueError(f"anchor_day must be 1..31, got {anchor_day!r}")
+        for label, value in (
+            ("anchor_date", anchor_date),
+            ("effective_from", effective_from),
+            ("effective_to", effective_to),
+        ):
+            if value is None:
+                continue
+            try:
+                date.fromisoformat(str(value).strip())
+            except ValueError:
+                raise ValueError(
+                    f"{label} must be ISO YYYY-MM-DD, got {value!r}"
+                ) from None
+        if (
+            effective_from is not None
+            and effective_to is not None
+            and str(effective_from).strip() > str(effective_to).strip()
+        ):
+            raise ValueError("effective_to must not precede effective_from")
+        if amount_cents is not None and (
+            isinstance(amount_cents, bool)
+            or not isinstance(amount_cents, int)
+            or amount_cents <= 0
+        ):
+            raise ValueError(f"amount_cents must be int > 0, got {amount_cents!r}")
+        if status is not None and status not in ("active", "paused", "ended"):
+            raise ValueError(
+                f"status must be one of ('active','paused','ended'), got {status!r}"
+            )
+        if source is not None and source not in ("manual", "detected"):
+            raise ValueError(f"source must be 'manual' or 'detected', got {source!r}")
+
+    def create_series(
+        self,
+        *,
+        iban: str,
+        direction: str,
+        cadence: str,
+        anchor_date: str,
+        amount_cents: int,
+        currency: Optional[str] = None,
+        period_n: Optional[int] = None,
+        anchor_day: Optional[int] = None,
+        counterparty: Optional[str] = None,
+        title: Optional[str] = None,
+        category_id: Optional[int] = None,
+        status: str = "active",
+        source: str = "manual",
+        candidate_fingerprint: Optional[str] = None,
+        effective_from: Optional[str] = None,
+        effective_to: Optional[str] = None,
+        evidence_json: Optional[str] = None,
+        client_token: Optional[str] = None,
+    ) -> RecurringSeries:
+        """Erzeugt eine Serie (Journal-Aktion 'created').
+
+        * ``anchor_day`` default: Tag des ``anchor_date`` (Anker bleibt erhalten).
+        * ``period_n`` default 1; fuer n_months/n_weeks erforderlich.
+        * ``client_token``: UI-Idempotenz (Doppel-Click desselben Create).
+        * Konto muss existieren (IBAN = SSOT); Kategorie optional.
+        """
+        self._validate_series_fields(
+            iban=iban,
+            currency=currency,
+            direction=direction,
+            cadence=cadence,
+            period_n=period_n,
+            anchor_day=anchor_day,
+            anchor_date=anchor_date,
+            amount_cents=amount_cents,
+            effective_from=effective_from,
+            effective_to=effective_to,
+            status=status,
+            source=source,
+        )
+        iban_norm = _normalize_iban(iban)
+        currency_norm = (currency or DEFAULT_CURRENCY).upper()
+        anchor_norm = str(anchor_date).strip()
+        anchor_d = date.fromisoformat(anchor_norm)
+        anchor_day_v = int(anchor_day) if anchor_day is not None else anchor_d.day
+        period_n_v = int(period_n) if period_n is not None else 1
+        counterparty_norm = self._clean_text(counterparty) or ""
+        title_norm = self._clean_text(title)
+        token = (str(client_token).strip() or None) if client_token is not None else None
+        with self._lock, self._connect() as conn:
+            if token is not None:
+                existing = conn.execute(
+                    "SELECT * FROM recurring_series WHERE client_token = ?", (token,)
+                ).fetchone()
+                if existing is not None:
+                    return self._series_from_row(existing)
+            if (
+                conn.execute("SELECT 1 FROM accounts WHERE iban = ?", (iban_norm,)).fetchone()
+                is None
+            ):
+                raise ValueError(f"unknown account: {iban_norm}")
+            if category_id is not None and (
+                conn.execute("SELECT 1 FROM categories WHERE id = ?", (category_id,)).fetchone()
+                is None
+            ):
+                raise ValueError(f"unknown category: {category_id}")
+            cur = conn.execute(
+                """INSERT INTO recurring_series (
+                       iban, currency, direction, cadence, period_n, anchor_day,
+                       anchor_date, amount_cents, counterparty, category_id,
+                       title, status, source, candidate_fingerprint,
+                       effective_from, effective_to, evidence_json,
+                       revision, client_token
+                   ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)""",
+                (
+                    iban_norm,
+                    currency_norm,
+                    direction,
+                    cadence,
+                    period_n_v,
+                    anchor_day_v,
+                    anchor_norm,
+                    int(amount_cents),
+                    counterparty_norm,
+                    category_id,
+                    title_norm,
+                    status,
+                    source,
+                    candidate_fingerprint,
+                    (str(effective_from).strip() if effective_from is not None else None),
+                    (str(effective_to).strip() if effective_to is not None else None),
+                    evidence_json,
+                    token,
+                ),
+            )
+            row = conn.execute(
+                "SELECT * FROM recurring_series WHERE id = ?",
+                (int(cur.lastrowid or 0),),
+            ).fetchone()
+            snapshot = self._series_snapshot(row)
+            conn.execute(
+                "INSERT INTO series_journal "
+                "(series_id, action, before_json, after_json, revision) "
+                "VALUES (?, 'created', NULL, ?, 1)",
+                (
+                    snapshot["id"],
+                    json.dumps(snapshot, sort_keys=True, ensure_ascii=False),
+                ),
+            )
+        return self._series_from_row(row)
+
+    def get_series(self, series_id: int) -> RecurringSeries:
+        """Liest eine Serie; ``ValueError`` bei unbekannter ID."""
+        with self._lock, self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM recurring_series WHERE id = ?", (series_id,)
+            ).fetchone()
+        if row is None:
+            raise ValueError(f"series {series_id} not found")
+        return self._series_from_row(row)
+
+    def list_series(
+        self,
+        *,
+        status: Optional[str] = None,
+        iban: Optional[str] = None,
+        direction: Optional[str] = None,
+        source: Optional[str] = None,
+    ) -> List[RecurringSeries]:
+        """Listet Serien (Filter optional; Sortierung iban, direction, id)."""
+        sql = "SELECT * FROM recurring_series WHERE 1=1"
+        params: List[Any] = []
+        if status is not None:
+            if status not in ("active", "paused", "ended"):
+                raise ValueError(f"invalid status {status!r}")
+            sql += " AND status = ?"
+            params.append(status)
+        if iban is not None:
+            sql += " AND iban = ?"
+            params.append(_normalize_iban(iban))
+        if direction is not None:
+            if direction not in ("income", "expense"):
+                raise ValueError(f"invalid direction {direction!r}")
+            sql += " AND direction = ?"
+            params.append(direction)
+        if source is not None:
+            if source not in ("manual", "detected"):
+                raise ValueError(f"invalid source {source!r}")
+            sql += " AND source = ?"
+            params.append(source)
+        sql += " ORDER BY iban, direction, id"
+        with self._lock, self._connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [self._series_from_row(r) for r in rows]
+
+    def update_series(
+        self,
+        series_id: int,
+        expected_revision: int,
+        *,
+        iban: Optional[str] = None,
+        currency: Optional[str] = None,
+        direction: Optional[str] = None,
+        cadence: Optional[str] = None,
+        period_n: Optional[int] = None,
+        anchor_day: Optional[int] = None,
+        anchor_date: Optional[str] = None,
+        amount_cents: Optional[int] = None,
+        counterparty: Optional[str] = None,
+        title: Optional[str] = None,
+        category_id: Optional[int] = None,
+        effective_from: Optional[str] = None,
+        effective_to: Optional[str] = None,
+        evidence_json: Optional[str] = None,
+    ) -> RecurringSeries:
+        """Aktualisiert Serien-Felder (Journal 'updated'), optimistic locking.
+
+        ``None`` bedeutet 'nicht aendern'. Aenderungen an cadence/
+        period_n/anchor_* gelten ab naechster Expansion; Ausnahmen bleiben
+        pro ORIGINAL-Termin bestehen (Prompt §5.1, T11).
+        """
+        if (
+            isinstance(expected_revision, bool)
+            or not isinstance(expected_revision, int)
+            or expected_revision <= 0
+        ):
+            raise ValueError(
+                f"expected_revision must be a positive int, got {expected_revision!r}"
+            )
+        self._validate_series_fields(
+            iban=iban,
+            currency=currency,
+            direction=direction,
+            cadence=cadence,
+            period_n=period_n,
+            anchor_day=anchor_day,
+            anchor_date=anchor_date,
+            amount_cents=amount_cents,
+            effective_from=effective_from,
+            effective_to=effective_to,
+        )
+        sets: List[str] = []
+        params: List[Any] = []
+        if iban is not None:
+            sets.append("iban = ?")
+            params.append(_normalize_iban(iban))
+        if currency is not None:
+            sets.append("currency = ?")
+            params.append(str(currency).upper())
+        if direction is not None:
+            sets.append("direction = ?")
+            params.append(direction)
+        if cadence is not None:
+            sets.append("cadence = ?")
+            params.append(cadence)
+        if period_n is not None:
+            sets.append("period_n = ?")
+            params.append(int(period_n))
+        if anchor_day is not None:
+            sets.append("anchor_day = ?")
+            params.append(int(anchor_day))
+        if anchor_date is not None:
+            sets.append("anchor_date = ?")
+            params.append(str(anchor_date).strip())
+        if amount_cents is not None:
+            sets.append("amount_cents = ?")
+            params.append(int(amount_cents))
+        if counterparty is not None:
+            sets.append("counterparty = ?")
+            params.append(self._clean_text(counterparty) or "")
+        if title is not None:
+            sets.append("title = ?")
+            params.append(self._clean_text(title))
+        if category_id is not None:
+            sets.append("category_id = ?")
+            params.append(category_id)
+        if effective_from is not None:
+            sets.append("effective_from = ?")
+            params.append(str(effective_from).strip())
+        if effective_to is not None:
+            sets.append("effective_to = ?")
+            params.append(str(effective_to).strip())
+        if evidence_json is not None:
+            sets.append("evidence_json = ?")
+            params.append(evidence_json)
+        if not sets:
+            raise ValueError("no fields to update")
+        with self._lock, self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM recurring_series WHERE id = ?", (series_id,)
+            ).fetchone()
+            if row is None:
+                raise ValueError(f"series {series_id} not found")
+            if int(row["revision"]) != expected_revision:
+                raise SeriesRevisionConflict(
+                    series_id, expected_revision, int(row["revision"])
+                )
+            if category_id is not None and (
+                conn.execute("SELECT 1 FROM categories WHERE id = ?", (category_id,)).fetchone()
+                is None
+            ):
+                raise ValueError(f"unknown category: {category_id}")
+            before = self._series_snapshot(row)
+            conn.execute(
+                f"""UPDATE recurring_series SET
+                       {', '.join(sets)},
+                       updated_at = datetime('now'),
+                       revision = revision + 1
+                       WHERE id = ?""",
+                (*params, series_id),
+            )
+            new_row = conn.execute(
+                "SELECT * FROM recurring_series WHERE id = ?", (series_id,)
+            ).fetchone()
+            after = self._series_snapshot(new_row)
+            conn.execute(
+                "INSERT INTO series_journal "
+                "(series_id, action, before_json, after_json, revision) "
+                "VALUES (?, 'updated', ?, ?, ?)",
+                (
+                    series_id,
+                    json.dumps(before, sort_keys=True, ensure_ascii=False),
+                    json.dumps(after, sort_keys=True, ensure_ascii=False),
+                    after["revision"],
+                ),
+            )
+        return self._series_from_row(new_row)
+
+    def set_series_status(self, series_id: int, status: str) -> RecurringSeries:
+        """Setzt 'active' | 'paused' | 'ended' (Journal 'status_changed')."""
+        if status not in ("active", "paused", "ended"):
+            raise ValueError(f"invalid status {status!r}")
+        with self._lock, self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM recurring_series WHERE id = ?", (series_id,)
+            ).fetchone()
+            if row is None:
+                raise ValueError(f"series {series_id} not found")
+            if row["status"] == status:
+                return self._series_from_row(row)
+            before = self._series_snapshot(row)
+            conn.execute(
+                "UPDATE recurring_series SET status = ?, "
+                "updated_at = datetime('now'), revision = revision + 1 WHERE id = ?",
+                (status, series_id),
+            )
+            new_row = conn.execute(
+                "SELECT * FROM recurring_series WHERE id = ?", (series_id,)
+            ).fetchone()
+            after = self._series_snapshot(new_row)
+            conn.execute(
+                "INSERT INTO series_journal "
+                "(series_id, action, before_json, after_json, revision) "
+                "VALUES (?, 'status_changed', ?, ?, ?)",
+                (
+                    series_id,
+                    json.dumps(before, sort_keys=True, ensure_ascii=False),
+                    json.dumps(after, sort_keys=True, ensure_ascii=False),
+                    after["revision"],
+                ),
+            )
+        return self._series_from_row(new_row)
+
+    def delete_series(self, series_id: int) -> RecurringSeries:
+        """Loescht eine Serie (Journal 'deleted'; Undo via 'restored')."""
+        with self._lock, self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM recurring_series WHERE id = ?", (series_id,)
+            ).fetchone()
+            if row is None:
+                raise ValueError(f"series {series_id} not found")
+            before = self._series_snapshot(row)
+            conn.execute("DELETE FROM recurring_series WHERE id = ?", (series_id,))
+            conn.execute(
+                "INSERT INTO series_journal "
+                "(series_id, action, before_json, after_json, revision) "
+                "VALUES (?, 'deleted', ?, NULL, ?)",
+                (
+                    series_id,
+                    json.dumps(before, sort_keys=True, ensure_ascii=False),
+                    before["revision"],
+                ),
+            )
+        return self._series_from_row(row)
+
+    @staticmethod
+    def _validate_series_exception(
+        original_due_date: str,
+        exception_type: str,
+        new_due_date: Optional[str] = None,
+        amount_cents: Optional[int] = None,
+    ) -> None:
+        if exception_type not in ("skip", "move", "amount"):
+            raise ValueError(
+                f"exception_type must be one of ('skip','move','amount'), "
+                f"got {exception_type!r}"
+            )
+        try:
+            date.fromisoformat(str(original_due_date).strip())
+        except ValueError:
+            raise ValueError(
+                f"original_due_date must be ISO YYYY-MM-DD, got {original_due_date!r}"
+            ) from None
+        if exception_type == "move" and new_due_date is None:
+            raise ValueError("exception 'move' requires new_due_date")
+        if new_due_date is not None:
+            try:
+                date.fromisoformat(str(new_due_date).strip())
+            except ValueError:
+                raise ValueError(
+                    f"new_due_date must be ISO YYYY-MM-DD, got {new_due_date!r}"
+                ) from None
+        if exception_type == "amount" and (
+            isinstance(amount_cents, bool)
+            or not isinstance(amount_cents, int)
+            or amount_cents <= 0
+        ):
+            raise ValueError(
+                f"exception 'amount' requires amount_cents > 0, got {amount_cents!r}"
+            )
+
+    def set_series_exception(
+        self,
+        series_id: int,
+        original_due_date: str,
+        exception_type: str,
+        new_due_date: Optional[str] = None,
+        amount_cents: Optional[int] = None,
+        note: Optional[str] = None,
+    ) -> SeriesExceptionRow:
+        """Legt/aktualisiert eine Ausnahme (Journal 'exception_*', T11).
+
+        Ausnahmen sind pro SERIES + ORIGINAL-Termin idempotent: erneutes
+        Setzen derselben Zeile aktualisiert Werte und Revision.
+        """
+        self._validate_series_exception(
+            original_due_date, exception_type, new_due_date, amount_cents
+        )
+        original = str(original_due_date).strip()
+        new_due = str(new_due_date).strip() if new_due_date is not None else None
+        note_norm = self._clean_text(note) or None
+        with self._lock, self._connect() as conn:
+            if (
+                conn.execute(
+                    "SELECT 1 FROM recurring_series WHERE id = ?", (series_id,)
+                ).fetchone()
+                is None
+            ):
+                raise ValueError(f"series {series_id} not found")
+            existing = conn.execute(
+                "SELECT * FROM series_exceptions WHERE series_id = ? "
+                "AND original_due_date = ?",
+                (series_id, original),
+            ).fetchone()
+            before_payload = (
+                self._series_exception_payload(self._series_exception_from_row(existing))
+                if existing is not None
+                else None
+            )
+            if existing is None:
+                cur = conn.execute(
+                    "INSERT INTO series_exceptions "
+                    "(series_id, original_due_date, exception_type, new_due_date,"
+                    " amount_cents, note, revision) VALUES (?, ?, ?, ?, ?, ?, 1)",
+                    (
+                        series_id,
+                        original,
+                        exception_type,
+                        new_due,
+                        int(amount_cents) if amount_cents is not None else None,
+                        note_norm,
+                    ),
+                )
+                exc_id = int(cur.lastrowid or 0)
+                action = "exception_added"
+            else:
+                exc_id = int(existing["id"])
+                conn.execute(
+                    "UPDATE series_exceptions SET exception_type = ?, "
+                    "new_due_date = ?, amount_cents = ?, note = ?, "
+                    "revision = revision + 1, updated_at = datetime('now') "
+                    "WHERE id = ?",
+                    (
+                        exception_type,
+                        new_due,
+                        int(amount_cents) if amount_cents is not None else None,
+                        note_norm,
+                        exc_id,
+                    ),
+                )
+                action = "exception_updated"
+            after_row = conn.execute(
+                "SELECT * FROM series_exceptions WHERE id = ?", (exc_id,)
+            ).fetchone()
+            after = self._series_exception_from_row(after_row)
+            conn.execute(
+                "INSERT INTO series_journal "
+                "(series_id, action, before_json, after_json, revision) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (
+                    series_id,
+                    action,
+                    json.dumps(before_payload, sort_keys=True, ensure_ascii=False)
+                    if before_payload is not None
+                    else None,
+                    json.dumps(
+                        self._series_exception_payload(after),
+                        sort_keys=True,
+                        ensure_ascii=False,
+                    ),
+                    after.revision,
+                ),
+            )
+        return after
+
+    def remove_series_exception(
+        self, series_id: int, original_due_date: str
+    ) -> SeriesExceptionRow:
+        """Entfernt eine Ausnahme (Journal 'exception_removed')."""
+        original = str(original_due_date).strip()
+        with self._lock, self._connect() as conn:
+            if (
+                conn.execute(
+                    "SELECT 1 FROM recurring_series WHERE id = ?", (series_id,)
+                ).fetchone()
+                is None
+            ):
+                raise ValueError(f"series {series_id} not found")
+            existing = conn.execute(
+                "SELECT * FROM series_exceptions WHERE series_id = ? "
+                "AND original_due_date = ?",
+                (series_id, original),
+            ).fetchone()
+            if existing is None:
+                raise ValueError(f"no exception for series {series_id} on {original}")
+            before = self._series_exception_from_row(existing)
+            conn.execute("DELETE FROM series_exceptions WHERE id = ?", (existing["id"],))
+            conn.execute(
+                "INSERT INTO series_journal "
+                "(series_id, action, before_json, after_json, revision) "
+                "VALUES (?, 'exception_removed', ?, NULL, ?)",
+                (
+                    series_id,
+                    json.dumps(
+                        self._series_exception_payload(before),
+                        sort_keys=True,
+                        ensure_ascii=False,
+                    ),
+                    before.revision,
+                ),
+            )
+        return before
+
+    def list_series_exceptions(self, series_id: int) -> List[SeriesExceptionRow]:
+        """Alle Ausnahmen einer Serie (Sortierung nach Original-Termin)."""
+        with self._lock, self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM series_exceptions WHERE series_id = ? "
+                "ORDER BY original_due_date, id",
+                (series_id,),
+            ).fetchall()
+        return [self._series_exception_from_row(r) for r in rows]
+
+    @staticmethod
+    def _validate_candidate_fields(
+        *,
+        fingerprint: Optional[str],
+        iban: Optional[str],
+        currency: Optional[str],
+        direction: Optional[str],
+        cadence: Optional[str],
+        period_n: Optional[int],
+        anchor_day: Optional[int],
+        anchor_date: Optional[str],
+        amount_cents: Optional[int],
+        counterparty: Optional[str],
+    ) -> None:
+        if fingerprint is not None and (
+            not isinstance(fingerprint, str) or len(fingerprint) > 128
+        ):
+            raise ValueError(
+                f"fingerprint must be a str (<=128), got {fingerprint!r}"
+            )
+        if iban is not None:
+            _normalize_iban(iban)
+        if currency is not None and (
+            not isinstance(currency, str) or len(currency) != 3 or not currency.isalpha()
+        ):
+            raise ValueError(f"currency must be a 3-letter code, got {currency!r}")
+        if direction is not None and direction not in ("income", "expense"):
+            raise ValueError(
+                f"direction must be 'income' or 'expense', got {direction!r}"
+            )
+        if cadence is not None and cadence not in VALID_CADENCES:
+            raise ValueError(
+                f"cadence must be in {sorted(VALID_CADENCES)}, got {cadence!r}"
+            )
+        if period_n is not None and (
+            isinstance(period_n, bool) or not isinstance(period_n, int) or period_n < 1
+        ):
+            raise ValueError(f"period_n must be int >= 1, got {period_n!r}")
+        if anchor_day is not None and (
+            isinstance(anchor_day, bool)
+            or not isinstance(anchor_day, int)
+            or not 1 <= anchor_day <= 31
+        ):
+            raise ValueError(f"anchor_day must be 1..31, got {anchor_day!r}")
+        if anchor_date is not None:
+            try:
+                date.fromisoformat(str(anchor_date).strip())
+            except ValueError:
+                raise ValueError(
+                    f"anchor_date must be ISO YYYY-MM-DD, got {anchor_date!r}"
+                ) from None
+        if amount_cents is not None and (
+            isinstance(amount_cents, bool)
+            or not isinstance(amount_cents, int)
+            or amount_cents <= 0
+        ):
+            raise ValueError(f"amount_cents must be int > 0, got {amount_cents!r}")
+        if counterparty is not None and not isinstance(counterparty, str):
+            raise ValueError(f"counterparty must be a str, got {counterparty!r}")
+
+    def save_series_candidate(
+        self,
+        *,
+        fingerprint: str,
+        iban: str,
+        currency: Optional[str],
+        direction: str,
+        counterparty: Optional[str],
+        cadence: str,
+        period_n: int,
+        anchor_day: int,
+        anchor_date: str,
+        amount_cents: int,
+        evidence: Optional[str] = None,
+        confidence: Optional[str] = None,
+    ) -> Tuple[SeriesCandidateRow, bool]:
+        """Upsert eines Kandidaten (UNIQUE auf fingerprint).
+
+        Bestehende 'pending'-Kandidaten: Evidence/Confidence aktualisieren.
+        'confirmed'/'rejected' bleiben UNANGETASTET (keine Wiederbelebung).
+        Returns: (Candidate, created) — created=False bei Upsert.
+        """
+        self._validate_candidate_fields(
+            fingerprint=fingerprint,
+            iban=iban,
+            currency=currency,
+            direction=direction,
+            cadence=cadence,
+            period_n=period_n,
+            anchor_day=anchor_day,
+            anchor_date=anchor_date,
+            amount_cents=amount_cents,
+            counterparty=counterparty,
+        )
+        fp = str(fingerprint).strip()
+        if not fp:
+            raise ValueError("fingerprint must not be empty")
+        if confidence is not None and confidence not in ("low", "medium", "high"):
+            raise ValueError(
+                f"confidence must be one of ('low','medium','high'), got {confidence!r}"
+            )
+        with self._lock, self._connect() as conn:
+            existing = conn.execute(
+                "SELECT * FROM series_candidates WHERE fingerprint = ?", (fp,)
+            ).fetchone()
+            if existing is None:
+                cur = conn.execute(
+                    """INSERT INTO series_candidates (
+                           fingerprint, iban, currency, direction, counterparty,
+                           cadence, period_n, anchor_day, anchor_date,
+                           amount_cents, evidence, confidence, status
+                       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')""",
+                    (
+                        fp,
+                        _normalize_iban(iban),
+                        (currency or DEFAULT_CURRENCY).upper(),
+                        direction,
+                        self._clean_text(counterparty) or "",
+                        cadence,
+                        int(period_n),
+                        int(anchor_day),
+                        str(anchor_date).strip(),
+                        int(amount_cents),
+                        self._clean_text(evidence),
+                        confidence if confidence is not None else "low",
+                    ),
+                )
+                row = conn.execute(
+                    "SELECT * FROM series_candidates WHERE id = ?",
+                    (int(cur.lastrowid or 0),),
+                ).fetchone()
+                return (self._series_candidate_from_row(row), True)
+            if existing["status"] != "pending":
+                return (self._series_candidate_from_row(existing), False)
+            conn.execute(
+                "UPDATE series_candidates SET evidence = ?, "
+                "confidence = COALESCE(?, confidence), "
+                "detected_at = datetime('now') WHERE id = ?",
+                (self._clean_text(evidence), confidence, existing["id"]),
+            )
+            row = conn.execute(
+                "SELECT * FROM series_candidates WHERE id = ?", (existing["id"],)
+            ).fetchone()
+        return (self._series_candidate_from_row(row), False)
+
+    def get_candidate(self, fingerprint: str) -> SeriesCandidateRow:
+        """Liest einen Kandidaten; ``ValueError`` bei unbekanntem Fingerprint."""
+        with self._lock, self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM series_candidates WHERE fingerprint = ?",
+                (str(fingerprint).strip(),),
+            ).fetchone()
+        if row is None:
+            raise ValueError(f"candidate {fingerprint!r} not found")
+        return self._series_candidate_from_row(row)
+
+    def list_candidates(
+        self, status: Optional[str] = None
+    ) -> List[SeriesCandidateRow]:
+        """Listet Kandidaten (status-Filter: pending/confirmed/rejected)."""
+        if status is not None and status not in ("pending", "confirmed", "rejected"):
+            raise ValueError(f"invalid candidate status {status!r}")
+        sql = "SELECT * FROM series_candidates"
+        params: List[Any] = []
+        if status is not None:
+            sql += " WHERE status = ?"
+            params.append(status)
+        sql += " ORDER BY detected_at DESC, id DESC"
+        with self._lock, self._connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [self._series_candidate_from_row(r) for r in rows]
+
+    def confirm_candidate(
+        self,
+        fingerprint: str,
+        *,
+        iban: Optional[str] = None,
+        currency: Optional[str] = None,
+        direction: Optional[str] = None,
+        cadence: Optional[str] = None,
+        period_n: Optional[int] = None,
+        anchor_day: Optional[int] = None,
+        anchor_date: Optional[str] = None,
+        amount_cents: Optional[int] = None,
+        counterparty: Optional[str] = None,
+        title: Optional[str] = None,
+        category_id: Optional[int] = None,
+        status: str = "active",
+        effective_from: Optional[str] = None,
+        effective_to: Optional[str] = None,
+    ) -> Tuple[SeriesCandidateRow, RecurringSeries]:
+        """Bestaetigt einen PENDING-Kandidaten als Serie (source='detected').
+
+        Fehlende Felder werden vom Kandidaten uebernommen; explizit
+        uebergebene Werte haben Vorrang (Review-Dialog, T15).
+        """
+        fp = str(fingerprint).strip()
+        with self._lock, self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM series_candidates WHERE fingerprint = ?", (fp,)
+            ).fetchone()
+            if row is None:
+                raise ValueError(f"candidate {fingerprint!r} not found")
+            cand = self._series_candidate_from_row(row)
+            if cand.status == "confirmed":
+                if not cand.series_id:
+                    raise ValueError(f"candidate {fp!r} is confirmed but has no series")
+                raise ValueError(
+                    f"candidate {fp!r} already confirmed "
+                    f"(series_id={cand.series_id})"
+                )
+            if cand.status != "pending":
+                raise ValueError(
+                    f"candidate {fp!r} is {cand.status!r}; only 'pending' "
+                    "can be confirmed"
+                )
+            series = self.create_series(
+                iban=iban or cand.iban,
+                currency=currency or cand.currency,
+                direction=direction or cand.direction,
+                cadence=cadence or cand.cadence,
+                period_n=period_n if period_n is not None else cand.period_n,
+                anchor_day=anchor_day if anchor_day is not None else cand.anchor_day,
+                anchor_date=anchor_date or cand.anchor_date,
+                amount_cents=(
+                    amount_cents
+                    if amount_cents is not None
+                    else cand.amount_cents
+                ),
+                counterparty=counterparty if counterparty is not None else cand.counterparty,
+                title=title,
+                category_id=category_id,
+                status=status,
+                source="detected",
+                candidate_fingerprint=fp,
+                effective_from=effective_from,
+                effective_to=effective_to,
+                evidence_json=cand.evidence,
+            )
+            conn.execute(
+                "UPDATE series_candidates SET status = 'confirmed', series_id = ?,"
+                " reviewed_at = datetime('now') WHERE id = ?",
+                (series.id, row["id"]),
+            )
+            updated = conn.execute(
+                "SELECT * FROM series_candidates WHERE id = ?", (row["id"],)
+            ).fetchone()
+        return (self._series_candidate_from_row(updated), series)
+
+    def reject_candidate(self, fingerprint: str) -> SeriesCandidateRow:
+        """Verwirft einen PENDING-Kandidaten (keine Wiederbelebung)."""
+        fp = str(fingerprint).strip()
+        with self._lock, self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM series_candidates WHERE fingerprint = ?", (fp,)
+            ).fetchone()
+            if row is None:
+                raise ValueError(f"candidate {fingerprint!r} not found")
+            if row["status"] != "pending":
+                raise ValueError(
+                    f"candidate {fp!r} is {row['status']!r}; only 'pending' "
+                    "can be rejected"
+                )
+            conn.execute(
+                "UPDATE series_candidates SET status = 'rejected',"
+                " reviewed_at = datetime('now') WHERE id = ?",
+                (row["id"],),
+            )
+            updated = conn.execute(
+                "SELECT * FROM series_candidates WHERE id = ?", (row["id"],)
+            ).fetchone()
+        return self._series_candidate_from_row(updated)
+
+    # -- occurrence links (konservativ 1:1, T14/T16) --
+
+    @staticmethod
+    def _validate_link_status(status: str) -> None:
+        if status not in ("matched", "confirmed", "suggested", "skipped", "missed"):
+            raise ValueError(
+                f"link status must be one of "
+                "('matched','confirmed','suggested','skipped','missed'), "
+                f"got {status!r}"
+            )
+
+    def link_occurrence(
+        self,
+        series_id: int,
+        occurrence_date: str,
+        transaction_id: int,
+        status: str = "matched",
+    ) -> SeriesOccurrenceLink:
+        """Verbindet eine Series-Occurrence mit EXAKT EINER Transaktion.
+
+        Konservative 1:1-Regeln:
+        * gleiche (series, date) + gleiche Transaktion  -> Status-Update
+        * gleiche (series, date) + ANDERE Transaktion   -> ValueError
+        * Transaktion bereits mit ANDERER Serie gelinkt -> ValueError
+        """
+        self._validate_link_status(status)
+        try:
+            date.fromisoformat(str(occurrence_date).strip())
+        except ValueError:
+            raise ValueError(
+                f"occurrence_date must be ISO YYYY-MM-DD, got {occurrence_date!r}"
+            ) from None
+        with self._lock, self._connect() as conn:
+            if (
+                conn.execute(
+                    "SELECT 1 FROM recurring_series WHERE id = ?", (series_id,)
+                ).fetchone()
+                is None
+            ):
+                raise ValueError(f"series {series_id} not found")
+            if (
+                conn.execute(
+                    "SELECT 1 FROM transactions WHERE id = ?", (transaction_id,)
+                ).fetchone()
+                is None
+            ):
+                raise ValueError(f"transaction {transaction_id} not found")
+            other = conn.execute(
+                "SELECT * FROM series_occurrence_links WHERE transaction_id = ? "
+                "AND series_id != ?",
+                (transaction_id, series_id),
+            ).fetchone()
+            if other is not None:
+                raise ValueError(
+                    f"transaction {transaction_id} already linked to "
+                    f"series {other['series_id']}"
+                )
+            existing = conn.execute(
+                "SELECT * FROM series_occurrence_links WHERE series_id = ? "
+                "AND occurrence_date = ?",
+                (series_id, str(occurrence_date).strip()),
+            ).fetchone()
+            if existing is not None:
+                if existing["transaction_id"] != transaction_id:
+                    raise ValueError(
+                        f"series {series_id} occurrence {occurrence_date} already "
+                        f"linked to transaction {existing['transaction_id']}"
+                    )
+                if existing["status"] != status:
+                    conn.execute(
+                        "UPDATE series_occurrence_links SET status = ?, "
+                        "linked_at = datetime('now') WHERE id = ?",
+                        (status, existing["id"]),
+                    )
+                row = conn.execute(
+                    "SELECT * FROM series_occurrence_links WHERE id = ?",
+                    (existing["id"],),
+                ).fetchone()
+                return self._occurrence_link_from_row(row)
+            cur = conn.execute(
+                "INSERT INTO series_occurrence_links "
+                "(series_id, occurrence_date, transaction_id, status) "
+                "VALUES (?, ?, ?, ?)",
+                (series_id, str(occurrence_date).strip(), transaction_id, status),
+            )
+            row = conn.execute(
+                "SELECT * FROM series_occurrence_links WHERE id = ?",
+                (int(cur.lastrowid or 0),),
+            ).fetchone()
+        return self._occurrence_link_from_row(row)
+
+    def unlink_occurrence(self, series_id: int, occurrence_date: str) -> bool:
+        """Loescht einen Link; True wenn etwas entfernt wurde."""
+        with self._lock, self._connect() as conn:
+            cur = conn.execute(
+                "DELETE FROM series_occurrence_links WHERE series_id = ? "
+                "AND occurrence_date = ?",
+                (series_id, str(occurrence_date).strip()),
+            )
+            return (cur.rowcount or 0) > 0
+
+    def list_occurrence_links(self, series_id: int) -> List[SeriesOccurrenceLink]:
+        """Alle Links einer Serie (Sortierung nach Datum)."""
+        with self._lock, self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM series_occurrence_links WHERE series_id = ? "
+                "ORDER BY occurrence_date, id",
+                (series_id,),
+            ).fetchall()
+        return [self._occurrence_link_from_row(r) for r in rows]
+
+    # -- journal & undo (T10) --
+
+    def get_series_journal(
+        self, series_id: int, limit: int = 100
+    ) -> List[SeriesJournalEntry]:
+        """Journal-Eintraege (neueste zuerst); Limit 1..1000."""
+        if (
+            isinstance(limit, bool)
+            or not isinstance(limit, int)
+            or not 1 <= limit <= 1000
+        ):
+            raise ValueError(f"limit must be int 1..1000, got {limit!r}")
+        with self._lock, self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM series_journal WHERE series_id = ? "
+                "ORDER BY revision DESC, id DESC LIMIT ?",
+                (series_id, limit),
+            ).fetchall()
+        return [self._journal_entry_from_row(r) for r in rows]
+
+    _SERIES_RESTORE_FIELDS = (
+        "iban",
+        "currency",
+        "direction",
+        "cadence",
+        "period_n",
+        "anchor_day",
+        "anchor_date",
+        "amount_cents",
+        "counterparty",
+        "title",
+        "category_id",
+        "status",
+        "source",
+        "candidate_fingerprint",
+        "evidence_json",
+        "effective_from",
+        "effective_to",
+    )
+
+    def undo_series_change(self, series_id: int, steps: int = 1) -> RecurringSeries:
+        """Rueckrollt die letzten 1..`steps` Feld-/Status-Aenderungen (T10).
+
+        'created'/'deleted'/Exception-Eintraege bleiben unberuehrt. Eine
+        zwischendurch geloeschte Serie wird mit dem letzten
+        Vor-Zustand wiederhergestellt (Journal 'restored').
+        """
+        if isinstance(steps, bool) or not isinstance(steps, int) or not 1 <= steps <= 100:
+            raise ValueError(f"steps must be int 1..100, got {steps!r}")
+        with self._lock, self._connect() as conn:
+            current = conn.execute(
+                "SELECT * FROM recurring_series WHERE id = ?", (series_id,)
+            ).fetchone()
+            entries = conn.execute(
+                "SELECT * FROM series_journal WHERE series_id = ? "
+                "AND action IN ('updated', 'status_changed') "
+                "AND before_json IS NOT NULL "
+                "ORDER BY revision DESC, id DESC LIMIT ?",
+                (series_id, steps),
+            ).fetchall()
+            if not entries:
+                raise ValueError(f"series {series_id} has no changes to undo")
+            target = self._load_series_snapshot(entries[-1]["before_json"])
+            if target is None:
+                raise ValueError(f"series {series_id} journal snapshot is corrupt")
+            base_revision = (
+                int(current["revision"]) if current is not None else int(target["revision"])
+            )
+            new_revision = base_revision + 1
+            field_sql = ", ".join(f"{f} = ?" for f in self._SERIES_RESTORE_FIELDS)
+            field_vals = [target[f] for f in self._SERIES_RESTORE_FIELDS]
+            if current is None:
+                all_sql = ", ".join(self._SERIES_RESTORE_FIELDS + ["id", "revision"])
+                conn.execute(
+                    f"""INSERT INTO recurring_series ({all_sql})
+                        VALUES ({", ".join("?" for _ in self._SERIES_RESTORE_FIELDS)}
+                              , ?, ?)""",
+                    (*field_vals, series_id, new_revision),
+                )
+                before_payload = None
+            else:
+                conn.execute(
+                    f"""UPDATE recurring_series
+                        SET {field_sql}, revision = ?, updated_at = datetime('now')
+                        WHERE id = ?""",
+                    (*field_vals, new_revision, series_id),
+                )
+                before_payload = self._series_snapshot(current)
+            restored = conn.execute(
+                "SELECT * FROM recurring_series WHERE id = ?", (series_id,)
+            ).fetchone()
+            after_payload = self._series_snapshot(restored)
+            conn.execute(
+                "INSERT INTO series_journal "
+                "(series_id, action, before_json, after_json, revision) "
+                "VALUES (?, 'restored', ?, ?, ?)",
+                (
+                    series_id,
+                    (
+                        json.dumps(before_payload, sort_keys=True, ensure_ascii=False)
+                        if before_payload is not None
+                        else None
+                    ),
+                    json.dumps(after_payload, sort_keys=True, ensure_ascii=False),
+                    new_revision,
+                ),
+            )
+        return self._series_from_row(restored)
 
     # -- monthly report ----------------------------------------------
 
