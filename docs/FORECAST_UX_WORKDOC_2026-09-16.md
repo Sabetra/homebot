@@ -194,6 +194,7 @@ forecast_plan_journal   -- Undo via Gegenrevision; ueberlebt Item-Loeschung
 | 2026-09-16 | Fix: `finance/tab.py` importierte nicht existierende `RevisionConflictError` (Import + except) → `PlanRevisionConflict` (SSoT `db_schema.py:223`); vorher ImportError bei Collection von `test_finance_tab_regressions.py`, danach grün |
 | 2026-09-16 | AP1 ABGESCHLOSSEN (alle DoD-Punkte ✅). Commit 832c2f4, Push auf origin/main |
 | 2026-09-16 | AP2 S1 (Engine): `finance/series_engine.py` implementiert + `tests/test_series_engine.py` 60/60 PASS; 5 Root-Cause-Fixes (Details unten). Commit `44eb8dc` (Pre-Commit-Gate grün: Secret-Gate + Lizenz-Gate + deterministisches Release-Gate/pytest inkl. der 60 neuen Tests) + Push auf `origin/main` |
+| 2026-09-17 | AP2 S1 (DAO): `tests/test_finance_series_dao.py` **55/55 PASS** — CRUD/Locking/Idempotenz/Kandidaten/Ausnahmen/Links/Journal+Undo + Engine↔DAO-Integration; DAO-Bug root-cause-fixt (`undo_series_change` Restore: `tuple + list` ⇒ `TypeError`, Fix + Regressions-Test) |
 
 ## AP2 — Serien, Erkennungen und Ist-Abgleich (Start 2026-09-17)
 
@@ -232,7 +233,7 @@ gleiche Empfänger verschiedener Konten/Währungen bleiben isoliert.
 
 | Stufe | Inhalt | Status |
 |-------|--------|--------|
-| S1 | Gemeinsames Modell: `recurring_series` + `series_exceptions` + `series_candidates` + `series_occurrence_links` + Journal (Schema/DAO), `finance/series_engine.py` (Expansion/Detektion/Matching, rein deterministisch), Tools-API (list/confirm/reject/pause/end/skip/move/amount/calendar/detect) | Engine fertig (60/60 grün); DAO entworfen (ungetestet); Tools-API offen |
+| S1 | Gemeinsames Modell: `recurring_series` + `series_exceptions` + `series_candidates` + `series_occurrence_links` + Journal (Schema/DAO), `finance/series_engine.py` (Expansion/Detektion/Matching, rein deterministisch), Tools-API (list/confirm/reject/pause/end/skip/move/amount/calendar/detect) | Engine fertig (60/60 grün); DAO implementiert & getestet (58/58); Tools-API offen |
 | S2 | F01/F02-Fix in `upcoming_bills`/`subscription_audit` (additive Keys + korrekte Fenster-/Monatäquivalent-Logik), F08: opt-in `include_series` in `cash_flow_forecast` (Byte-Kompatibilität Default) | offen |
 | S3 | UI (Serien-/Kandidaten-Sektion in Forecast-Tab) + i18n `finance_ui.forecast.series.*` DE/EN/BG + AppTest + Vollvalidierung | offen |
 
@@ -282,5 +283,23 @@ Die 5 Test-Fehlmuster des vorherigen Arbeitsstands sind beseitigt (Details unten
 `finance/db_schema.py` enthält +1505 Zeilen Serien-DAO aus vorangegangener Arbeit
 (Tabellen `recurring_series`, `recurring_series_candidates`, `series_exceptions`,
 `series_occurrence_links`, `series_journal`; Upsert/Journal/Undo-Logik) —
-**noch KEINE Tests**. Bewusst NICHT zusammen mit der Engine committet.
-Nächste Session: DAO-Tests (T01–T14) → Tools-API (S1-Finale) → S2 (F01/F02/F08).
+**seit 2026-09-17 getestet**: `tests/test_finance_series_dao.py` **55/55 PASS**
+(CRUD + Fail-Fast-Validierung, Optimistic Locking, `client_token`-Idempotenz,
+Kandidaten-Lifecycle, Ausnahmen skip/move/amount, Occurrence-Links 1:1,
+Journal/Undo inkl. Wiederherstellung gelöschter Serien, Engine↔DAO-Integration:
+`detect_candidates → save → confirm → series_to_spec → expand_series`).
+Dabei gefunden & root-cause-fixt: `undo_series_change` (Restore-Pfad gelöschte
+Serie) machte `tuple + list` ⇒ `TypeError`; Fix `list(_SERIES_RESTORE_FIELDS)`,
+Regressions-Test `test_undo_restores_deleted_series`.
+Zusätzlich gelandet (2026-09-17, jeweils mit Tests): `series_exceptions.note`
+(Freitext-Begründung, T11; Migration `_migrate_series_exception_note` für
+bestehende DBs), `series_candidates.evidence_json` NOT-NULL (leer → `""`),
+`update_candidate_evidence` korrekt auf Spalte `evidence_json`,
+`confirm_candidate` liest `cand.evidence_json`, `link_occurrence` aktualisiert
+`updated_at`, einheitlicher Mapper `_series_link_from_row`; DAO-Suite damit
+55/55 → 58/58 (note-Roundtrip/-Normalisierung/Journal-Payload).
+Design-Fakten (bewusst, in Tests dokumentiert): Exception-Upsert ist lenient
+(`skip` darf neue Felder tragen — die Engine ignoriert sie), Serien-Default-
+Währung = `DEFAULT_CURRENCY` (CHF), NICHT die Kontowährung.
+Nächste Session: **S1-Finale = Tools-API** (list series, detect candidates,
+confirm/reject, pause/end, skip, move) → S2 (F01/F02/F08).

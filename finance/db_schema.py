@@ -48,6 +48,7 @@ from finance.models import (
     VALID_PLAN_ITEM_STATUSES,
     VALID_TRANSACTION_NATURES,
 )
+from finance.series_engine import VALID_CADENCES
 
 logger = logging.getLogger(__name__)
 
@@ -394,6 +395,7 @@ class SeriesExceptionRow:
     exception_type: str                    # 'skip' | 'move' | 'amount'
     new_due_date: Optional[str] = None
     amount_cents: Optional[int] = None
+    note: Optional[str] = None
     revision: int = 1
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
@@ -771,6 +773,7 @@ _SCHEMA_STATEMENTS: Tuple[str, ...] = (
         exception_type      TEXT NOT NULL CHECK (exception_type IN ('skip', 'move', 'amount')),
         new_due_date        TEXT,
         amount_cents        INTEGER CHECK (amount_cents > 0),
+        note                TEXT,
         revision            INTEGER NOT NULL DEFAULT 1,
         created_at          TEXT NOT NULL DEFAULT (datetime('now')),
         updated_at          TEXT NOT NULL DEFAULT (datetime('now')),
@@ -1075,9 +1078,22 @@ class FinanceDB:
             self._migrate_transactions(conn)
             self._migrate_account_types(conn)
             self._migrate_statements_consistency(conn)
+            self._migrate_series_exception_note(conn)
             self._migrate_transaction_search(conn)
             self._migrate_goal_index_names(conn)
             self._refresh_schema_catalog(conn)
+
+    def _migrate_series_exception_note(self, conn: sqlite3.Connection) -> None:
+        """Fuegt die ``note``-Spalte zu ``series_exceptions`` hinzu (AP2 S1, 2026-09-17).
+
+        Die Tabelle existiert in Bestands-DBs aus Commit 44eb8dc ohne
+        ``note``-Spalte (das DDL wurde nachtraeglich erweitert). ``ALTER
+        TABLE ... ADD COLUMN`` ist idempotenz-sicher: pruefe vorher via
+        ``PRAGMA table_info`` (keine silent-fallbacks).
+        """
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(series_exceptions)")}
+        if cols and "note" not in cols:
+            conn.execute("ALTER TABLE series_exceptions ADD COLUMN note TEXT")
 
     def _migrate_goal_index_names(self, conn: sqlite3.Connection) -> None:
         """Entfernt Legacy-Index-Namen der Goal-Tabellen (2026-09-13).
@@ -4306,6 +4322,7 @@ class FinanceDB:
             exception_type=row["exception_type"],
             new_due_date=row["new_due_date"],
             amount_cents=row["amount_cents"],
+            note=row["note"],
             revision=int(row["revision"]),
             created_at=row["created_at"],
             updated_at=row["updated_at"],
@@ -5126,7 +5143,7 @@ class FinanceDB:
                     """INSERT INTO series_candidates (
                            fingerprint, iban, currency, direction, counterparty,
                            cadence, period_n, anchor_day, anchor_date,
-                           amount_cents, evidence, confidence, status
+                           amount_cents, evidence_json, confidence, status
                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')""",
                     (
                         fp,
@@ -5139,7 +5156,7 @@ class FinanceDB:
                         int(anchor_day),
                         str(anchor_date).strip(),
                         int(amount_cents),
-                        self._clean_text(evidence),
+                        self._clean_text(evidence) or "",
                         confidence if confidence is not None else "low",
                     ),
                 )
@@ -5151,7 +5168,7 @@ class FinanceDB:
             if existing["status"] != "pending":
                 return (self._series_candidate_from_row(existing), False)
             conn.execute(
-                "UPDATE series_candidates SET evidence = ?, "
+                "UPDATE series_candidates SET evidence_json = COALESCE(?, evidence_json), "
                 "confidence = COALESCE(?, confidence), "
                 "detected_at = datetime('now') WHERE id = ?",
                 (self._clean_text(evidence), confidence, existing["id"]),
@@ -5253,7 +5270,7 @@ class FinanceDB:
                 candidate_fingerprint=fp,
                 effective_from=effective_from,
                 effective_to=effective_to,
-                evidence_json=cand.evidence,
+                evidence_json=cand.evidence_json,
             )
             conn.execute(
                 "UPDATE series_candidates SET status = 'confirmed', series_id = ?,"
@@ -5360,14 +5377,14 @@ class FinanceDB:
                 if existing["status"] != status:
                     conn.execute(
                         "UPDATE series_occurrence_links SET status = ?, "
-                        "linked_at = datetime('now') WHERE id = ?",
+                        "updated_at = datetime('now') WHERE id = ?",
                         (status, existing["id"]),
                     )
                 row = conn.execute(
                     "SELECT * FROM series_occurrence_links WHERE id = ?",
                     (existing["id"],),
                 ).fetchone()
-                return self._occurrence_link_from_row(row)
+                return self._series_link_from_row(row)
             cur = conn.execute(
                 "INSERT INTO series_occurrence_links "
                 "(series_id, occurrence_date, transaction_id, status) "
@@ -5378,7 +5395,7 @@ class FinanceDB:
                 "SELECT * FROM series_occurrence_links WHERE id = ?",
                 (int(cur.lastrowid or 0),),
             ).fetchone()
-        return self._occurrence_link_from_row(row)
+        return self._series_link_from_row(row)
 
     def unlink_occurrence(self, series_id: int, occurrence_date: str) -> bool:
         """Loescht einen Link; True wenn etwas entfernt wurde."""
@@ -5398,7 +5415,7 @@ class FinanceDB:
                 "ORDER BY occurrence_date, id",
                 (series_id,),
             ).fetchall()
-        return [self._occurrence_link_from_row(r) for r in rows]
+        return [self._series_link_from_row(r) for r in rows]
 
     # -- journal & undo (T10) --
 
@@ -5418,7 +5435,7 @@ class FinanceDB:
                 "ORDER BY revision DESC, id DESC LIMIT ?",
                 (series_id, limit),
             ).fetchall()
-        return [self._journal_entry_from_row(r) for r in rows]
+        return [self._series_journal_from_row(r) for r in rows]
 
     _SERIES_RESTORE_FIELDS = (
         "iban",
@@ -5472,7 +5489,7 @@ class FinanceDB:
             field_sql = ", ".join(f"{f} = ?" for f in self._SERIES_RESTORE_FIELDS)
             field_vals = [target[f] for f in self._SERIES_RESTORE_FIELDS]
             if current is None:
-                all_sql = ", ".join(self._SERIES_RESTORE_FIELDS + ["id", "revision"])
+                all_sql = ", ".join(list(self._SERIES_RESTORE_FIELDS) + ["id", "revision"])
                 conn.execute(
                     f"""INSERT INTO recurring_series ({all_sql})
                         VALUES ({", ".join("?" for _ in self._SERIES_RESTORE_FIELDS)}
