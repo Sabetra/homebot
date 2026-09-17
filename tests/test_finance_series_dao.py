@@ -513,7 +513,6 @@ class TestJournalUndo:
             db.undo_series_change(s.id, steps=0)
         with pytest.raises(ValueError):
             db.undo_series_change(s.id, steps=True)
-            db.link_occurrence(s.id, "2026-08-15", txn, status="guessed")
 # ---------------------------------------------------------------------------
 # Engine <-> DAO Integration (Forecast-Pfad)
 # ---------------------------------------------------------------------------

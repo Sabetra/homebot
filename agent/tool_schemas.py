@@ -1631,6 +1631,426 @@ def get_tool_schemas() -> List[Dict[str, Any]]:
             },
         },
         # ------------------------------------------------------------------
+        # Wiederkehrende Serien (Finance SOTA AP2, 2026-09-17)
+        # Cadences: monthly | n_months (period_n 2-11) | weekly |
+        #           n_weeks (period_n 2-52) | yearly
+        # ------------------------------------------------------------------
+        {
+            "type": "function",
+            "function": {
+                "name": "finance_list_series",
+                "description": (
+                    "Liste aller wiederkehrenden Serien (Einnahmen/Ausgaben) "
+                    "mit Rhythmus (cadence + period_n), Betrag, Status "
+                    "(active/paused/ended) und Herkunft (manual/detected). "
+                    "Read-only. "
+                    "WANN VERWENDEN: 'Welche Abonnements und Dauerausgaben "
+                    "habe ich?', 'Meine wiederkehrenden Einnahmen', "
+                    "'Serien auf Konto X'."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "status": {
+                            "type": "string",
+                            "enum": ["active", "paused", "ended"],
+                            "description": "Filter nach Status (optional)",
+                        },
+                        "iban": {
+                            "type": "string",
+                            "description": "Filter nach Konto-IBAN (optional)",
+                        },
+                        "direction": {
+                            "type": "string",
+                            "enum": ["income", "expense"],
+                            "description": "Filter nach Richtung (optional)",
+                        },
+                        "source": {
+                            "type": "string",
+                            "enum": ["manual", "detected"],
+                            "description": "Filter nach Herkunft (optional)",
+                        },
+                    },
+                    "required": [],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "finance_list_series_candidates",
+                "description": (
+                    "Liste der erkannten Serien-Kandidaten (Vorschläge aus dem "
+                    "Buchungsverlauf) mit Rhythmus, Betrag, Konfidenz und "
+                    "Evidenz (Buchungs-IDs, Daten, Beträge). Default: status "
+                    "'pending'. Read-only — die Entscheidung fällt via "
+                    "finance_confirm_candidate bzw. finance_reject_candidate. "
+                    "WANN VERWENDEN: 'Welche wiederkehrenden Ausgaben hast du "
+                    "erkannt?', 'Offene Serien-Vorschläge'."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "status": {
+                            "type": "string",
+                            "enum": ["pending", "confirmed", "rejected"],
+                            "description": (
+                                "Filter nach Kandidaten-Status "
+                                "(optional, Default: pending)"
+                            ),
+                        },
+                    },
+                    "required": [],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "finance_series_calendar",
+                "description": (
+                    "Kalender aller Planvorkommen der aktiven Serien im "
+                    "Fenster reference_date bis reference_date+days_ahead "
+                    "(ALLE Vorkommen, nicht nur 30 Tage). Angewendete "
+                    "Ausnahmen (skip/move/amount) sind bereits korrekt "
+                    "berücksichtigt. Read-only. "
+                    "WANN VERWENDEN: 'Was kommt in den nächsten 60 Tagen an "
+                    "Dauerausgaben?', 'Wiederkehrende Zahlungen im nächsten "
+                    "Quartal', 'Mein Abo-Kalender'."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "reference_date": {
+                            "type": "string",
+                            "description": "Referenzdatum YYYY-MM-DD (optional, Default: heute)",
+                        },
+                        "days_ahead": {
+                            "type": "integer",
+                            "description": "Fensterlänge in Tagen 1-180 (Default: 30)",
+                        },
+                        "iban": {
+                            "type": "string",
+                            "description": "Filter nach Konto-IBAN (optional)",
+                        },
+                        "include_paused": {
+                            "type": "boolean",
+                            "description": "Pausierte Serien ebenfalls einbeziehen (Default: false)",
+                        },
+                    },
+                    "required": [],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "finance_detect_series_candidates",
+                "description": (
+                    "Scannt die Buchungen im Lookback-Fenster (3-36 Monate, "
+                    "Default 24) auf wiederkehrende Zahlungs-Muster und legt "
+                    "die Treffer als Kandidaten mit status 'pending' ab "
+                    "(idempotent: neue Fingerprints werden erstellt, bekannte "
+                    "nur aktualisiert). Keine Auto-Bestätigung — bitte je "
+                    "Kandidaten via finance_confirm_candidate oder "
+                    "finance_reject_candidate entscheiden. "
+                    "WANN VERWENDEN: 'Erkennst du wiederkehrende Ausgaben in "
+                    "meinen Buchungen?', 'Scan auf neue Abonnements'."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "iban": {
+                            "type": "string",
+                            "description": "Nur dieses Konto scannen (optional, sonst alle)",
+                        },
+                        "lookback_months": {
+                            "type": "integer",
+                            "description": "Rückblick in Monaten 3-36 (Default: 24)",
+                        },
+                        "min_occurrences": {
+                            "type": "integer",
+                            "description": "Mindestanzahl Vorkommen 2-24 (Default: 2)",
+                        },
+                    },
+                    "required": [],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "finance_confirm_candidate",
+                "description": (
+                    "Bestätigt einen Serien-Kandidaten (muss status 'pending' "
+                    "sein) und legt die Serie an (Herkunft 'detected'). "
+                    "Optionale Korrekturfelder überschreiben die erkannten "
+                    "Werte. WICHTIG: cadence 'n_months'/'n_weeks' braucht "
+                    "period_n (2-11 bzw. 2-52); 'monthly'/'weekly'/'yearly' "
+                    "haben period_n=1. anchor_day gilt für "
+                    "monthly/n_months/yearly (Tag im Monat, 1-28); "
+                    "weekly/n_weeks starten am anchor_date. "
+                    "WANN VERWENDEN: 'Bestätige den Spotify-Vorschlag', "
+                    "'Nimm den Kandidaten an, aber mit 12,99 EUR'."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "fingerprint": {
+                            "type": "string",
+                            "description": "fingerprint aus finance_list_series_candidates",
+                        },
+                        "iban": {
+                            "type": "string",
+                            "description": "Konto-IBAN überschreiben (optional)",
+                        },
+                        "currency": {
+                            "type": "string",
+                            "description": "Währung überschreiben, z.B. EUR (optional)",
+                        },
+                        "direction": {
+                            "type": "string",
+                            "enum": ["income", "expense"],
+                            "description": "Richtung überschreiben (optional)",
+                        },
+                        "cadence": {
+                            "type": "string",
+                            "enum": ["monthly", "n_months", "weekly", "n_weeks", "yearly"],
+                            "description": "Rhythmus überschreiben (optional)",
+                        },
+                        "period_n": {
+                            "type": "integer",
+                            "description": "Schrittweite für n_months (2-11) / n_weeks (2-52) (optional)",
+                        },
+                        "anchor_day": {
+                            "type": "integer",
+                            "description": "Anker-Tag im Monat 1-28 für monthly/n_months/yearly (optional)",
+                        },
+                        "anchor_date": {
+                            "type": "string",
+                            "description": "Erstanker-Startdatum YYYY-MM-DD (optional)",
+                        },
+                        "amount": {
+                            "type": "number",
+                            "description": "Betrag (positive Zahl) überschreiben (optional)",
+                        },
+                        "counterparty": {
+                            "type": "string",
+                            "description": "Empfänger/Gläubiger überschreiben (optional)",
+                        },
+                        "title": {
+                            "type": "string",
+                            "description": "Lesbarer Serien-Titel, z.B. 'Spotify' (optional)",
+                        },
+                        "status": {
+                            "type": "string",
+                            "enum": ["active", "paused"],
+                            "description": "Anfangsstatus (optional, Default: active)",
+                        },
+                        "effective_from": {
+                            "type": "string",
+                            "description": "Gültig ab YYYY-MM-DD (optional)",
+                        },
+                        "effective_to": {
+                            "type": "string",
+                            "description": "Gültig bis YYYY-MM-DD (optional, offen = keine Endung)",
+                        },
+                    },
+                    "required": ["fingerprint"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "finance_reject_candidate",
+                "description": (
+                    "Lehnt einen Serien-Kandidaten ab (muss status 'pending' "
+                    "sein; die Ablehnung ist final und wird stabil "
+                    "gespeichert — der Fingerprint wird bei späteren Scans "
+                    "nicht erneut als 'neu' erkannt). "
+                    "WANN VERWENDEN: 'Nein, das ist kein Abo, lass es weg'."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "fingerprint": {
+                            "type": "string",
+                            "description": "fingerprint aus finance_list_series_candidates",
+                        },
+                    },
+                    "required": ["fingerprint"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "finance_pause_series",
+                "description": (
+                    "Pausiert eine aktive Serie (status 'paused'); die Serie "
+                    "erscheint dann nicht mehr im Kalender, ist aber per "
+                    "finance_resume_series wieder aktivierbar. "
+                    "WANN VERWENDEN: 'Abo Gym für 2 Monate pausieren'."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "series_id": {
+                            "type": "integer",
+                            "description": "series_id aus finance_list_series",
+                        },
+                    },
+                    "required": ["series_id"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "finance_resume_series",
+                "description": (
+                    "Aktiviert eine pausierte Serie wieder (status 'active'). "
+                    "WANN VERWENDEN: 'Abo Gym wieder aktivieren'."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "series_id": {
+                            "type": "integer",
+                            "description": "series_id aus finance_list_series",
+                        },
+                    },
+                    "required": ["series_id"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "finance_end_series",
+                "description": (
+                    "Beendet eine Serie (status 'ended'); sie verschwindet aus "
+                    "dem Kalender und ist NICHT umkehrbar (für vorübergehende "
+                    "Pausen finance_pause_series verwenden). "
+                    "WANN VERWENDEN: 'Streaming-Abo gekündigt, Serie beenden'."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "series_id": {
+                            "type": "integer",
+                            "description": "series_id aus finance_list_series",
+                        },
+                    },
+                    "required": ["series_id"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "finance_skip_occurrence",
+                "description": (
+                    "Springt ein einzelnes Vorkommen einer Serie über "
+                    "(Ausnahme 'skip'): der Termin verschwindet aus dem "
+                    "Kalender, der Rhythmus bleibt ansonsten erhalten. "
+                    "due_date ist der ORIGINAL-Termin des Vorkommens. "
+                    "WANN VERWENDEN: 'Zahlung im Juli fällt nicht an, "
+                    "überspringen'."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "series_id": {
+                            "type": "integer",
+                            "description": "series_id aus finance_list_series",
+                        },
+                        "due_date": {
+                            "type": "string",
+                            "description": "Original-Termin des Vorkommens YYYY-MM-DD",
+                        },
+                        "note": {
+                            "type": "string",
+                            "description": "Begründung/Freitext (optional)",
+                        },
+                    },
+                    "required": ["series_id", "due_date"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "finance_move_occurrence",
+                "description": (
+                    "Verschiebt ein einzelnes Vorkommen einer Serie auf einen "
+                    "neuen Termin (Ausnahme 'move'); der Rhythmus bleibt "
+                    "ansonsten erhalten. due_date = Original-Termin, "
+                    "new_due_date = Zieltermin. "
+                    "WANN VERWENDEN: 'Zahlung vom 31.05. auf den 05.06. "
+                    "verschieben'."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "series_id": {
+                            "type": "integer",
+                            "description": "series_id aus finance_list_series",
+                        },
+                        "due_date": {
+                            "type": "string",
+                            "description": "Original-Termin des Vorkommens YYYY-MM-DD",
+                        },
+                        "new_due_date": {
+                            "type": "string",
+                            "description": "Neuer Termin YYYY-MM-DD",
+                        },
+                        "note": {
+                            "type": "string",
+                            "description": "Begründung/Freitext (optional)",
+                        },
+                    },
+                    "required": ["series_id", "due_date", "new_due_date"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "finance_change_occurrence_amount",
+                "description": (
+                    "Ändert den Betrag eines einzelnen Vorkommens einer Serie "
+                    "(Ausnahme 'amount'); der Rhythmus bleibt ansonsten "
+                    "erhalten. due_date ist der ORIGINAL-Termin des Vorkommens. "
+                    "WANN VERWENDEN: 'Im Oktober kostet das Abo 14,99 statt "
+                    "12,99 EUR'."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "series_id": {
+                            "type": "integer",
+                            "description": "series_id aus finance_list_series",
+                        },
+                        "due_date": {
+                            "type": "string",
+                            "description": "Original-Termin des Vorkommens YYYY-MM-DD",
+                        },
+                        "amount": {
+                            "type": "number",
+                            "description": "Neuer Betrag (positive Zahl, Währung der Serie)",
+                        },
+                        "note": {
+                            "type": "string",
+                            "description": "Begründung/Freitext (optional)",
+                        },
+                    },
+                    "required": ["series_id", "due_date", "amount"],
+                },
+            },
+        },
+        # ------------------------------------------------------------------
         # SOTA Filesystem-Connector (2026) — list_directory + search_files
         # ------------------------------------------------------------------
         {

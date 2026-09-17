@@ -494,4 +494,55 @@ kein Live-App-/Modelltest und kein Gesamtprojekt-Release-Gate.
 
 ---
 
+## 21. Serien: Tools-API (2026-09-17)
+
+Wiederkehrende Zahlungen als erste-Klasse-Modell: `series`,
+`series_candidates`, `series_exceptions` (skip/move/amount + `note`) und
+`series_source_links` (AP2 Stage 1; Workdoc
+`docs/FORECAST_UX_WORKDOC_2026-09-16.md`).
+
+**Engine:** `finance/series_engine.py` — `estimate_cadence` (Tage/Wochen/
+Monate-Multiplen), `clamp_day` (Anker 29-31 => Monatsende), `expand_series`
+(deterministisch, Cap 2000), `detect_candidates` (2+ Beobachtungen =>
+pruefbarer Kandidat, NIE auto-confirmed; Gruppierung nach IBAN/Currency/
+Direction/Counterparty).
+
+**DAO:** `finance/db_schema.py` — CRUD mit `revision`-Optimistic-Locking,
+Kandidaten-Lifecycle (pending/confirmed/rejected), Ausnahmen pro
+(series_id, original_due_date, typ), Journal + `undo_series_change`,
+`note`-Migration, `evidence_json` NOT-NULL (leerer String als Default).
+
+**Tools (`finance/tools.py`, alle `{"success": bool, ...}`):**
+
+| Tool | R/W | Verhalten |
+|------|-----|-----------|
+| `finance_list_series` | R | Filter status/iban/direction/source |
+| `finance_list_series_candidates` | R | Filter status |
+| `finance_series_calendar` | R | Expansion + Ausnahmen (skip/move/amount) im Fenster |
+| `finance_detect_series_candidates` | W | Facts => Kandidaten (pending) |
+| `finance_confirm_candidate` | W | optionaler Korrekturensatz (name/cadence/amount/start) |
+| `finance_reject_candidate` | W | status => rejected |
+| `finance_pause_series` / `finance_resume_series` / `finance_end_series` | W | Statuswechsel (paused/active/ended) |
+| `finance_skip_occurrence` / `finance_move_occurrence` / `finance_change_occurrence_amount` | W | Ausnahmen mit optionaler `note` |
+
+Konventionen: Beträge als Float, intern Cents-INTEGER
+(`_to_cents(float(amount))`; Fehler => `invalid_param`); ISO-Daten;
+DAO-`ValueError` => `error_class` `not_found`/`conflict`/`invalid_param`.
+Kandidaten bleiben `pending` — die Bestätigung ist immer eine explizite
+Nutzerentscheidung.
+
+**Registrierung:** 12 Schemas in `agent/tool_schemas.py`; 12
+Dispatch-Einträge + 12 Wrapper in `agent_toolkit.py`; Profile in
+`agent/tool_profiles.py`: `FINANCE_ANALYTICS` +3 Read-Tools,
+`FINANCE_WRITE_TOOLS` +9 Write-Tools (FINANCE_CORE/ALL bleiben
+unangetastet).
+
+**Verifikation (2026-09-17):** `tests/test_finance_series_tools.py`
+47/47; DAO + Engine 118/118; Tools/Goals-Schema/Profile-Gating 136/136;
+breite Finance-/Tool-/Schema-Suite 516/516 im Projekt-venv; `py_compile`
+auf allen geänderten Dateien. Keine LLM-/GPU-Läufe, keine produktiven
+Daten.
+
+---
+
 *Für Änderungen am Finance-Modul, dieses Dokument aktualisieren.*

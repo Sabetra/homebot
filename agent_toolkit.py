@@ -856,6 +856,18 @@ Nach der Tool-Ausführung bekommst du die Ergebnisse und kannst weitere Tools ve
             "finance_list_goal_contributions": self._finance_list_goal_contributions,
             "finance_project_goal": self._finance_project_goal,
             "finance_suggest_goal_candidates": self._finance_suggest_goal_candidates,
+            "finance_list_series": self._finance_list_series,
+            "finance_list_series_candidates": self._finance_list_series_candidates,
+            "finance_series_calendar": self._finance_series_calendar,
+            "finance_detect_series_candidates": self._finance_detect_series_candidates,
+            "finance_confirm_candidate": self._finance_confirm_candidate,
+            "finance_reject_candidate": self._finance_reject_candidate,
+            "finance_pause_series": self._finance_pause_series,
+            "finance_resume_series": self._finance_resume_series,
+            "finance_end_series": self._finance_end_series,
+            "finance_skip_occurrence": self._finance_skip_occurrence,
+            "finance_move_occurrence": self._finance_move_occurrence,
+            "finance_change_occurrence_amount": self._finance_change_occurrence_amount,
             "finance_monthly_report": self._finance_monthly_report,
             "finance_list_transfer_candidates": self._finance_list_transfer_candidates,
             "finance_link_transfer": self._finance_link_transfer,
@@ -3861,6 +3873,42 @@ if _HAS_MPL:
 
     def _finance_suggest_goal_candidates(self, params: Dict) -> Dict:
         return self._finance_tools.suggest_goal_candidates(params)
+
+    def _finance_list_series(self, params: Dict) -> Dict:
+        return self._finance_tools.list_series(params)
+
+    def _finance_list_series_candidates(self, params: Dict) -> Dict:
+        return self._finance_tools.list_series_candidates(params)
+
+    def _finance_series_calendar(self, params: Dict) -> Dict:
+        return self._finance_tools.series_calendar(params)
+
+    def _finance_detect_series_candidates(self, params: Dict) -> Dict:
+        return self._finance_tools.detect_series_candidates(params)
+
+    def _finance_confirm_candidate(self, params: Dict) -> Dict:
+        return self._finance_tools.confirm_candidate(params)
+
+    def _finance_reject_candidate(self, params: Dict) -> Dict:
+        return self._finance_tools.reject_candidate(params)
+
+    def _finance_pause_series(self, params: Dict) -> Dict:
+        return self._finance_tools.pause_series(params)
+
+    def _finance_resume_series(self, params: Dict) -> Dict:
+        return self._finance_tools.resume_series(params)
+
+    def _finance_end_series(self, params: Dict) -> Dict:
+        return self._finance_tools.end_series(params)
+
+    def _finance_skip_occurrence(self, params: Dict) -> Dict:
+        return self._finance_tools.skip_occurrence(params)
+
+    def _finance_move_occurrence(self, params: Dict) -> Dict:
+        return self._finance_tools.move_occurrence(params)
+
+    def _finance_change_occurrence_amount(self, params: Dict) -> Dict:
+        return self._finance_tools.change_occurrence_amount(params)
 
     def _finance_monthly_report(self, params: Dict) -> Dict:
         return self._finance_tools.monthly_report(params)

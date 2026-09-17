@@ -32,6 +32,13 @@ from finance.db_schema import (
     _to_cents,
 )
 from finance.models import DEFAULT_CURRENCY, VALID_GOAL_STATUSES
+from finance.series_engine import (
+    VALID_CADENCES,
+    SeriesException,
+    SeriesSpec,
+    detect_candidates,
+    expand_series,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -1217,6 +1224,640 @@ class FinanceTools:
             payload["balance"] = None
         payload["notes"] = notes
         return payload
+
+    # ------------------------------------------------------------------
+    # AP2 S1-Finale: Serien-Tools (Forecast UX)
+    #
+    # Deterministische Lese-/Schreib-Tools ueber die Serien-Engine
+    # (finance/series_engine.py) und die Serien-DAO (finance/db_schema.py).
+    # Konvention wie alle Finance-Tools: {"success": bool, ...payload};
+    # DAO-ValueError -> success=False + error_class (kein stiller Fallback).
+    # Kandidaten bleiben 'pending' (nie auto-confirmed). Keine LLM-Calls,
+    # keine Aenderungen an Bank-/Transaktions-Daten.
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _series_to_dict(series) -> Dict[str, Any]:
+        """RecurringSeries-Dataclass -> LLM-/UI-Dict (Betraege als Dezimal)."""
+        return {
+            "id": series.id,
+            "iban": series.iban,
+            "currency": series.currency,
+            "direction": series.direction,
+            "cadence": series.cadence,
+            "period_n": series.period_n,
+            "anchor_day": series.anchor_day,
+            "anchor_date": series.anchor_date,
+            "amount": _from_cents(series.amount_cents),
+            "counterparty": series.counterparty,
+            "category_id": series.category_id,
+            "title": series.title,
+            "status": series.status,
+            "source": series.source,
+            "effective_from": series.effective_from,
+            "effective_to": series.effective_to,
+            "revision": series.revision,
+        }
+
+    @staticmethod
+    def _candidate_to_dict(cand) -> Dict[str, Any]:
+        """SeriesCandidateRow -> LLM-/UI-Dict (evidence als Liste geparst)."""
+        evidence: List[Dict[str, Any]] = []
+        if cand.evidence_json:
+            try:
+                parsed = json.loads(cand.evidence_json)
+                if isinstance(parsed, list):
+                    for item in parsed:
+                        if isinstance(item, (list, tuple)) and len(item) == 3:
+                            evidence.append(
+                                {
+                                    "transaction_id": int(item[0]),
+                                    "date": str(item[1]),
+                                    "amount": _from_cents(int(item[2])),
+                                }
+                            )
+            except (TypeError, ValueError):
+                evidence = []
+        return {
+            "fingerprint": cand.fingerprint,
+            "iban": cand.iban,
+            "currency": cand.currency,
+            "direction": cand.direction,
+            "counterparty": cand.counterparty,
+            "cadence": cand.cadence,
+            "period_n": cand.period_n,
+            "anchor_day": cand.anchor_day,
+            "anchor_date": cand.anchor_date,
+            "amount": _from_cents(cand.amount_cents),
+            "confidence": cand.confidence,
+            "status": cand.status,
+            "series_id": cand.series_id,
+            "detected_at": cand.detected_at,
+            "reviewed_at": cand.reviewed_at,
+            "evidence": evidence,
+        }
+
+    @staticmethod
+    def _exception_to_dict(exc) -> Dict[str, Any]:
+        """SeriesExceptionRow -> LLM-/UI-Dict (Betrag als Dezimal oder None)."""
+        return {
+            "original_due_date": exc.original_due_date,
+            "exception_type": exc.exception_type,
+            "new_due_date": exc.new_due_date,
+            "amount": (
+                _from_cents(exc.amount_cents) if exc.amount_cents is not None else None
+            ),
+            "note": exc.note,
+            "revision": exc.revision,
+        }
+
+    @staticmethod
+    def _series_error_class(exc: ValueError) -> str:
+        """DAO-ValueError -> stabiles error_class (Fail-Fast-Konvention)."""
+        msg = str(exc).lower()
+        if "not found" in msg:
+            return "not_found"
+        if "already" in msg or "only 'pending'" in msg or "no journal" in msg:
+            return "conflict"
+        return "invalid_param"
+
+    @staticmethod
+    def _coerce_series_id(params: Dict[str, Any]) -> Optional[int]:
+        """series_id-Parameter (int > 0) normalisieren; ungültig -> None."""
+        raw = params.get("series_id")
+        if raw is None or isinstance(raw, bool):
+            return None
+        try:
+            value = int(raw)
+        except (TypeError, ValueError):
+            return None
+        return value if value > 0 else None
+
+    @staticmethod
+    def _coerce_iso_date(value: Any) -> Optional[str]:
+        """ISO-Datum (YYYY-MM-DD) normalisieren; ungültig/leer -> None."""
+        text = str(value or "").strip()
+        if not text:
+            return None
+        try:
+            return date.fromisoformat(text).isoformat()
+        except ValueError:
+            return None
+
+    def list_series(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Wiederkehrende Serien auflisten (Filter: status/iban/direction/source).
+
+        Read-Tool (AP2 S1-Finale). Beträge sind positive Dezimalzahlen;
+        die Richtung (income/expense) steht im Feld ``direction``.
+        """
+        status = params.get("status")
+        if status is not None:
+            status = str(status).strip().lower()
+            if status not in ("active", "paused", "ended"):
+                return {
+                    "success": False,
+                    "error": "status muss 'active', 'paused' oder 'ended' sein",
+                    "error_class": "invalid_param",
+                }
+        direction = params.get("direction")
+        if direction is not None:
+            direction = str(direction).strip().lower()
+            if direction not in ("income", "expense"):
+                return {
+                    "success": False,
+                    "error": "direction muss 'income' oder 'expense' sein",
+                    "error_class": "invalid_param",
+                }
+        source = params.get("source")
+        if source is not None:
+            source = str(source).strip().lower()
+            if source not in ("manual", "detected"):
+                return {
+                    "success": False,
+                    "error": "source muss 'manual' oder 'detected' sein",
+                    "error_class": "invalid_param",
+                }
+        iban = _normalize_iban(str(params.get("iban") or ""))
+        try:
+            series = self._db.list_series(
+                status=status, iban=iban or None, direction=direction, source=source
+            )
+        except ValueError as exc:
+            return {"success": False, "error": str(exc), "error_class": "invalid_param"}
+        return {
+            "success": True,
+            "count": len(series),
+            "series": [self._series_to_dict(s) for s in series],
+        }
+
+    def list_series_candidates(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Erkennungs-Kandidaten auflisten (Filter: status, Default 'pending').
+
+        Read-Tool. Kandidaten sind Vorschläge — Bestätigung explizit via
+        ``confirm_candidate`` (nie auto-confirmed).
+        """
+        status = params.get("status")
+        if status is None:
+            status = "pending"
+        else:
+            status = str(status).strip().lower()
+            if status not in ("pending", "confirmed", "rejected"):
+                return {
+                    "success": False,
+                    "error": "status muss 'pending', 'confirmed' oder 'rejected' sein",
+                    "error_class": "invalid_param",
+                }
+        try:
+            candidates = self._db.list_candidates(status=status)
+        except ValueError as exc:
+            return {"success": False, "error": str(exc), "error_class": "invalid_param"}
+        return {
+            "success": True,
+            "count": len(candidates),
+            "candidates": [self._candidate_to_dict(c) for c in candidates],
+        }
+
+    def series_calendar(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Planvorkommen aller Serien im Zeitfenster (AP2 F01: ALLE Vorkommen).
+
+        Read-Tool. ``reference_date`` (Default heute) + ``days_ahead``
+        (Default 30, 1–180) bilden das Fenster; aktive Serien werden über
+        ``expand_series`` deterministisch expandiert; Ausnahmen (skip/move/
+        amount) werden pro Original-Termin angewendet. ``include_paused``
+        (Default False) enthält zusätzlich pausierte Serien.
+        """
+        try:
+            reference = self._parse_reference_date(params.get("reference_date"))
+        except ValueError:
+            return {
+                "success": False,
+                "error": "Ungueltiges reference_date (erwartet YYYY-MM-DD)",
+                "error_class": "invalid_param",
+            }
+        days_ahead = self._coerce_int_param(params.get("days_ahead"), default=30)
+        if days_ahead is None or not 1 <= days_ahead <= 180:
+            return {
+                "success": False,
+                "error": "days_ahead muss eine Ganzzahl zwischen 1 und 180 sein",
+                "error_class": "invalid_param",
+            }
+        iban = _normalize_iban(str(params.get("iban") or ""))
+        include_paused = bool(params.get("include_paused", False))
+        window_start = reference
+        window_end = reference + timedelta(days=days_ahead)
+        try:
+            all_series: List[Any] = []
+            for st in (["active", "paused"] if include_paused else ["active"]):
+                all_series.extend(self._db.list_series(status=st, iban=iban or None))
+        except ValueError as exc:
+            return {"success": False, "error": str(exc), "error_class": "invalid_param"}
+        occurrences: List[Dict[str, Any]] = []
+        for series in all_series:
+            spec = SeriesSpec(
+                key=f"series:{series.id}",
+                iban=series.iban,
+                currency=series.currency,
+                direction=series.direction,
+                cadence=series.cadence,
+                period_n=series.period_n,
+                anchor_day=series.anchor_day,
+                anchor_date=series.anchor_date,
+                amount_cents=series.amount_cents,
+                counterparty=series.counterparty,
+                effective_from=series.effective_from,
+                effective_to=series.effective_to,
+            )
+            exceptions = {
+                e.original_due_date: SeriesException(
+                    key=spec.key,
+                    original_due_date=e.original_due_date,
+                    exception_type=e.exception_type,
+                    new_due_date=e.new_due_date,
+                    amount_cents=e.amount_cents,
+                )
+                for e in self._db.list_series_exceptions(series.id)
+            }
+            try:
+                occs = expand_series(
+                    spec,
+                    exceptions=exceptions,
+                    window_start=window_start.isoformat(),
+                    window_end=window_end.isoformat(),
+                )
+            except ValueError as exc:
+                return {
+                    "success": False,
+                    "error": str(exc),
+                    "error_class": self._series_error_class(exc),
+                }
+            for occ in occs:
+                occurrences.append(
+                    {
+                        "date": occ.date,
+                        "original_date": occ.original_date,
+                        "series_id": series.id,
+                        "counterparty": series.counterparty,
+                        "direction": series.direction,
+                        "amount": _from_cents(occ.amount_cents),
+                        "currency": series.currency,
+                        "iban": series.iban,
+                        "exception": occ.exception,
+                    }
+                )
+        occurrences.sort(key=lambda item: (item["date"], int(item["series_id"] or 0)))
+        return {
+            "success": True,
+            "reference_date": window_start.isoformat(),
+            "window_start": window_start.isoformat(),
+            "window_end": window_end.isoformat(),
+            "count": len(occurrences),
+            "occurrences": occurrences,
+        }
+
+    def detect_series_candidates(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Wiederkehrende Zahlungs-Muster aus den letzten Buchungen erkennen.
+
+        Write-Tool (Ergebnis = Vorschlag). Scannt die Konten (optional via
+        ``iban`` begrenzt) im Lookback-Fenster (``lookback_months``, Default
+        24, 3–36; ``min_occurrences``, Default 2), wendet die
+        deterministische ``detect_candidates``-Engine an und speichert die
+        Kandidaten mit status 'pending'. Neue Kandidaten werden erstellt,
+        bereits bekannte Fingerprint nur aktualisiert (Idempotenz).
+        """
+        lookback_months = self._coerce_int_param(params.get("lookback_months"), default=24)
+        if lookback_months is None or not 3 <= lookback_months <= 36:
+            return {
+                "success": False,
+                "error": "lookback_months muss eine Ganzzahl zwischen 3 und 36 sein",
+                "error_class": "invalid_param",
+            }
+        min_occurrences = self._coerce_int_param(params.get("min_occurrences"), default=2)
+        if min_occurrences is None or not 2 <= min_occurrences <= 24:
+            return {
+                "success": False,
+                "error": "min_occurrences muss eine Ganzzahl zwischen 2 und 24 sein",
+                "error_class": "invalid_param",
+            }
+        iban = _normalize_iban(str(params.get("iban") or ""))
+        accounts = self._db.list_accounts()
+        if iban:
+            accounts = [a for a in accounts if (a.iban or "").upper() == iban.upper()]
+            if not accounts:
+                return {
+                    "success": False,
+                    "error": f"IBAN {iban} ist keinem Konto zugeordnet",
+                    "error_class": "not_found",
+                }
+        reference = date.today()
+        months_back = reference.year * 12 + reference.month - 1 - lookback_months
+        start_date = date(months_back // 12, months_back % 12 + 1, 1).isoformat()
+        end_date = reference.isoformat()
+        facts: List[Dict[str, Any]] = []
+        for acct in accounts:
+            for row in self._db.list_analysis_facts(
+                account_id=acct.id, start_date=start_date, end_date=end_date
+            ):
+                facts.append(
+                    {
+                        "iban": row.get("iban") or acct.iban,
+                        "currency": row.get("currency") or acct.currency,
+                        "counterparty": row.get("counterparty"),
+                        "transaction_id": row.get("transaction_id"),
+                        "date": row.get("booking_date"),
+                        "amount_cents": row.get("amount_cents"),
+                    }
+                )
+        if not facts:
+            return {
+                "success": True,
+                "count": 0,
+                "new_candidates": 0,
+                "candidates": [],
+                "note": "Keine Buchungen im Lookback-Fenster — nichts zu erkennen.",
+            }
+        candidates = detect_candidates(facts, min_occurrences=min_occurrences)
+        if not candidates:
+            return {
+                "success": True,
+                "count": 0,
+                "new_candidates": 0,
+                "candidates": [],
+                "note": "Kein wiederkehrendes Muster gefunden (2+ identische Beobachtungen).",
+            }
+        rows: List[Any] = []
+        created = 0
+        for cand in candidates:
+            evidence_json = json.dumps(
+                [[tid, dt, amt] for (tid, dt, amt) in cand.evidence]
+            )
+            try:
+                row, is_new = self._db.save_series_candidate(
+                    fingerprint=cand.fingerprint,
+                    iban=cand.iban,
+                    currency=cand.currency,
+                    direction=cand.direction,
+                    counterparty=cand.counterparty,
+                    cadence=cand.cadence,
+                    period_n=cand.period_n,
+                    anchor_day=cand.anchor_day,
+                    anchor_date=cand.anchor_date,
+                    amount_cents=cand.amount_cents,
+                    evidence=evidence_json,
+                    confidence=cand.confidence,
+                )
+            except ValueError as exc:
+                return {
+                    "success": False,
+                    "error": str(exc),
+                    "error_class": self._series_error_class(exc),
+                }
+            if is_new:
+                created += 1
+            rows.append(row)
+        return {
+            "success": True,
+            "count": len(rows),
+            "new_candidates": created,
+            "candidates": [self._candidate_to_dict(r) for r in rows],
+            "note": (
+                "Kandidaten sind Vorschläge (status 'pending') — bitte prüfen und "
+                "via confirm_candidate bzw. reject_candidate entscheiden."
+            ),
+        }
+
+    def confirm_candidate(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Erkennungs-Kandidat als Serie bestätigen (optionale Korrekturen).
+
+        Write-Tool. Der Kandidat muss status 'pending' sein. Optionale
+        Korrekturfelder (``iban``, ``currency``, ``direction``, ``cadence``,
+        ``period_n``, ``anchor_day``, ``anchor_date``, ``amount``,
+        ``counterparty``, ``title``) überschreiben die erkannten Werte;
+        ``status`` (Default 'active'), ``effective_from``/``effective_to``
+        sind optional. Die Serie wird mit source='detected' angelegt und
+        die Kandidaten-Verbindung (series_id) festgeschrieben.
+        """
+        fingerprint = str(params.get("fingerprint") or "").strip()
+        if not fingerprint:
+            return {
+                "success": False,
+                "error": "fingerprint ist erforderlich",
+                "error_class": "invalid_param",
+            }
+        corrections: Dict[str, Any] = {}
+        for field in ("iban", "currency", "direction", "cadence", "counterparty", "title"):
+            value = params.get(field)
+            if value is not None:
+                text = str(value).strip()
+                if text:
+                    corrections[field] = text
+        if "iban" in corrections:
+            corrections["iban"] = _normalize_iban(corrections["iban"])
+        if "currency" in corrections:
+            corrections["currency"] = corrections["currency"].upper()
+        if "direction" in corrections:
+            corrections["direction"] = corrections["direction"].lower()
+        if "cadence" in corrections and corrections["cadence"] not in VALID_CADENCES:
+            return {
+                "success": False,
+                "error": f"cadence muss ein Wert aus {sorted(VALID_CADENCES)} sein",
+                "error_class": "invalid_param",
+            }
+        period_n = self._coerce_int_param(params.get("period_n"))
+        if period_n is not None:
+            if period_n < 1 or period_n > 120:
+                return {
+                    "success": False,
+                    "error": "period_n muss eine Ganzzahl zwischen 1 und 120 sein",
+                    "error_class": "invalid_param",
+                }
+            corrections["period_n"] = period_n
+        anchor_day = self._coerce_int_param(params.get("anchor_day"))
+        if anchor_day is not None:
+            if not 1 <= anchor_day <= 28:
+                return {
+                    "success": False,
+                    "error": "anchor_day muss eine Ganzzahl zwischen 1 und 28 sein",
+                    "error_class": "invalid_param",
+                }
+            corrections["anchor_day"] = anchor_day
+        for field in ("anchor_date", "effective_from", "effective_to"):
+            value = params.get(field)
+            if value is not None:
+                iso = self._coerce_iso_date(value)
+                if iso is None:
+                    return {
+                        "success": False,
+                        "error": f"{field} muss ein ISO-Datum (YYYY-MM-DD) sein",
+                        "error_class": "invalid_param",
+                    }
+                corrections[field] = iso
+        amount = params.get("amount")
+        if amount is not None:
+            try:
+                cents = _to_cents(float(amount))
+            except (TypeError, ValueError):
+                cents = None
+            if cents is None:
+                return {
+                    "success": False,
+                    "error": "amount muss eine positive Zahl sein",
+                    "error_class": "invalid_param",
+                }
+            corrections["amount_cents"] = cents
+        status = params.get("status")
+        if status is None:
+            status = "active"
+        else:
+            status = str(status).strip().lower()
+            if status not in ("active", "paused"):
+                return {
+                    "success": False,
+                    "error": "status muss 'active' oder 'paused' sein",
+                    "error_class": "invalid_param",
+                }
+        try:
+            candidate, series = self._db.confirm_candidate(
+                fingerprint, status=status, **corrections
+            )
+        except ValueError as exc:
+            return {"success": False, "error": str(exc), "error_class": self._series_error_class(exc)}
+        return {
+            "success": True,
+            "candidate": self._candidate_to_dict(candidate),
+            "series": self._series_to_dict(series),
+        }
+
+    def reject_candidate(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Erkennungs-Kandidat ablehnen (keine Serie wird angelegt).
+
+        Write-Tool. Der Kandidat muss status 'pending' sein; die Ablehnung
+        ist final (reviewed_at wird gesetzt).
+        """
+        fingerprint = str(params.get("fingerprint") or "").strip()
+        if not fingerprint:
+            return {
+                "success": False,
+                "error": "fingerprint ist erforderlich",
+                "error_class": "invalid_param",
+            }
+        try:
+            candidate = self._db.reject_candidate(fingerprint)
+        except ValueError as exc:
+            return {"success": False, "error": str(exc), "error_class": self._series_error_class(exc)}
+        return {"success": True, "candidate": self._candidate_to_dict(candidate)}
+
+    def _set_series_status(
+        self, params: Dict[str, Any], target_status: str
+    ) -> Dict[str, Any]:
+        """Gemeinsame Logik für pause/resume/end (series_id -> Zielstatus)."""
+        series_id = self._coerce_series_id(params)
+        if series_id is None:
+            return {
+                "success": False,
+                "error": "series_id ist erforderlich (positive ganze Zahl)",
+                "error_class": "invalid_param",
+            }
+        try:
+            series = self._db.set_series_status(series_id, target_status)
+        except ValueError as exc:
+            return {"success": False, "error": str(exc), "error_class": self._series_error_class(exc)}
+        return {"success": True, "series": self._series_to_dict(series)}
+
+    def pause_series(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Aktive Serie pausieren (status 'paused'; Fortführung via resume_series)."""
+        return self._set_series_status(params, "paused")
+
+    def resume_series(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Pausierte Serie wieder aktivieren (status 'active')."""
+        return self._set_series_status(params, "active")
+
+    def end_series(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Serie beenden (status 'ended'; nicht mehr im Kalender, nicht umkehrbar)."""
+        return self._set_series_status(params, "ended")
+
+    def _set_occurrence_exception(
+        self, params: Dict[str, Any], exception_type: str, **extra: Any
+    ) -> Dict[str, Any]:
+        """Gemeinsame Logik für skip/move/amount-Ausnahmen auf ein Vorkommen."""
+        series_id = self._coerce_series_id(params)
+        if series_id is None:
+            return {
+                "success": False,
+                "error": "series_id ist erforderlich (positive ganze Zahl)",
+                "error_class": "invalid_param",
+            }
+        due_date = self._coerce_iso_date(params.get("due_date"))
+        if due_date is None:
+            return {
+                "success": False,
+                "error": "due_date ist erforderlich (ISO-Datum YYYY-MM-DD)",
+                "error_class": "invalid_param",
+            }
+        note = params.get("note")
+        note = str(note).strip() if note is not None else None
+        try:
+            exception = self._db.set_series_exception(
+                series_id=series_id,
+                original_due_date=due_date,
+                exception_type=exception_type,
+                note=note,
+                **extra,
+            )
+        except ValueError as exc:
+            return {"success": False, "error": str(exc), "error_class": self._series_error_class(exc)}
+        return {
+            "success": True,
+            "series_id": series_id,
+            "exception": self._exception_to_dict(exception),
+        }
+
+    def skip_occurrence(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Einzelnes Vorkommen überspringen (F02, exception_type 'skip').
+
+        Write-Tool. ``due_date`` ist der Original-Termin des Vorkommens;
+        das Vorkommen verschwindet aus dem Kalender (optional mit ``note``).
+        """
+        return self._set_occurrence_exception(params, "skip")
+
+    def move_occurrence(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Einzelnes Vorkommen auf neuen Termin verschieben (F02, 'move').
+
+        Write-Tool. ``due_date`` = Original-Termin, ``new_due_date`` =
+        Zieltermin (beide ISO); optional ``note``.
+        """
+        new_due_date = self._coerce_iso_date(params.get("new_due_date"))
+        if new_due_date is None:
+            return {
+                "success": False,
+                "error": "new_due_date ist erforderlich (ISO-Datum YYYY-MM-DD)",
+                "error_class": "invalid_param",
+            }
+        return self._set_occurrence_exception(params, "move", new_due_date=new_due_date)
+
+    def change_occurrence_amount(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Betrag eines einzelnen Vorkommens ändern (F02, 'amount').
+
+        Write-Tool. ``due_date`` = Original-Termin, ``amount`` = neuer Betrag
+        (positive Zahl, Währung der Serie); optional ``note``.
+        """
+        amount = params.get("amount")
+        if amount is None:
+            return {
+                "success": False,
+                "error": "amount ist erforderlich (positive Zahl)",
+                "error_class": "invalid_param",
+            }
+        try:
+            cents = _to_cents(float(amount))
+        except (TypeError, ValueError):
+            cents = None
+        if cents is None:
+            return {
+                "success": False,
+                "error": "amount muss eine positive Zahl sein",
+                "error_class": "invalid_param",
+            }
+        return self._set_occurrence_exception(params, "amount", amount_cents=cents)
 
     def _fit_currency_series(
         self,

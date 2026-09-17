@@ -1683,3 +1683,29 @@ vorbelegt. Grenzen und Vertraege: `docs/03_FINANCE_MODULE.md` §20.
 
 Verifiziert: 344 breite synthetische Regressionstests; anschliessend 110
 UI-/Goal- und 14 Analytics-Tests. Kein produktiver DB-/LLM-/GPU-Zugriff.
+
+## AC. Serien-Tools-API (AP2 Stage 1-Finale, 2026-09-17)
+
+Wiederkehrende Zahlungen (Serien) sind seit AP2 Stage 1 als
+erste-Klasse-Modell nutzbar: Engine (`finance/series_engine.py`), DAO
+(`finance/db_schema.py`: `series`, `series_candidates`, `series_exceptions`,
+`series_source_links`) und 12 Tools in `finance/tools.py`
+(`finance_list_series`, `finance_list_series_candidates`,
+`finance_series_calendar`, `finance_detect_series_candidates`,
+`finance_confirm_candidate`, `finance_reject_candidate`,
+`finance_pause_series`, `finance_resume_series`, `finance_end_series`,
+`finance_skip_occurrence`, `finance_move_occurrence`,
+`finance_change_occurrence_amount`).
+
+Registrierung: 12 Schemas (`agent/tool_schemas.py`), 12 Dispatch-Eintraege +
+12 Wrapper (`agent_toolkit.py`), Profile (`agent/tool_profiles.py`):
+`FINANCE_ANALYTICS` +3 Read-Tools, `FINANCE_WRITE_TOOLS` +9 Write-Tools.
+Konvention: Betraege als Float, intern Cents; Kandidaten bleiben `pending`
+(keine Auto-Bestaetigung); DAO-`ValueError` => `error_class`
+(`not_found`/`conflict`/`invalid_param`). Details: `docs/03_FINANCE_MODULE.md`
+§21 und Workdoc `docs/FORECAST_UX_WORKDOC_2026-09-16.md`.
+
+Verifiziert: `tests/test_finance_series_tools.py` 47/47; DAO + Engine
+118/118; Tools/Goals-Schema/Profile-Gating 136/136; breite
+Finance-/Tool-/Schema-Suite 516/516 im Projekt-venv. Kein LLM-/GPU-Lauf,
+keine produktiven Daten.

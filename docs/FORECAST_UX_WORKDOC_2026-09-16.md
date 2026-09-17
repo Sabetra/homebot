@@ -1,8 +1,8 @@
-<!-- last-verified: 2026-09-16 -->
+<!-- last-verified: 2026-09-17 -->
 # WORKDOC — Forecast UX (Plan-Items), 2026-09-16
 
 Aufgabe: `docs_archive/FORECAST_UX_QWEN_IMPLEMENTATION_PROMPT_2026-09-16.md`
-Status: AP1 (UI + Core) ABGESCHLOSSEN (2026-09-16, alle DoD-Punkte ✅, 222/222 Tests grün). AP2 (Detektion) offen — bewusst NICHT in diesem Schritt.
+Status: AP1 (UI + Core) ABGESCHLOSSEN (2026-09-16, alle DoD-Punkte ✅, 222/222 Tests grün). AP2 Stage 1 (Engine + DAO + Tools-API) ABGESCHLOSSEN (2026-09-17, breite Suite 516/516 grün). AP2 Stage 2 (F01/F02/F08) offen.
 
 ---
 
@@ -195,6 +195,8 @@ forecast_plan_journal   -- Undo via Gegenrevision; ueberlebt Item-Loeschung
 | 2026-09-16 | AP1 ABGESCHLOSSEN (alle DoD-Punkte ✅). Commit 832c2f4, Push auf origin/main |
 | 2026-09-16 | AP2 S1 (Engine): `finance/series_engine.py` implementiert + `tests/test_series_engine.py` 60/60 PASS; 5 Root-Cause-Fixes (Details unten). Commit `44eb8dc` (Pre-Commit-Gate grün: Secret-Gate + Lizenz-Gate + deterministisches Release-Gate/pytest inkl. der 60 neuen Tests) + Push auf `origin/main` |
 | 2026-09-17 | AP2 S1 (DAO): `tests/test_finance_series_dao.py` **55/55 PASS** — CRUD/Locking/Idempotenz/Kandidaten/Ausnahmen/Links/Journal+Undo + Engine↔DAO-Integration; DAO-Bug root-cause-fixt (`undo_series_change` Restore: `tuple + list` ⇒ `TypeError`, Fix + Regressions-Test) |
+| 2026-09-17 | AP2 S1 (DAO-Finale): `series_exceptions.note` (T11, Migration), `evidence_json` NOT-NULL, DAO-Root-Cause-Fixes; DAO-Suite **58/58 PASS**; Commit `543cfaf` (Pre-Commit-Gate 1628/1628) + Push |
+| 2026-09-17 | AP2 S1-Finale (Tools-API): 12 Tools in `finance/tools.py` (+4 Root-Cause-Fixes `_to_cents`/`note`), 12 Schemas, AgentToolkit-Dispatch +12, Profile +3 ANALYTICS/+9 WRITE; **47/47** Tools, **118/118** DAO+Engine, **136/136** Suite, **516/516** breit; Doku §21/§AC; Commit + Push |
 
 ## AP2 — Serien, Erkennungen und Ist-Abgleich (Start 2026-09-17)
 
@@ -303,3 +305,70 @@ Design-Fakten (bewusst, in Tests dokumentiert): Exception-Upsert ist lenient
 Währung = `DEFAULT_CURRENCY` (CHF), NICHT die Kontowährung.
 Nächste Session: **S1-Finale = Tools-API** (list series, detect candidates,
 confirm/reject, pause/end, skip, move) → S2 (F01/F02/F08).
+
+### S1-Finale (Tools-API) — ABGESCHLOSSEN 2026-09-17
+
+**Hypothese:** Engine (32/32) + DAO (58/58) sind vollständig; die 12 Tools
+deterministisch über `FinanceTools` + Dispatch + Schema-Katalog + Profile
+registrieren, macht das Serien-Modell im Chat/UI nutzbar — ohne
+Engine-/DAO-Änderung.
+
+**Design (12 Tools in `finance/tools.py`, alle `{"success": bool, ...}`):**
+
+| Tool | R/W | DAO- / Engine-Aufruf |
+|------|-----|----------------------|
+| `list_series` | R | `list_series(status/iban/direction/source)` |
+| `list_series_candidates` | R | `list_candidates(status)` |
+| `series_calendar` | R | `list_series` + `list_series_exceptions` + `expand_series` |
+| `detect_series_candidates` | W | `list_accounts` + `list_analysis_facts` + `detect_candidates` + `save_series_candidate` |
+| `confirm_candidate` | W | `confirm_candidate` (Korrektursatz optional) |
+| `reject_candidate` | W | `reject_candidate` |
+| `pause_series` / `resume_series` / `end_series` | W | `set_series_status('paused'/'active'/'ended')` |
+| `skip_occurrence` | W | `set_series_exception(type='skip', note)` |
+| `move_occurrence` | W | `set_series_exception(type='move', new_due_date, note)` |
+| `change_occurrence_amount` | W | `set_series_exception(type='amount', amount_cents, note)` |
+
+* Konventionen: Beträge als Float (`_to_cents`/`_from_cents`), ISO-Daten,
+  DAO-`ValueError` → `success=False` + `error_class` (`not_found` / `conflict`
+  / `invalid_param`), Kandidaten bleiben `pending` (nie auto-confirmed),
+  keine LLM-Calls, keine Bank-Daten-Veränderung.
+* Registrierung: `TOOL_SCHEMAS` (+12), `AgentToolkit`-Dispatch (+12;
+  Read-Tools via read-only-Wrapper), `FINANCE_CORE` (+3 Read) /
+  `FINANCE_WRITE_TOOLS` (+9 Write) in `tool_profiles.py`.
+  `FINANCE_ALL`/`FINANCE_ANALYTICS`/`FINANCE_WRITE` bauen auf CORE/READ/WRITE
+  auf → automatisch vollständig.
+
+**Kontrollpfad / Exit-Kriterium:**
+
+1. Neue Suite `tests/test_finance_series_tools.py` (12+ Tests:
+   Roundtrips, Validierung, Conflict/Not-Found, Kalender mit Ausnahmen,
+   Erkennung aus Fact-Seeds, Kandidat→Bestätigen-Lifecycle, Isolation
+   Konten/Währungen).
+2. Regression: `test_finance_series_dao.py` + `test_series_engine.py` +
+   `test_finance_goals_schema.py` + `test_tool_profile_gating.py` grün.
+3. `py_compile` auf allen geänderten Dateien;
+   `run_pytest_venv.ps1 tests/test_finance_series_tools.py -v`.
+4. Doku: `03_FINANCE_MODULE.md` (§ Serien-Tools), `funktionen.md`
+   (S1-Finale-Hinweis), Workdoc-Log + Status.
+5. Commit (nur geänderte Dateien) + Push `origin/main`.
+
+**Nicht in diesem Schritt (S2, nächste Session):** F01/F02
+(`upcoming_bills`/`subscription_audit`), F08 (`cash_flow_forecast`
+`include_series` opt-in).
+
+**Ergebnis (2026-09-17):** Alle Exit-Kriterien erfüllt:
+
+- `tests/test_finance_series_tools.py`: **47/47 PASS** (Roundtrips,
+  Validierung, Conflict/Not-Found, Kalender mit Ausnahmen, Erkennung aus
+  Fact-Seeds, Kandidaten-Lifecycle, Konten-/Währungs-Isolation).
+- Regression: DAO + Engine **118/118**; Tools/Goals-Schema/Profile-Gating
+  **136/136**; breite Finance-/Tool-/Schema-Suite **516/516** (Projekt-venv).
+- Root-Cause-Fixes in `finance/tools.py` (vorher 42/47):
+  `_to_cents(params.get("amount"))` ⇒ `_to_cents(float(params["amount"]))`
+  (`ValueError` ⇒ `invalid_param` statt `success=True` + `amount_cents=None`);
+  `params.get("note")` ⇒ `params.get("note", "")` (DAO erwartet String).
+  Test-Fixtures: `counterparty` + `direction` in Fact-Seeds gesetzt.
+- Registrierung vollständig: 12 Schemas, 12 Dispatch-Einträge + 12 Wrapper,
+  Profile (+3 `FINANCE_ANALYTICS`, +9 `FINANCE_WRITE_TOOLS`);
+  Read/Write-Disjunktheit und Duplikatfreiheit verifiziert.
+- Doku: `03_FINANCE_MODULE.md` §21, `funktionen.md` §AC, Workdoc-Log.
