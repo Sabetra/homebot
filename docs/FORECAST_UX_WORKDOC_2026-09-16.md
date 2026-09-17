@@ -193,7 +193,7 @@ forecast_plan_journal   -- Undo via Gegenrevision; ueberlebt Item-Loeschung
 | 2026-09-16 | Verifikation: 42/42 plan_items, 88/88 monarch_core+tab_regressions, 92/92 erweiterte Suiten, Kombi-Lauf 222/222 PASS; py_compile OK; i18n-Parität 37×3 Locales; check_licenses --strict OK |
 | 2026-09-16 | Fix: `finance/tab.py` importierte nicht existierende `RevisionConflictError` (Import + except) → `PlanRevisionConflict` (SSoT `db_schema.py:223`); vorher ImportError bei Collection von `test_finance_tab_regressions.py`, danach grün |
 | 2026-09-16 | AP1 ABGESCHLOSSEN (alle DoD-Punkte ✅). Commit 832c2f4, Push auf origin/main |
-| 2026-09-16 | AP2 S1 (Engine): `finance/series_engine.py` implementiert + `tests/test_series_engine.py` 60/60 PASS; 5 Root-Cause-Fixes (Details unten). Commit folgt in derselben Session |
+| 2026-09-16 | AP2 S1 (Engine): `finance/series_engine.py` implementiert + `tests/test_series_engine.py` 60/60 PASS; 5 Root-Cause-Fixes (Details unten). Commit `44eb8dc` (Pre-Commit-Gate grün: Secret-Gate + Lizenz-Gate + deterministisches Release-Gate/pytest inkl. der 60 neuen Tests) + Push auf `origin/main` |
 
 ## AP2 — Serien, Erkennungen und Ist-Abgleich (Start 2026-09-17)
 
