@@ -196,7 +196,7 @@ forecast_plan_journal   -- Undo via Gegenrevision; ueberlebt Item-Loeschung
 | 2026-09-16 | AP2 S1 (Engine): `finance/series_engine.py` implementiert + `tests/test_series_engine.py` 60/60 PASS; 5 Root-Cause-Fixes (Details unten). Commit `44eb8dc` (Pre-Commit-Gate grün: Secret-Gate + Lizenz-Gate + deterministisches Release-Gate/pytest inkl. der 60 neuen Tests) + Push auf `origin/main` |
 | 2026-09-17 | AP2 S1 (DAO): `tests/test_finance_series_dao.py` **55/55 PASS** — CRUD/Locking/Idempotenz/Kandidaten/Ausnahmen/Links/Journal+Undo + Engine↔DAO-Integration; DAO-Bug root-cause-fixt (`undo_series_change` Restore: `tuple + list` ⇒ `TypeError`, Fix + Regressions-Test) |
 | 2026-09-17 | AP2 S1 (DAO-Finale): `series_exceptions.note` (T11, Migration), `evidence_json` NOT-NULL, DAO-Root-Cause-Fixes; DAO-Suite **58/58 PASS**; Commit `543cfaf` (Pre-Commit-Gate 1628/1628) + Push |
-| 2026-09-17 | AP2 S1-Finale (Tools-API): 12 Tools in `finance/tools.py` (+4 Root-Cause-Fixes `_to_cents`/`note`), 12 Schemas, AgentToolkit-Dispatch +12, Profile +3 ANALYTICS/+9 WRITE; **47/47** Tools, **118/118** DAO+Engine, **136/136** Suite, **516/516** breit; Doku §21/§AC; Commit + Push |
+| 2026-09-17 | AP2 S1-Finale (Tools-API): 12 Tools in `finance/tools.py` (+4 Root-Cause-Fixes `_to_cents`/`note`), 12 Schemas, AgentToolkit-Dispatch +12, Profile +3 ANALYTICS/+9 WRITE; **47/47** Tools, **118/118** DAO+Engine, **136/136** Suite, **516/516** breit; Doku §21/§AC; Commit `20b15dd` (Pre-Commit-Gate: secret_guard sauber, **1675/1675** Tests, release gate grün) + Push |
 
 ## AP2 — Serien, Erkennungen und Ist-Abgleich (Start 2026-09-17)
 
