@@ -1632,7 +1632,7 @@ neuen Dependencies, kein Future-Leak.
 | **Zweck** | SOTA-Haushaltsanalyse: Guthaben-Projektion, Fälligkeits-Kalender, Abo-Audit (Erfolgskriterien Cash Predict / PocketSmith / Finanzguru — siehe Workdoc) |
 | **Tools** | `finance_upcoming_bills` (Fenster 1–180 Tage, Anchortag = Median der letzten 5 Buchungstage, Abo-Kennzeichnung) · `finance_cash_flow_forecast` (Horizont 1–24 Monate, Rückblick 3–36, Konfidenz 0.5–0.99, `include_balance`) · `finance_subscription_audit` (Monats-/Jahreskosten, Trend, letzte Preisänderung, Abo-Heuristik) |
 | **Methodik** | Deterministischer Anteil: Recurring-Gruppen (≥ 2 Buchungen, `_recurring_groups`) mit Historien-Monatswert + nächstem Fälligkeitstag (`_next_due_on_or_after`). Stochastischer Anteil: variable Einnahmen/Ausgaben mit OLS-Trend (`_fit_trend`) × Monats-Indizes (`_seasonal_index`; Degradation auf 1.0 bei < 12 Monaten). Unsicherheit: Residual-Bootstrap (`_bootstrap_interval`, B=1000, fester Seed → deterministisch, Perzentil-Methode). |
-| **Guthaben-Kurve** | Start = letztes `effective_balance_at` (Bankwahrheit minus verlinkte interne Transfers); nur bei IBAN + Einzelwährung, sonst `balance: null` (konsistent mit `estimated_savings`-Pattern) |
+| **Guthaben-Kurve** | Start = reales `balance_at` am Referenztag, einschliesslich interner Transfers. Nur der Cashflow-Fit schliesst Transfers aus. Nur bei IBAN + Einzelwährung, sonst `balance: null`. Monatsmodell ab Folgemonat, keine tagesgenaue Restmonatsprognose. |
 | **Invarianten** | CI-Reihenfolge (untere ≤ Punkt ≤ obere), kein Future-Leak (`_facts_up_to`), Transfer-Ausschluss (`_non_transfer_clause`), Währungen getrennt (keine Kursumrechnung — keine lokalen Kursdaten) |
 | **Registrierung** | `agent/tool_schemas.py` +3 Schemas · `agent_toolkit.py` +3 Dispatch-Wrapper · `agent/tool_profiles.py` `FINANCE_ANALYTICS` +3 · `finance/chat.py` Planner-Prompt + Reflector + Retry-Dispatch +3 (Fail-Fast-Validatoren bei Import) · `finance/query_reflector.py` / `finance/grammar_compiler.py` `_REFLECTOR_ACTIONS` + `FINANCE_TOOL_NAMES` +3 |
 | **UI** | Neuer Sub-Tab „📈 Prognosen" (`finance/tab.py::_render_forecast_tab`): Konto-Filter, Slider (Horizont/Rückblick/Konfidenz/Fälligkeitsfenster), Monats-Tabelle, Plotly-Chart (KI-Band + Guthaben), Fälligkeits-Tabelle, Audit-Tabelle |
@@ -1664,3 +1664,22 @@ Zieldatum, Notizen; Status `active`/`paused`/`achieved`/`archived`.
 | **UI** | Konto-Guard (`goals.need_accounts`) · Anlage-Formular (Name, Konto, Zielbetrag, Monatsrate, Zieldatum, Notizen) mit Validierung (`_validate_goal_form`) · Ziele-Tabelle (Ziel/Gespart/Offen/%/Rate/Status) · pro Ziel: Status-Select, Projektions-Zeile (`_projection_headline_key`-Priorität: erreicht > overdue > on/off-Track > Monate/Monat), zugeordnete Buchungen mit Unassign, Buchungen-Zuordnen (nur noch freie, `_assignable_transactions`), Löschen (Bestätigung) · Kandidaten-Vorschläge mit Pre-Fill-Anlage (`_candidate_goal_params`: annual → monthly → average) |
 | **i18n** | `finance_ui.tabs.goals` + `finance_ui.goals.*` (77 Keys, DE/EN/BG); alle Strings über `_tr()` mit Fallback |
 | **Tests** | `tests/test_finance_goals_schema.py` (43 Tests: Schema/API/Projektion) · `tests/test_finance_tab_regressions.py` (+47 reine-Helfer-Tests: Status-Labels, Formular-Validierung, Cents-Konvertierung, Tabellen-Mapping, Kandidaten-Parameter, Projektions-Priorität, Selectbox-Filter) · `tests/test_i18n_consistency.py` (Key-Parität DE/EN/BG) — 2026-09-15: 52/52 + 57/57 PASS |
+
+### Finance-Tab: Korrekturstand 2026-09-16
+
+`_render_analytics_tab` filtert explizit nach Waehrung; `aggregate` gruppiert
+auch in der DB waehrungsgetrennt. `monthly_report` reicht den Kontofilter
+bis zu Budget-Istwerten weiter. Budgets sind positive CHF-Haushaltslimits
+(`DEFAULT_CURRENCY`), Altvorzeichen werden beim Lesen normalisiert.
+UI-/Chat-Kategoriezuweisungen erhaelten mit `overwrite_kind=False` den Typ.
+
+`_render_goals_candidates` speichert Ergebnisse kontogebunden im Session-State,
+sodass der Uebernahme-Klick im Folgedurchlauf funktioniert. `_render_goal_assign`
+verwendet echte IDs mit `format_func`, schliesst global belegte Buchungen aus
+und kann gleich beschriftete Buchungen unterscheiden. Ziel-/Kandidatentabellen
+zeigen ihre Waehrung; Reports und angeforderte Projektionen bleiben bei Reruns
+sichtbar. Monatseingaben werden kalendergueltig validiert, Kontotypen korrekt
+vorbelegt. Grenzen und Vertraege: `docs/03_FINANCE_MODULE.md` §20.
+
+Verifiziert: 344 breite synthetische Regressionstests; anschliessend 110
+UI-/Goal- und 14 Analytics-Tests. Kein produktiver DB-/LLM-/GPU-Zugriff.

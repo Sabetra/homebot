@@ -167,6 +167,7 @@ def test_budget_savings_and_trend_tools_return_actionable_results(
     )
 
     grocery_budget = next(item for item in budget["categories"] if item["category"] == "Groceries")
+    assert budget["currency"] == grocery_budget["currency"] == "CHF"
     assert grocery_budget["budget"] == pytest.approx(250.0)
     assert grocery_budget["actual"] == pytest.approx(200.0)
     assert grocery_budget["remaining"] == pytest.approx(50.0)
@@ -177,3 +178,100 @@ def test_budget_savings_and_trend_tools_return_actionable_results(
     assert trend["status"] == "trend_break_detected"
     assert trend["direction"] == "increase"
     assert trend["change_percent"] > 10.0
+
+
+@pytest.mark.parametrize("budget_cents", [25_000, -25_000])
+def test_budget_limit_normalizes_legacy_signs(analytics_tools, budget_cents):
+    db = analytics_tools._db
+    category = next(category for category in db.list_categories() if category.name == "Groceries")
+    db.upsert_budget(category_id=category.id, month="2026-01", budget_cents=budget_cents)
+    status = next(row for row in db.budget_status("2026-01") if row["category"] == "Groceries")
+    assert status["budget_cents"] == 25_000
+    assert status["actual_cents"] == 20_000
+    assert status["remaining_cents"] == 5_000
+
+
+def test_existing_category_kind_can_be_preserved(analytics_tools):
+    db = analytics_tools._db
+    db.upsert_category("Groceries", kind="income", overwrite_kind=False)
+    assert next(category for category in db.list_categories() if category.name == "Groceries").kind == "expense"
+    db.upsert_category("Groceries", kind="income")
+    assert next(category for category in db.list_categories() if category.name == "Groceries").kind == "income"
+
+
+@pytest.fixture()
+def mixed_currency_db(analytics_tools):
+    db = analytics_tools._db
+    category = next(category for category in db.list_categories() if category.name == "Groceries")
+    for currency, amount in [("CHF", -30.0), ("EUR", -40.0)]:
+        _, account_id, _, _, _ = db.persist_statement_import(
+            bank_name="Synthetic Additional Bank", bank_bic=None, bank_country_code="CH",
+            iban=f"SYNTHETIC_{currency}", account_holder="Synthetic", currency=currency,
+            account_type="checking", source_pdf_hash=f"mixed-{currency}",
+            source_filename="synthetic.pdf", period_start="2026-01-01",
+            period_end="2026-01-31", opening_balance=1000, closing_balance=1000 + amount,
+            transactions=[{"booking_date": "2026-01-05", "amount": amount,
+                           "currency": currency, "counterparty": "Additional Grocer"}],
+        )
+        for transaction in db.query_transactions(account_id=account_id):
+            db.assign_category(transaction.id, category.id)
+    return db
+
+
+def test_aggregates_separate_currencies(mixed_currency_db):
+    rows = mixed_currency_db.aggregate(group_by="month", end_date="2026-01-31")
+    assert {row["currency"]: row["expense_cents"] for row in rows} == {"CHF": -123_000, "EUR": -4_000}
+    assert mixed_currency_db.list_transaction_currencies() == ["CHF", "EUR"]
+
+
+def test_monthly_report_and_budget_respect_account_scope(mixed_currency_db):
+    account = next(account for account in mixed_currency_db.list_accounts() if account.bank_name == "Synthetic Bank")
+    report = mixed_currency_db.monthly_report("2026-01", account_id=account.id)
+    grocery = next(row for row in report["budget_status"] if row["category"] == "Groceries")
+    assert report["currency"] == "CHF"
+    assert report["expense_cents"] == -120_000
+    assert grocery["actual_cents"] == 20_000
+    global_grocery = next(row for row in mixed_currency_db.budget_status("2026-01") if row["category"] == "Groceries")
+    assert global_grocery["actual_cents"] == 23_000
+
+
+def test_monthly_report_requires_currency_for_mixed_totals(mixed_currency_db):
+    with pytest.raises(ValueError, match="Multiple currencies"):
+        mixed_currency_db.monthly_report("2026-01")
+    report = mixed_currency_db.monthly_report("2026-01", currency="EUR")
+    assert report["expense_cents"] == -4_000
+    assert report["budget_status"] == []
+
+
+def test_legacy_negative_budget_is_normalized_on_read(analytics_tools):
+    db = analytics_tools._db
+    with db._lock, db._connect() as connection:
+        connection.execute("UPDATE budgets SET budget_cents = -25000")
+    assert db.list_budgets()[0].budget_cents == 25_000
+    grocery = next(row for row in db.budget_status("2026-01") if row["category"] == "Groceries")
+    assert grocery["remaining_cents"] == 5_000
+
+
+def test_category_assignment_tool_preserves_expense_category_for_refund(analytics_tools):
+    db = analytics_tools._db
+    refund = next(transaction for transaction in db.query_transactions() if transaction.amount_cents == 2000)
+    result = analytics_tools.assign_category({"transaction_id": refund.id, "category": "Groceries", "kind": "income"})
+    assert result["success"]
+    assert next(category for category in db.list_categories() if category.name == "Groceries").kind == "expense"
+
+
+def test_tools_expose_currency_and_reject_ambiguous_report(mixed_currency_db):
+    tools = FinanceTools(mixed_currency_db)
+    aggregate = tools.aggregate({"group_by": "month", "end_date": "2026-01-31"})
+    assert {group["currency"] for group in aggregate["groups"]} == {"CHF", "EUR"}
+    assert tools.monthly_report({"month": "2026-01"})["success"] is False
+    report = tools.monthly_report({"month": "2026-01", "currency": "EUR"})
+    assert report["success"] and report["currency"] == "EUR"
+    assert report["expense"] == -40
+
+
+def test_budget_tool_returns_canonical_amount_and_validation_error(analytics_tools):
+    result = analytics_tools.set_budget({"category": "Groceries", "month": "2026-01", "amount": -250})
+    assert result["success"] and result["amount"] == 250 and result["currency"] == "CHF"
+    result = analytics_tools.set_budget({"category": "Groceries", "month": "2026-13", "amount": 250})
+    assert result["success"] is False

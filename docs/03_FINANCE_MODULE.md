@@ -1,4 +1,4 @@
-<!-- last-verified: 2026-09-15 -->
+<!-- last-verified: 2026-09-16 -->
 # 03 - Finance Module Documentation
 
 > **Stand:** 2026-07-27 | **Code- und Gemma4-Canary-verifiziert**
@@ -336,8 +336,8 @@ Review-Semantik:
 **Deterministische Cashflow- und Guthaben-Prognose für den Finance-Tab.**
 Schedule-first-Hybrid: wiederkehrende Zahlungen als deterministischer Plan +
 variable Einnahmen/Ausgaben via OLS-Trend × Kalendermonats-Saisonalität +
-Residual-Bootstrap-Konfidenzintervall; Guthaben wird vom letzten
-`effective_balance_at` fortgeschrieben. Kein ML, kein LLM, keine neuen
+Residual-Bootstrap-Konfidenzintervall; Guthaben wird vom tatsaechlichen
+`balance_at` am Referenztag fortgeschrieben. Kein ML, kein LLM, keine neuen
 Dependencies, kein Future-Leak.
 
 ### 18.1 Neue Tools (`finance/tools.py`)
@@ -361,8 +361,8 @@ Dependencies, kein Future-Leak.
 - **Unsicherheit:** Residual-Bootstrap (`_bootstrap_interval`, B=1000, fester
   Seed → deterministisch, Perzentil-Intervall); CI-Reihenfolge-Invariante
   (untere ≤ Punkt ≤ obere); leere Residuals → Punktintervall.
-- **Guthaben-Kurve:** Start = letztes `effective_balance_at` (Bankwahrheit
-  minus verlinkte interne Transfers); nur bei IBAN + Einzelwährung, sonst
+- **Guthaben-Kurve:** Start = `balance_at` am Referenztag (Bankwahrheit,
+  einschliesslich der tatsaechlichen Wirkung interner Transfers); nur bei IBAN + Einzelwährung, sonst
   `balance: null` (konsistent mit dem `estimated_savings`-Pattern).
 - **Ausschlüsse / Invarianten:** Transfers via bestehende
   `_non_transfer_clause`; Währungen getrennt (keine Kursumrechnung — keine
@@ -404,8 +404,8 @@ Dependencies, kein Future-Leak.
   UI-Tab „🎯 Sparziele" (Anlage, Status, Projektion, Zuordnung, Kandidaten —
   `finance/tab.py::_render_goals_tab`), 77 i18n-Keys DE/EN/BG, +47 Tab-Regressionstests.
   Verifizierte DAO-/Tool-Vertraege und Tests siehe §19. Deklarierter Rest (in
-  Phase 3 uebernommen): kein automatischer Stopp am Zielbetrag/-termin im
-  Prognose-Overlay (siehe oben). Doku: funktionen.md („Sparziele-Tab"-Sektion);
+  Phase 3 uebernommen): Szenario-What-If-Engine. Das Prognose-Overlay begrenzt
+  Ziehungen bereits durch Restbetrag und Zieltermin. Doku: funktionen.md („Sparziele-Tab"-Sektion);
   Workdoc: docs_archive/WORKDOC_FINANCE_SOTA_PHASE2.md.
 - **Phase 3 (offen):** Szenario-What-If-Engine, ML-Experimente,
   Anomalie-Erkennung 2.0.
@@ -439,8 +439,8 @@ Dependencies, kein Future-Leak.
   `monthly_draw_by_currency`; `balance_with_goals` beruecksichtigt die
   kumulierten Raten. Ein Kontostand setzt IBAN und Einzelwaehrung voraus.
   Der aktuelle Overlay-Vertrag zieht positive geplante Raten von Zielen
-  mit Status `active` ab; ein automatischer Stopp am Zielbetrag/-termin
-  ist damit noch nicht implementiert.
+  mit Status `active` ab; Ziehungen enden beim Restbetrag bzw. ab dem
+  Folgemonat des Zieltermins.
 - Registrierung: `get_tool_schemas()` und `get_available_tool_schemas("finance_tab")`.
   `FINANCE_ALL` enthaelt alle zehn Goal-Tools; das ReAct-Profil `finance_tab`
   enthaelt nur deren fuenf Lese-Tools, keine Schreib-Tools.
@@ -450,6 +450,47 @@ Gemeinsamer Lauf mit Monarch-Core, Analytics, drei DB-Konsistenz-Suiten,
 Finance-Chat, Structured Runtime, Tab-Regressionsfaellen und beiden
 Tool-Profil-Suiten: **211 bestanden** im Projekt-venv. Keine produktiven
 Daten oder LLM-/GPU-Laeufe; kein Gesamtprojekt-Release-Gate.
+
+---
+
+## 20. Finance-Tab: Korrekturen und Grenzen (2026-09-16)
+
+- **Budgets:** Positive Limits und positive Ist-Ausgaben. Negative Altwerte
+  werden beim Lesen normalisiert; keine Umschreibung produktiver Daten.
+  Das bestehende Budgetmodell hat keine Waehrungsspalte: explizit
+  `DEFAULT_CURRENCY` (CHF), keine Umrechnung oder Umdeutung historischer
+  EUR-Beschriftungen. Anderslautende historische Budgetabsichten muessen
+  manuell geklaert werden. Fremdwaehrungsbuchungen werden ausgeschlossen.
+- **Kategorien:** `upsert_category(overwrite_kind=False)` erhaelt den Typ bei
+  UI-/Chat-Zuweisung und beim Budgetsetzen. Explizite Kategorienverwaltung
+  kann den Typ weiterhin aendern. Erstattungen verwandeln Ausgabenkategorien
+  nicht mehr in Einnahmekategorien. Bereits falsch gesetzte Typen werden nicht
+  pauschal migriert.
+- **Waehrungen:** `aggregate` gruppiert immer auch nach Waehrung und hat einen
+  optionalen `currency`-Filter. UI-Auswertungen waehlen eine Waehrung;
+  `monthly_report` lehnt gemischte Summen ohne explizite Waehrung ab.
+  Kontofilter gelten auch fuer Budget-Istwerte; Limits bleiben Haushaltslimits.
+  Fremdwaehrungsreports enthalten keinen CHF-Budgetvergleich.
+- **Prognose:** Reales Einzelkontoguthaben als Startwert; Transfers bleiben
+  aus dem Cashflow-Fit ausgeschlossen, nicht aus dem Bankstand. Weiterhin
+  Monatsmodell ab dem Folgemonat, keine tagesgenaue Restmonats- oder geplante
+  Einzelkonto-Transferprognose. `effective_balance_at` bleibt als Legacy-API
+  erhalten, ist aber kein realer Konto- oder Haushaltsgesamtstand.
+- **Sparziele:** Vorschlaege werden kontogebunden im Session-State gehalten;
+  Uebernahme funktioniert beim naechsten Klick. Auswahl ueber Transaktions-ID,
+  Ausschluss von Buchungen aller bereits belegten Ziele. Anlage uebernimmt
+  Kontowaehrung, Kandidaten ihre Buchungswaehrung; Tabellen zeigen Waehrungen
+  explizit statt festem Euro-Symbol. Reports und angeforderte Projektionen
+  ueberstehen fachfremde Reruns.
+- **Weitere UI-Korrekturen:** Kalendergueltige Monatseingaben, Datumsbereichs-
+  Validierung, gespeicherter Kontotyp als Auswahlvorgabe; DE/EN/BG-Vertraege
+  und Planner-Toolschemas angepasst.
+
+**Verifikation:** Breite synthetische Finance-/i18n-/Toolprofil-Suite:
+344 bestanden. Danach gezielte UI-/Goal-Pruefung: 110 bestanden;
+abschliessende Analytics-Pruefung: 14 bestanden. AppTest prueft echte
+Streamlit-Klickfolgen. Produktive DBs, LLM und GPU wurden nicht verwendet;
+kein Live-App-/Modelltest und kein Gesamtprojekt-Release-Gate.
 
 ---
 

@@ -375,6 +375,7 @@ class FinanceTools:
             account_id=account_id,
             start_date=self._normalize_date_param(params.get("start_date")),
             end_date=self._normalize_date_param(params.get("end_date")),
+            currency=params.get("currency"),
         )
         return {
             "success": True,
@@ -382,6 +383,7 @@ class FinanceTools:
             "groups": [
                 {
                     "key": r["key"],
+                    "currency": r["currency"],
                     "income": _from_cents(r["income_cents"]),
                     "expense": _from_cents(r["expense_cents"]),
                     "net": _from_cents(r["net_cents"]),
@@ -590,8 +592,7 @@ class FinanceTools:
     # werden aus dem echten Zahlungshistorien-Anchortag projiziert; der
     # stochastische variable Rest wird mit OLS-Trend x Kalendermonats-
     # Saisonalitaet + Residual-Bootstrap-KI (fester Seed) geschätzt;
-    # das Guthaben wird vom letzten ``effective_balance_at`` fortgeschrieben
-    # (Haushalts-Perspektive: verlinkte interne Transfers herausgerechnet).
+    # das Guthaben wird vom tatsaechlichen ``balance_at`` fortgeschrieben.
     # Reine Stdlib, deterministisch, fail-fast.
 
     @staticmethod
@@ -875,10 +876,9 @@ class FinanceTools:
         Zahlungshistorien-Monatswert projiziert (deterministischer
         Plan); variable Ausgaben und Einnahmen via OLS-Trend x
         Kalendermonats-Saisonalitaet + Residual-Bootstrap-KI; Guthaben
-        wird vom letzten ``effective_balance_at`` fortgeschrieben
-        (Bankwahrheit minus verlinkte interne Transfers; IBAN +
-        Einzelwaehrung). Deterministisch, kein Future-Leak, Transfers
-        ausgeschlossen.
+        wird vom tatsaechlichen ``balance_at`` fortgeschrieben
+        (IBAN + Einzelwaehrung). Deterministisch, kein Future-Leak;
+        interne Transfers werden nur aus dem Cashflow-Fit ausgeschlossen.
 
         Parameters: forecast_months 1-24 (6), lookback_months 3-36 (12),
         iban, confidence_level 0.5-0.99 (0.8), include_balance (True),
@@ -891,6 +891,18 @@ class FinanceTools:
         unveraendert bleibt. Ziehungen sind pro Ziel capped: Restbetrag
         (target - saved) und optional target_date (keine Ziehung ab dem
         Folgemonat des Zieltermins).
+
+        include_manual_plan=True (Forecast UX AP1) ueberlagert aktive
+        Plan-Items (Tabelle forecast_plan_items, keine Buchungen) als
+        planmaessigen Netto-Betrag: plan.count/items/beyond_horizon,
+        rest_month (Teilmonat mit Referenzdatum, deterministisch; bei
+        Einzelwaehrung mit Guthaben: balance_with_plan) und pro
+        Prognose-Monat manual_plan/net_with_plan/balance_with_plan.
+        manual_start_balance (optional, wirkt auch ohne
+        include_manual_plan) ersetzt den saldenbasierten Startsaldo
+        (Kennzeichnung balance.start_balance_source = "manual").
+        Defaults bleiben unveraendert: ohne die Opt-ins tauchen diese
+        Keys nicht auf (byte-kompatibles Phase-1-Verhalten).
         """
         try:
             reference = self._parse_reference_date(params.get("reference_date"))
@@ -915,6 +927,23 @@ class FinanceTools:
 
         include_balance = bool(params.get("include_balance", True))
         include_goals = bool(params.get("include_goals", False))
+        include_manual_plan = bool(params.get("include_manual_plan", False))
+        manual_start_balance: Optional[float] = None
+        if params.get("manual_start_balance") is not None:
+            try:
+                manual_start_balance = float(params.get("manual_start_balance"))
+            except (TypeError, ValueError):
+                return {
+                    "success": False,
+                    "error": "manual_start_balance must be a number",
+                    "error_class": "invalid_param",
+                }
+            if not math.isfinite(manual_start_balance):
+                return {
+                    "success": False,
+                    "error": "manual_start_balance must be a finite number",
+                    "error_class": "invalid_param",
+                }
         iban = params.get("iban") or None
         facts, error = self._facts_up_to(iban, reference)
         if error is not None:
@@ -929,24 +958,27 @@ class FinanceTools:
         account_id = self._resolve_account_id(iban) if iban else None
         balance_start: Optional[float] = None
         if account_id is not None and len(currencies) == 1 and include_balance:
-            # Haushalts-Perspektive: verlinkte interne Transfers (Konto<->Konto
-            # derselben Person) sind Umverteilungen ohne Nettoeffekt auf das
-            # Geld der Person und werden aus dem Startsaldo herausgerechnet
-            # (balance_at bleibt die Bankwahrheit des Einzelkontos).
-            balance_row = self._db.effective_balance_at(
+            balance_row = self._db.balance_at(
                 account_id, reference.isoformat()
             )
             balance_start = balance_row.get("balance")
-            if int(balance_row.get("internal_transfer_net_cents", 0)) != 0:
-                notes.append(
-                    "Guthaben-Startsaldo: verlinkte interne Transfers netto "
-                    "herausgerechnet (Haushalts-Perspektive)"
-                )
         elif iban and len(currencies) > 1:
             notes.append("Guthaben-Prognose entfällt: Konto führt mehrere Währungen")
+        balance_start_source: Optional[str] = None
+        if (
+            manual_start_balance is not None
+            and account_id is not None
+            and len(currencies) == 1
+            and include_balance
+        ):
+            # Datierbare Prognose-Annahme (AP1): ersetzt den
+            # saldenbasierten Startwert; keine Buchung, kein Saldo-Write.
+            balance_start = manual_start_balance
+            balance_start_source = "manual"
 
         goals_overlay: Optional[Dict[str, Any]] = None
         goals_draw_steps: Dict[str, List[int]] = {}
+        goals_draw_by_currency: Dict[str, int] = {}
         if include_goals:
             # Sinking Funds: aktiven Zielen mit geplanter Monatsrate wird eine
             # deterministische planmaessige Ziehung pro Prognose-Monat
@@ -969,6 +1001,7 @@ class FinanceTools:
                 ]
             goals: List[Dict[str, Any]] = []
             for goal in sorted(active_goals, key=lambda item: (item.currency or "", item.name)):
+                assert goal.monthly_rate_cents is not None
                 progress = self._db.goal_progress_asof(goal.id, reference)
                 saved_cents = int(progress["saved_cents"])
                 schedule = _goal_draw_schedule_cents(
@@ -1020,6 +1053,95 @@ class FinanceTools:
                 else "Goals-Overlay: keine aktiven Ziele mit geplanter Monatsrate"
             )
 
+        plan_overlay: Optional[Dict[str, Any]] = None
+        rest_month: Optional[Dict[str, Any]] = None
+        plan_net_by_currency_month: Dict[str, Dict[str, int]] = {}
+        if include_manual_plan:
+            # Manual-Plan-Overlay (Forecast UX AP1): aktive Plan-Items aus
+            # der eigenen Tabelle forecast_plan_items (keine Buchungen,
+            # keine goal_contributions) mit due_date ab Referenzdatum.
+            # Pro Waehrung/Monat als planmaessiger Netto-Betrag aggregiert
+            # (Einnahme +, Ausgabe -); Items vor dem Referenzdatum werden
+            # ignoriert (kein Future-Leak, D4), Items hinter dem Horizont
+            # werden nur gezählt (beyond_horizon). Deterministisch: feste
+            # DAO-Sortierung (due_date, iban, id), keine Zufallsquellen.
+            active_items = (
+                self._db.list_plan_items(status="active", iban=str(iban))
+                if iban
+                else self._db.list_plan_items(status="active")
+            )
+            horizon_end_key = self._next_month_key(reference_key, forecast_months)
+            included_items: List[Any] = []
+            beyond_horizon = 0
+            rest_cents_by_currency: Dict[str, int] = {}
+            for item in active_items:
+                due = (item.due_date or "").strip()
+                if not due or due < reference.isoformat():
+                    continue
+                item_key = (int(due[:4]), int(due[5:7]))
+                if item_key > horizon_end_key:
+                    beyond_horizon += 1
+                    continue
+                included_items.append(item)
+                if item.currency:
+                    cents = int(item.amount_cents) * (
+                        1 if item.kind == "income" else -1
+                    )
+                    month_label = f"{item_key[0]:04d}-{item_key[1]:02d}"
+                    cur_map = plan_net_by_currency_month.setdefault(item.currency, {})
+                    cur_map[month_label] = cur_map.get(month_label, 0) + cents
+                    if item_key == reference_key:
+                        rest_cents_by_currency[item.currency] = (
+                            rest_cents_by_currency.get(item.currency, 0) + cents
+                        )
+            plan_overlay = {
+                "count": len(included_items),
+                "items": [
+                    {
+                        "id": item.id,
+                        "title": item.title,
+                        "kind": item.kind,
+                        "amount": round(_from_cents(int(item.amount_cents)), 2),
+                        "currency": item.currency,
+                        "iban": item.iban,
+                        "due_date": item.due_date,
+                        "source_type": item.source_type,
+                        "status": item.status,
+                        "revision": item.revision,
+                    }
+                    for item in included_items
+                ],
+                "beyond_horizon": beyond_horizon,
+            }
+            # Restmonat (Teilmonat mit Referenzdatum): die Prognose-Monate
+            # beginnen erst im Folgemonat; Restmonat ist ein eigenes,
+            # deterministisches Objekt (keine History-Proration, kein
+            # Zufall): planmaessiger Netto-Betrag + Restlaufzeit, bei
+            # Single-Currency mit Guthaben auch die Kette vom Startsaldo.
+            last_day = calendar.monthrange(reference.year, reference.month)[1]
+            period_end = reference.replace(day=last_day)
+            rest_month = {
+                "period_start": reference.isoformat(),
+                "period_end": period_end.isoformat(),
+                "days_remaining": (period_end - reference).days + 1,
+            }
+            if len(currencies) == 1:
+                rest_cents = rest_cents_by_currency.get(currencies[0], 0)
+                rest_net = round(_from_cents(rest_cents), 2)
+                rest_month["manual_plan"] = rest_net
+                rest_month["net_with_plan"] = rest_net
+                if balance_start is not None:
+                    rest_month["balance_with_plan"] = round(
+                        balance_start + rest_net, 2
+                    )
+            notes.append(
+                "Manual-Plan: aktive Plan-Items ab Referenzdatum als "
+                "planmaessiger Netto-Betrag (Einnahmen +, Ausgaben -) "
+                "eingerechnet"
+                if included_items
+                else "Manual-Plan: keine aktiven Plan-Items ab Referenzdatum"
+            )
+
         results = []
         for currency in currencies:
             fit_state = self._fit_currency_series(facts, currency, reference_key, lookback_months)
@@ -1043,6 +1165,20 @@ class FinanceTools:
                         month["balance_with_goals"] = round(month["balance"] - cum, 2)
                         month["balance_low_with_goals"] = round(month["balance_low"] - cum, 2)
                         month["balance_high_with_goals"] = round(month["balance_high"] - cum, 2)
+            if include_manual_plan:
+                cur_plan = plan_net_by_currency_month.get(currency, {})
+                cumulative_cents = 0
+                for month in months:
+                    month_cents = cur_plan.get(month["month"], 0)
+                    cumulative_cents += month_cents
+                    plan_net = round(_from_cents(month_cents), 2)
+                    month["manual_plan"] = plan_net
+                    month["net_with_plan"] = round(month["net"] + plan_net, 2)
+                    if "balance" in month:
+                        cum = round(_from_cents(cumulative_cents), 2)
+                        month["balance_with_plan"] = round(month["balance"] + cum, 2)
+                        month["balance_low_with_plan"] = round(month["balance_low"] + cum, 2)
+                        month["balance_high_with_plan"] = round(month["balance_high"] + cum, 2)
             results.append(
                 {
                     "currency": currency,
@@ -1053,7 +1189,7 @@ class FinanceTools:
                 }
             )
 
-        return {
+        payload: Dict[str, Any] = {
             "success": True,
             "method": "schedule_first_hybrid",
             "reference_date": reference.isoformat(),
@@ -1063,13 +1199,24 @@ class FinanceTools:
             "currencies": currencies,
             "results": results,
             "goals": goals_overlay,
-            "balance": (
-                {"start_balance": round(balance_start, 2), "currency": currencies[0]}
-                if balance_start is not None
-                else None
-            ),
-            "notes": notes,
         }
+        if include_manual_plan:
+            # Additive Opt-in-Keys (D3: rest_month erscheint immer, auch
+            # mit 0.0 -- stabiles Schema fuer UI/Tests).
+            payload["plan"] = plan_overlay
+            payload["rest_month"] = rest_month
+        if balance_start is not None:
+            balance_payload: Dict[str, Any] = {
+                "start_balance": round(balance_start, 2),
+                "currency": currencies[0],
+            }
+            if balance_start_source:
+                balance_payload["start_balance_source"] = balance_start_source
+            payload["balance"] = balance_payload
+        else:
+            payload["balance"] = None
+        payload["notes"] = notes
+        return payload
 
     def _fit_currency_series(
         self,
@@ -1370,6 +1517,7 @@ class FinanceTools:
                 "error_class": "missing_param",
             }
         if contribution_id is None:
+            assert goal_id is not None and transaction_id is not None
             contribution_id = self._db.find_contribution_id(goal_id, transaction_id)
             if contribution_id is None:
                 return {
@@ -1978,6 +2126,7 @@ class FinanceTools:
                         "month": month,
                         "category": row["category"],
                         "kind": row["kind"],
+                        "currency": row["currency"],
                         "budget": _from_cents(row["budget_cents"]),
                         "actual": _from_cents(row["actual_cents"]),
                         "remaining": _from_cents(row["remaining_cents"]),
@@ -1989,6 +2138,7 @@ class FinanceTools:
             "success": True,
             "start_month": start_month,
             "end_month": end_month,
+            "currency": DEFAULT_CURRENCY,
             "categories": categories,
             "budget": round(sum(item["budget"] for item in categories), 2),
             "actual": round(sum(item["actual"] for item in categories), 2),
@@ -2165,7 +2315,10 @@ class FinanceTools:
         if kind not in ("expense", "income", "transfer"):
             return {"success": False, "error": "kind must be expense|income|transfer", "error_class": "invalid_kind"}
         create_rule = bool(params.get("create_rule", False))
-        cat_id = self._db.upsert_category(name=category_name, kind=kind)
+        tx = self._db.get_transaction(tx_id)
+        if tx is None:
+            return {"success": False, "error": f"Unknown transaction_id: {tx_id}", "error_class": "unknown_tx"}
+        cat_id = self._db.upsert_category(name=category_name, kind=kind, overwrite_kind=False)
         self._db.assign_category(tx_id, cat_id, source="user", confidence=1.0)
         rule_created = False
         applied_extra = 0
@@ -2279,24 +2432,33 @@ class FinanceTools:
         except (TypeError, ValueError):
             return {"success": False, "error": "amount must be numeric", "error_class": "invalid_amount"}
         kind = (params.get("kind") or "expense").strip()
-        cat_id = self._db.upsert_category(name=category_name, kind=kind)
-        bid = self._db.upsert_budget(category_id=cat_id, month=month, budget_cents=cents)
+        try:
+            self._db._validate_iso_date(f"{month}-01", field="month")
+            cat_id = self._db.upsert_category(name=category_name, kind=kind, overwrite_kind=False)
+            bid = self._db.upsert_budget(category_id=cat_id, month=month, budget_cents=cents)
+        except ValueError as exc:
+            return {"success": False, "error": str(exc), "error_class": "invalid_budget"}
         return {
             "success": True,
             "budget_id": bid,
             "category": category_name,
             "month": month,
-            "amount": _from_cents(cents),
+            "amount": _from_cents(abs(cents)),
+            "currency": DEFAULT_CURRENCY,
         }
 
     def budget_status(self, params: Dict[str, Any]) -> Dict[str, Any]:
         month = (params.get("month") or "").strip()
         if not month:
             return {"success": False, "error": "month (YYYY-MM) required", "error_class": "missing_param"}
-        rows = self._db.budget_status(month)
+        try:
+            rows = self._db.budget_status(month)
+        except ValueError as exc:
+            return {"success": False, "error": str(exc), "error_class": "invalid_month"}
         return {
             "success": True,
             "month": month,
+            "currency": DEFAULT_CURRENCY,
             "categories": [
                 {
                     "category": r["category"],
@@ -2319,11 +2481,16 @@ class FinanceTools:
         account_id = self._resolve_account_id(params.get("iban"))
         if params.get("iban") and account_id is None:
             return {"success": False, "error": "Unknown IBAN", "error_class": "unknown_iban"}
-        report = self._db.monthly_report(month, account_id=account_id)
+        try:
+            report = self._db.monthly_report(month, account_id=account_id, currency=params.get("currency"))
+        except ValueError as exc:
+            return {"success": False, "error": str(exc), "error_class": "invalid_report_scope"}
         return {
             "success": True,
             "month": report["month"],
             "account_id": report["account_id"],
+            "currency": report["currency"],
+            "budget_currency": report["budget_currency"],
             "income": _from_cents(report["income_cents"]),
             "expense": _from_cents(report["expense_cents"]),
             "net": _from_cents(report["net_cents"]),

@@ -33,6 +33,9 @@ from finance.models import (
     DEFAULT_CURRENCY,
     VALID_ACCOUNT_TYPES,
     VALID_GOAL_STATUSES,
+    VALID_PLAN_ITEM_KINDS,
+    VALID_PLAN_ITEM_SOURCES,
+    VALID_PLAN_ITEM_STATUSES,
     VALID_TRANSACTION_NATURES,
 )
 
@@ -214,6 +217,86 @@ class GoalContribution:
     transaction_id: int
     amount_cents: int
     source: str                        # 'user' | 'rule'
+    created_at: Optional[str] = None
+
+
+class PlanRevisionConflict(ValueError):
+    """Optimistic-Concurrency-Konflikt bei Plan-Item-Updates.
+
+    ``expected_revision`` entspricht nicht der aktuellen ``revision``:
+    ein paralleler Write hat das Item zwi-schenzeitlich geaendert.
+    Die DAO ueberschreibt NICHT (Gate: keine stille Ueberschreibung).
+    """
+
+    def __init__(
+        self,
+        plan_item_id: int,
+        expected_revision: Optional[int],
+        actual_revision: int,
+    ) -> None:
+        super().__init__(
+            f"Plan-Item {plan_item_id}: Revision-Konflikt "
+            f"(expected={expected_revision}, actual={actual_revision})"
+        )
+        self.plan_item_id = plan_item_id
+        self.expected_revision = expected_revision
+        self.actual_revision = actual_revision
+
+
+@dataclass(frozen=True)
+class PlanItem:
+    """Einmalige geplante Einnahme/Ausgabe (Forecast UX AP1, 2026-09-16).
+
+    Bewusst KEINE Buchung/Transaktion: ein Plan-Item ist eine datierte,
+    rueckgaengige Prognose-Annahme (z. B. "Miete Januar 2027: 1350",
+    "Steuererstattung: 1500 am 2026-11-15"). Es taucht in der
+    ``cash_flow_forecast``-Prognose auf, erzeugt aber weder
+    ``transactions`` noch ``goal_contributions`` (getrennte Semantik,
+    Bank-/Kontodaten bleiben unveraendert).
+
+    * ``amount_cents`` > 0 (Vorzeichen kommt aus ``kind``: income +, expense -)
+    * ``iban`` ist Single Source of Truth (wie Goals)
+    * ``revision``: optimistic lock, Start 1, bei jedem Write +1
+    * ``client_token``: UI-Idempotenz (Doppel-Click desselben Create)
+    * ``source_type``: 'manual' (AP1) | 'detected' (AP2, Vorschlags-Pfad)
+    * ``status``: 'active' | 'paused' | 'done' | 'rejected'
+      (nur 'active' fließt in die Prognose)
+    """
+
+    id: int
+    iban: str
+    currency: str
+    kind: str                              # 'income' | 'expense'
+    amount_cents: int                      # > 0
+    category_id: Optional[int] = None
+    title: Optional[str] = None
+    due_date: str = ""                     # ISO YYYY-MM-DD
+    source_type: str = "manual"            # 'manual' | 'detected'
+    status: str = "active"                 # VALID_PLAN_ITEM_STATUSES
+    revision: int = 1
+    client_token: Optional[str] = None
+    notes: Optional[str] = None
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class PlanJournalEntry:
+    """Aenderungs-Journal eines Plan-Items (Undo via Gegenrevision).
+
+    ``before_json``/``after_json`` sind komplette Item-Snapshots
+    (JSON, ohne ``client_token``) oder None. Das Journal referenziert
+    das Item OHNE Foreign Key: Eintraege ueberleben die Loeschung des
+    Items und machen damit ``deleted`` wieder rueckgaengig (Reinsert
+    mit derselben ID).
+    """
+
+    id: int
+    plan_item_id: int
+    action: str                            # 'created' | 'updated' | 'deleted' | 'restored'
+    before_json: Optional[str] = None
+    after_json: Optional[str] = None
+    revision: int = 1
     created_at: Optional[str] = None
 
 
@@ -443,6 +526,53 @@ _SCHEMA_STATEMENTS: Tuple[str, ...] = (
         updated_at        TEXT NOT NULL DEFAULT (datetime('now'))
     )
     """,
+    # ------------------------------------------------------------------
+    # Forecast plan items (Forecast UX AP1, 2026-09-16): datierte,
+    # rueckgaengige Prognose-Annahmen (KEINE Buchungen, kein
+    # goal_contributions-Mixing; Bank-/Kontodaten bleiben unveraendert).
+    # CREATE ... IF NOT EXISTS macht die Tabellen fuer Altdatenbanken
+    # automatisch additiv (analog transaction_search_docs, 2026-08-04).
+    # ------------------------------------------------------------------
+    f"""
+    CREATE TABLE IF NOT EXISTS forecast_plan_items (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        iban            TEXT NOT NULL,
+        currency        TEXT NOT NULL DEFAULT '{DEFAULT_CURRENCY}',
+        kind            TEXT NOT NULL CHECK (kind IN ('income', 'expense')),
+        amount_cents    INTEGER NOT NULL CHECK (amount_cents > 0),
+        category_id     INTEGER REFERENCES categories(id) ON DELETE SET NULL,
+        title           TEXT,
+        due_date        TEXT NOT NULL,
+        source_type     TEXT NOT NULL DEFAULT 'manual'
+                        CHECK (source_type IN ('manual', 'detected')),
+        status          TEXT NOT NULL DEFAULT 'active'
+                        CHECK (status IN ('active', 'paused', 'done', 'rejected')),
+        revision        INTEGER NOT NULL DEFAULT 1,
+        client_token    TEXT UNIQUE,
+        notes           TEXT,
+        created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS fpi_iban_due ON forecast_plan_items (iban, due_date)",
+    "CREATE INDEX IF NOT EXISTS fpi_status ON forecast_plan_items (status)",
+    # Aenderungs-Journal (Undo via Gegenrevision). Bewusst OHNE FOREIGN
+    # KEY auf forecast_plan_items: Eintraege ueberleben die Loeschung
+    # des Items und machen damit 'deleted' wieder rueckgaengig (Reinsert
+    # mit derselben ID).
+    """
+    CREATE TABLE IF NOT EXISTS forecast_plan_journal (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        plan_item_id    INTEGER NOT NULL,
+        action          TEXT NOT NULL
+                        CHECK (action IN ('created', 'updated', 'deleted', 'restored')),
+        before_json     TEXT,
+        after_json      TEXT,
+        revision        INTEGER NOT NULL,
+        created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS fpj_item ON forecast_plan_journal (plan_item_id, id)",
 )
 
 _FINANCE_SCHEMA_CATALOG_KEY = "schema_context_v1"
@@ -2063,6 +2193,15 @@ class FinanceDB:
             for item in ranked[:safe_limit]
         ]
 
+    def list_transaction_currencies(self, account_id: Optional[int] = None) -> List[str]:
+        with self._lock, self._connect() as conn:
+            rows = conn.execute(
+                "SELECT DISTINCT currency FROM transactions "
+                "WHERE (? IS NULL OR account_id = ?) ORDER BY currency",
+                (account_id, account_id),
+            ).fetchall()
+        return [str(row["currency"]) for row in rows]
+
     def aggregate(
         self,
         *,
@@ -2071,10 +2210,11 @@ class FinanceDB:
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
         include_transfers: bool = False,
+        currency: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Return aggregated sums grouped by the requested dimension.
 
-        Result row format: ``{"key": str, "income_cents": int,
+        Result row format: ``{"key": str, "currency": str, "income_cents": int,
         "expense_cents": int, "net_cents": int, "count": int}``.
 
         ``include_transfers=False`` (default) blendet beide Seiten von
@@ -2109,6 +2249,9 @@ class FinanceDB:
         if end_date:
             clauses.append("t.booking_date <= ?")
             params.append(end_date)
+        if currency:
+            clauses.append("t.currency = ?")
+            params.append(currency.upper())
         if not include_transfers:
             clauses.append(self._non_transfer_clause("t"))
         where_clause = ("WHERE " + " AND ".join(clauses)) if clauses else ""
@@ -2116,6 +2259,7 @@ class FinanceDB:
         sql = f"""
             SELECT
                 {group_expr} AS key,
+                t.currency AS currency,
                 SUM(CASE WHEN t.amount_cents > 0 THEN t.amount_cents ELSE 0 END) AS income_cents,
                 SUM(CASE WHEN t.amount_cents < 0 THEN t.amount_cents ELSE 0 END) AS expense_cents,
                 SUM(t.amount_cents) AS net_cents,
@@ -2123,14 +2267,15 @@ class FinanceDB:
             FROM transactions t
             JOIN accounts a ON a.id = t.account_id
             {where_clause}
-            GROUP BY {group_expr}
-            ORDER BY key
+            GROUP BY {group_expr}, t.currency
+            ORDER BY key, t.currency
         """
         with self._lock, self._connect() as conn:
             rows = conn.execute(sql, params).fetchall()
             return [
                 {
                     "key": r["key"],
+                    "currency": r["currency"],
                     "income_cents": int(r["income_cents"] or 0),
                     "expense_cents": int(r["expense_cents"] or 0),
                     "net_cents": int(r["net_cents"] or 0),
@@ -2410,17 +2555,11 @@ class FinanceDB:
             }
 
     def effective_balance_at(self, account_id: int, as_of_date: str) -> Dict[str, Any]:
-        """Kontostand in Haushalts-Perspektive: ``balance_at`` minus verlinkte
-        interne Transfer-Beine.
+        """Legacy-Analysewert: ``balance_at`` minus interne Transfer-Beine.
 
-        ``balance_at`` bleibt die Bankwahrheit des Einzelkontos (muss mit dem
-        Bankauszug abrechenbar sein; nutzt sie ``finance_balance_at``, die
-        Tab-Saldoanzeige und Reconcile). Fuer die Guthaben-Prognose und die
-        Spending-Power-Analyse sind verlinkte interne Transfers (Konto<->Konto
-        derselben Person, inkl. Kreditkarten-Settlements) aber interne
-        Umverteilungen ohne Nettoeffekt auf das Geld der Person und werden hier
-        netto herausgerechnet. Die Ausschlussmenge ist exakt das Komplement von
-        ``_non_transfer_clause`` -- identisch zu ``list_analysis_facts``.
+        Kein realer Konto- oder Haushaltsgesamtstand. Kontostandsanzeige,
+        Guthaben-Prognose und Reconcile verwenden ``balance_at``. Die
+        Ausschlussmenge ist das Komplement von ``_non_transfer_clause``.
 
         Das Ergebnis enthaelt ``internal_transfer_net_cents`` (Summe der
         herausgerechneten Beine im Kontokontext), damit Konsumenten die
@@ -2454,6 +2593,7 @@ class FinanceDB:
         parent_id: Optional[int] = None,
         kind: str = "expense",
         color: Optional[str] = None,
+        overwrite_kind: bool = True,
     ) -> int:
         name_clean = (name or "").strip()
         if not name_clean:
@@ -2466,8 +2606,9 @@ class FinanceDB:
                 cid = int(row["id"])
                 conn.execute(
                     "UPDATE categories SET parent_id = COALESCE(?, parent_id), "
-                    "kind = ?, color = COALESCE(?, color) WHERE id = ?",
-                    (parent_id, kind, color, cid),
+                    "kind = CASE WHEN ? THEN ? ELSE kind END, "
+                    "color = COALESCE(?, color) WHERE id = ?",
+                    (parent_id, overwrite_kind, kind, color, cid),
                 )
                 return cid
             cur = conn.execute(
@@ -2774,8 +2915,11 @@ class FinanceDB:
     def upsert_budget(
         self, *, category_id: int, month: str, budget_cents: int
     ) -> int:
+        """Speichert ein positives Haushaltslimit in DEFAULT_CURRENCY."""
         if not (len(month) == 7 and month[4] == "-" and month[:4].isdigit() and month[5:].isdigit()):
             raise ValueError(f"month must be YYYY-MM, got {month!r}")
+        self._validate_iso_date(f"{month}-01", field="month")
+        budget_cents = abs(budget_cents)
         with self._lock, self._connect() as conn:
             row = conn.execute(
                 "SELECT id FROM budgets WHERE category_id = ? AND month = ?",
@@ -2817,25 +2961,28 @@ class FinanceDB:
                     category_id=int(r["category_id"]),
                     category_name=r["category_name"],
                     month=r["month"],
-                    budget_cents=int(r["budget_cents"]),
+                    budget_cents=abs(int(r["budget_cents"])),
                 )
                 for r in rows
             ]
 
-    def budget_status(self, month: str) -> List[Dict[str, Any]]:
-        """Soll/Ist pro Kategorie für einen Monat (YYYY-MM).
+    def budget_status(
+        self, month: str, *, account_id: Optional[int] = None
+    ) -> List[Dict[str, Any]]:
+        """Soll/Ist in DEFAULT_CURRENCY fuer einen Monat (YYYY-MM).
 
-        Transfers werden ausgeschlossen, da sie nur Geld zwischen eigenen
-        Konten verschieben.
+        Haushaltslimits bleiben global; Istwerte sind optional kontogefiltert.
+        Transfers und Buchungen in anderen Waehrungen werden ausgeschlossen.
         """
         if not (len(month) == 7 and month[4] == "-"):
             raise ValueError(f"month must be YYYY-MM, got {month!r}")
+        self._validate_iso_date(f"{month}-01", field="month")
         sql = """
             SELECT
                 c.id   AS category_id,
                 c.name AS category,
                 c.kind AS kind,
-                COALESCE(b.budget_cents, 0) AS budget_cents,
+                ABS(COALESCE(b.budget_cents, 0)) AS budget_cents,
                 COALESCE(SUM(
                     CASE
                         WHEN c.kind = 'expense' AND t.amount_cents < 0 THEN -t.amount_cents
@@ -2851,6 +2998,8 @@ class FinanceDB:
             LEFT JOIN transactions t
                 ON t.id = tc.transaction_id
                 AND substr(t.booking_date, 1, 7) = ?
+                AND t.currency = ?
+                AND (? IS NULL OR t.account_id = ?)
                 AND COALESCE(t.transaction_nature, 'ordinary') != 'internal_transfer'
                 AND t.id NOT IN (SELECT outgoing_tx_id FROM transfer_links
                                  UNION SELECT incoming_tx_id FROM transfer_links)
@@ -2859,12 +3008,15 @@ class FinanceDB:
             ORDER BY c.kind, c.name
         """
         with self._lock, self._connect() as conn:
-            rows = conn.execute(sql, (month, month)).fetchall()
+            rows = conn.execute(
+                sql, (month, month, DEFAULT_CURRENCY, account_id, account_id)
+            ).fetchall()
             return [
                 {
                     "category_id": int(r["category_id"]),
                     "category": r["category"],
                     "kind": r["kind"],
+                    "currency": DEFAULT_CURRENCY,
                     "budget_cents": int(r["budget_cents"] or 0),
                     "actual_cents": int(r["actual_cents"] or 0),
                     "remaining_cents": int(r["budget_cents"] or 0) - int(r["actual_cents"] or 0),
@@ -3209,11 +3361,655 @@ class FinanceDB:
             if cur.rowcount == 0:
                 raise ValueError(f"goal {goal_id} not found")
 
+    # -- forecast plan items (Forecast UX AP1, 2026-09-16) -------------
+    #
+    # Plan-Items sind datierte, rueckgaengige Prognose-Annahmen. Sie
+    # sind bewusst KEINE Buchungen/Transaktionen und auch keine
+    # goal_contributions (siehe Dataclass ``PlanItem``); Bank- und
+    # Kontodaten bleiben unveraendert.
+    #
+    # Concurrency: jeder Write erhoeht ``revision``; Updates verlangen
+    # ``expected_revision`` (``PlanRevisionConflict`` bei Abweichung,
+    # keine stille Ueberschreibung).
+    # Undo: ``forecast_plan_journal`` speichert komplette
+    # before/after-Snapshots; ``undo_plan_change`` wendet die
+    # Gegenrevision an (letzte Aktion pro Item).
+
+    @staticmethod
+    def _plan_snapshot(row: sqlite3.Row) -> Dict[str, Any]:
+        """Kompletter Snapshot eines Plan-Items (Journal/Undo)."""
+        return {
+            "id": int(row["id"]),
+            "iban": row["iban"],
+            "currency": row["currency"],
+            "kind": row["kind"],
+            "amount_cents": int(row["amount_cents"]),
+            "category_id": row["category_id"],
+            "title": row["title"],
+            "due_date": row["due_date"],
+            "source_type": row["source_type"],
+            "status": row["status"],
+            "revision": int(row["revision"]),
+            "client_token": row["client_token"],
+            "notes": row["notes"],
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"],
+        }
+
+    @classmethod
+    def _plan_item_from_row(cls, row: sqlite3.Row) -> PlanItem:
+        return PlanItem(
+            id=int(row["id"]),
+            iban=row["iban"],
+            currency=row["currency"],
+            kind=row["kind"],
+            amount_cents=int(row["amount_cents"]),
+            category_id=row["category_id"],
+            title=row["title"],
+            due_date=row["due_date"],
+            source_type=row["source_type"],
+            status=row["status"],
+            revision=int(row["revision"]),
+            client_token=row["client_token"],
+            notes=row["notes"],
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
+        )
+
+    @staticmethod
+    def _clean_text(value: Optional[str]) -> Optional[str]:
+        """Whitespace-Kollaps; leer/None bleibt None."""
+        if value is None:
+            return None
+        cleaned = str(value).strip()
+        return cleaned or None
+
+    @staticmethod
+    def _validate_plan_fields(
+        *,
+        iban: Optional[str],
+        currency: Optional[str],
+        kind: Optional[str],
+        amount_cents: Optional[int],
+        due_date: Optional[str],
+        title: Optional[str],
+        notes: Optional[str],
+        category_id: Optional[int],
+        status: Optional[str],
+        source_type: Optional[str],
+    ) -> None:
+        """Gemeinsame Feld-Validierung an der DAO-Grenze (lauter Fehler)."""
+        if iban is not None:
+            if not isinstance(iban, str) or not iban.strip():
+                raise ValueError("iban must be a non-empty string")
+        if currency is not None:
+            if (
+                not isinstance(currency, str)
+                or len(currency) != 3
+                or not currency.isalpha()
+            ):
+                raise ValueError(
+                    f"currency must be a 3-letter code, got {currency!r}"
+                )
+        if kind is not None and kind not in VALID_PLAN_ITEM_KINDS:
+            raise ValueError(
+                f"kind must be one of {sorted(VALID_PLAN_ITEM_KINDS)}, got {kind!r}"
+            )
+        if amount_cents is not None:
+            if (
+                isinstance(amount_cents, bool)
+                or not isinstance(amount_cents, int)
+                or amount_cents <= 0
+            ):
+                raise ValueError(
+                    f"amount_cents must be an int > 0, got {amount_cents!r}"
+                )
+        if due_date is not None:
+            try:
+                date.fromisoformat(str(due_date).strip())
+            except ValueError:
+                raise ValueError(
+                    f"due_date must be ISO YYYY-MM-DD, got {due_date!r}"
+                ) from None
+        for label, value in (("title", title), ("notes", notes)):
+            if value is not None and not isinstance(value, str):
+                raise ValueError(f"{label} must be a string or None")
+        if category_id is not None:
+            if (
+                isinstance(category_id, bool)
+                or not isinstance(category_id, int)
+                or category_id <= 0
+            ):
+                raise ValueError(
+                    f"category_id must be a positive int or None, got {category_id!r}"
+                )
+        if status is not None and status not in VALID_PLAN_ITEM_STATUSES:
+            raise ValueError(
+                f"status must be one of {sorted(VALID_PLAN_ITEM_STATUSES)}, "
+                f"got {status!r}"
+            )
+        if source_type is not None and source_type not in VALID_PLAN_ITEM_SOURCES:
+            raise ValueError(
+                f"source_type must be one of {sorted(VALID_PLAN_ITEM_SOURCES)}, "
+                f"got {source_type!r}"
+            )
+
+    def create_plan_item(
+        self,
+        *,
+        iban: str,
+        kind: str,
+        amount_cents: int,
+        due_date: str,
+        currency: Optional[str] = None,
+        title: Optional[str] = None,
+        notes: Optional[str] = None,
+        category_id: Optional[int] = None,
+        source_type: str = "manual",
+        status: str = "active",
+        client_token: Optional[str] = None,
+    ) -> PlanItem:
+        """Erstellt ein Plan-Item (Journal-Aktion 'created').
+
+        ``client_token`` macht den Aufruf idempotent: wird derselbe
+        Token erneut verwendet, wird das BESTEHENDE Item zurueckgegeben
+        (kein Duplikat, keine implizite Update).
+
+        ``ValueError`` bei ungueltigen Feldern oder unbekannter IBAN --
+        ein Plan-Item muss ein bekanntes Konto referenzieren.
+        """
+        self._validate_plan_fields(
+            iban=iban,
+            currency=currency,
+            kind=kind,
+            amount_cents=amount_cents,
+            due_date=due_date,
+            title=title,
+            notes=notes,
+            category_id=category_id,
+            status=status,
+            source_type=source_type,
+        )
+        iban_norm = _normalize_iban(iban)
+        currency_norm = (currency or DEFAULT_CURRENCY).upper()
+        token = (
+            (str(client_token).strip() or None)
+            if client_token is not None
+            else None
+        )
+        title_norm = self._clean_text(title)
+        notes_norm = self._clean_text(notes)
+        due_norm = str(due_date).strip()
+        with self._lock, self._connect() as conn:
+            if token is not None:
+                existing = conn.execute(
+                    "SELECT * FROM forecast_plan_items WHERE client_token = ?",
+                    (token,),
+                ).fetchone()
+                if existing is not None:
+                    return self._plan_item_from_row(existing)
+            if (
+                conn.execute(
+                    "SELECT 1 FROM accounts WHERE iban = ?", (iban_norm,)
+                ).fetchone()
+                is None
+            ):
+                raise ValueError(f"unknown account: {iban_norm}")
+            if category_id is not None and (
+                conn.execute(
+                    "SELECT 1 FROM categories WHERE id = ?", (category_id,)
+                ).fetchone()
+                is None
+            ):
+                raise ValueError(f"unknown category: {category_id}")
+            cur = conn.execute(
+                """INSERT INTO forecast_plan_items (
+                       iban, currency, kind, amount_cents, category_id, title,
+                       due_date, source_type, status, revision, client_token,
+                       notes
+                   ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)""",
+                (
+                    iban_norm,
+                    currency_norm,
+                    kind,
+                    int(amount_cents),
+                    category_id,
+                    title_norm,
+                    due_norm,
+                    source_type,
+                    status,
+                    token,
+                    notes_norm,
+                ),
+            )
+            row = conn.execute(
+                "SELECT * FROM forecast_plan_items WHERE id = ?",
+                (int(cur.lastrowid or 0),),
+            ).fetchone()
+            snapshot = self._plan_snapshot(row)
+            conn.execute(
+                "INSERT INTO forecast_plan_journal "
+                "(plan_item_id, action, before_json, after_json, revision) "
+                "VALUES (?, 'created', NULL, ?, 1)",
+                (
+                    snapshot["id"],
+                    json.dumps(snapshot, sort_keys=True, ensure_ascii=False),
+                ),
+            )
+        return self._plan_item_from_row(row)
+
+    def get_plan_item(self, plan_item_id: int) -> PlanItem:
+        """Liest ein Plan-Item; ``ValueError`` bei unbekannter ID."""
+        with self._lock, self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM forecast_plan_items WHERE id = ?",
+                (plan_item_id,),
+            ).fetchone()
+        if row is None:
+            raise ValueError(f"plan item {plan_item_id} not found")
+        return self._plan_item_from_row(row)
+
+    def list_plan_items(
+        self,
+        *,
+        status: Optional[str] = None,
+        iban: Optional[str] = None,
+        kind: Optional[str] = None,
+        source_type: Optional[str] = None,
+        due_from: Optional[str] = None,
+        due_to: Optional[str] = None,
+    ) -> List[PlanItem]:
+        """Listet Plan-Items (Filter optional; Sortierung due_date, iban, id)."""
+        sql = "SELECT * FROM forecast_plan_items WHERE 1=1"
+        params: List[Any] = []
+        if status is not None:
+            if status not in VALID_PLAN_ITEM_STATUSES:
+                raise ValueError(
+                    f"status must be one of {sorted(VALID_PLAN_ITEM_STATUSES)}, "
+                    f"got {status!r}"
+                )
+            sql += " AND status = ?"
+            params.append(status)
+        if iban is not None:
+            sql += " AND iban = ?"
+            params.append(_normalize_iban(iban))
+        if kind is not None:
+            if kind not in VALID_PLAN_ITEM_KINDS:
+                raise ValueError(
+                    f"kind must be one of {sorted(VALID_PLAN_ITEM_KINDS)}, "
+                    f"got {kind!r}"
+                )
+            sql += " AND kind = ?"
+            params.append(kind)
+        if source_type is not None:
+            if source_type not in VALID_PLAN_ITEM_SOURCES:
+                raise ValueError(
+                    f"source_type must be one of {sorted(VALID_PLAN_ITEM_SOURCES)}, "
+                    f"got {source_type!r}"
+                )
+            sql += " AND source_type = ?"
+            params.append(source_type)
+        if due_from is not None:
+            sql += " AND due_date >= ?"
+            params.append(str(due_from).strip())
+        if due_to is not None:
+            sql += " AND due_date <= ?"
+            params.append(str(due_to).strip())
+        sql += " ORDER BY due_date, iban, id"
+        with self._lock, self._connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [self._plan_item_from_row(r) for r in rows]
+
+    def update_plan_item(
+        self,
+        plan_item_id: int,
+        expected_revision: int,
+        *,
+        iban: Optional[str] = None,
+        currency: Optional[str] = None,
+        kind: Optional[str] = None,
+        amount_cents: Optional[int] = None,
+        due_date: Optional[str] = None,
+        title: Optional[str] = None,
+        notes: Optional[str] = None,
+        category_id: Optional[int] = None,
+        status: Optional[str] = None,
+    ) -> PlanItem:
+        """Aktualisiert eine oder mehrere Felder (Journal-Aktion 'updated').
+
+        Optimistic Locking: ``expected_revision`` muss der aktuellen
+        ``revision`` entsprechen, sonst ``PlanRevisionConflict`` --
+        keine stille Ueberschreibung paralleler Aenderungen.
+        ``category_id=None`` und ``None``-Texte sind 'nicht aendern',
+        keine Loeschung (AP1-Bereich).
+        """
+        if (
+            isinstance(expected_revision, bool)
+            or not isinstance(expected_revision, int)
+            or expected_revision <= 0
+        ):
+            raise ValueError(
+                "expected_revision must be a positive int, "
+                f"got {expected_revision!r}"
+            )
+        self._validate_plan_fields(
+            iban=iban,
+            currency=currency,
+            kind=kind,
+            amount_cents=amount_cents,
+            due_date=due_date,
+            title=title,
+            notes=notes,
+            category_id=category_id,
+            status=status,
+            source_type=None,
+        )
+        sets: List[str] = []
+        params: List[Any] = []
+        if iban is not None:
+            sets.append("iban = ?")
+            params.append(_normalize_iban(iban))
+        if currency is not None:
+            sets.append("currency = ?")
+            params.append(str(currency).upper())
+        if kind is not None:
+            sets.append("kind = ?")
+            params.append(kind)
+        if amount_cents is not None:
+            sets.append("amount_cents = ?")
+            params.append(int(amount_cents))
+        if due_date is not None:
+            sets.append("due_date = ?")
+            params.append(str(due_date).strip())
+        if title is not None:
+            sets.append("title = ?")
+            params.append(self._clean_text(title))
+        if notes is not None:
+            sets.append("notes = ?")
+            params.append(self._clean_text(notes))
+        if category_id is not None:
+            sets.append("category_id = ?")
+            params.append(category_id)
+        if status is not None:
+            sets.append("status = ?")
+            params.append(status)
+        if not sets:
+            raise ValueError("no fields to update")
+        with self._lock, self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM forecast_plan_items WHERE id = ?",
+                (plan_item_id,),
+            ).fetchone()
+            if row is None:
+                raise ValueError(f"plan item {plan_item_id} not found")
+            actual = int(row["revision"])
+            if actual != int(expected_revision):
+                raise PlanRevisionConflict(
+                    plan_item_id, int(expected_revision), actual
+                )
+            if iban is not None and (
+                conn.execute(
+                    "SELECT 1 FROM accounts WHERE iban = ?",
+                    (_normalize_iban(iban),),
+                ).fetchone()
+                is None
+            ):
+                raise ValueError(
+                    f"unknown account: {_normalize_iban(iban)}"
+                )
+            if category_id is not None and (
+                conn.execute(
+                    "SELECT 1 FROM categories WHERE id = ?", (category_id,)
+                ).fetchone()
+                is None
+            ):
+                raise ValueError(f"unknown category: {category_id}")
+            before = self._plan_snapshot(row)
+            conn.execute(
+                "UPDATE forecast_plan_items SET "
+                + ", ".join(sets)
+                + ", revision = revision + 1, updated_at = datetime('now') "
+                "WHERE id = ?",
+                [*params, plan_item_id],
+            )
+            new_row = conn.execute(
+                "SELECT * FROM forecast_plan_items WHERE id = ?",
+                (plan_item_id,),
+            ).fetchone()
+            after = self._plan_snapshot(new_row)
+            conn.execute(
+                "INSERT INTO forecast_plan_journal "
+                "(plan_item_id, action, before_json, after_json, revision) "
+                "VALUES (?, 'updated', ?, ?, ?)",
+                (
+                    plan_item_id,
+                    json.dumps(before, sort_keys=True, ensure_ascii=False),
+                    json.dumps(after, sort_keys=True, ensure_ascii=False),
+                    after["revision"],
+                ),
+            )
+        return self._plan_item_from_row(new_row)
+
+    def set_plan_item_status(
+        self, plan_item_id: int, status: str, expected_revision: int
+    ) -> PlanItem:
+        """Setzt nur den Status (active/paused/done/rejected)."""
+        if status not in VALID_PLAN_ITEM_STATUSES:
+            raise ValueError(
+                f"status must be one of {sorted(VALID_PLAN_ITEM_STATUSES)}, "
+                f"got {status!r}"
+            )
+        return self.update_plan_item(
+            plan_item_id, expected_revision, status=status
+        )
+
+    def delete_plan_item(self, plan_item_id: int) -> None:
+        """Loescht ein Plan-Item (Journal-Aktion 'deleted').
+
+        Rueckgaengig via ``undo_plan_change`` -- das Journal haelt den
+        kompletten before-Snapshot und ueberlebt die Loeschung (kein
+        Foreign Key auf forecast_plan_items).
+        """
+        with self._lock, self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM forecast_plan_items WHERE id = ?",
+                (plan_item_id,),
+            ).fetchone()
+            if row is None:
+                raise ValueError(f"plan item {plan_item_id} not found")
+            before = self._plan_snapshot(row)
+            conn.execute(
+                "DELETE FROM forecast_plan_items WHERE id = ?",
+                (plan_item_id,),
+            )
+            conn.execute(
+                "INSERT INTO forecast_plan_journal "
+                "(plan_item_id, action, before_json, after_json, revision) "
+                "VALUES (?, 'deleted', ?, NULL, ?)",
+                (
+                    plan_item_id,
+                    json.dumps(before, sort_keys=True, ensure_ascii=False),
+                    before["revision"],
+                ),
+            )
+
+    @staticmethod
+    def _plan_journal_from_row(row: sqlite3.Row) -> PlanJournalEntry:
+        """Journal-Zeile -> Dataclass (``before_json``/``after_json`` roh)."""
+        return PlanJournalEntry(
+            id=int(row["id"]),
+            plan_item_id=int(row["plan_item_id"]),
+            action=row["action"],
+            before_json=row["before_json"],
+            after_json=row["after_json"],
+            revision=int(row["revision"]),
+            created_at=row["created_at"],
+        )
+
+    @staticmethod
+    def _load_plan_snapshot(raw: Optional[str]) -> Optional[Dict[str, Any]]:
+        """JSON-Snapshot parsen (kaputter/None -> None; Undo meldet dann)."""
+        if raw is None:
+            return None
+        try:
+            return json.loads(raw)
+        except (TypeError, ValueError):
+            return None
+
+    def get_plan_journal(
+        self, plan_item_id: int, *, limit: int = 50
+    ) -> List[PlanJournalEntry]:
+        """Journal-Eintraege eines Items (neueste zuerst)."""
+        if limit <= 0:
+            raise ValueError("limit must be > 0")
+        with self._lock, self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM forecast_plan_journal WHERE plan_item_id = ? "
+                "ORDER BY id DESC LIMIT ?",
+                (plan_item_id, limit),
+            ).fetchall()
+        return [self._plan_journal_from_row(r) for r in rows]
+
+    def latest_plan_journal(
+        self, plan_item_id: int
+    ) -> Optional[PlanJournalEntry]:
+        """Neuester Journal-Eintrag (None, falls keiner existiert)."""
+        entries = self.get_plan_journal(plan_item_id, limit=1)
+        return entries[0] if entries else None
+
+    def undo_plan_change(self, plan_item_id: int) -> PlanItem:
+        """Undo der letzten Aenderung (Gegenrevision, D5/D7).
+
+        * 'created'  -> Item wird geloescht
+        * 'updated'  -> before-Zustand wird wiederhergestellt
+        * 'deleted'  -> before-Zustand wird zurueckgesetzt (gleiche ID)
+        * 'restored' -> before-Zustand wird wiederhergestellt
+
+        Jede Undo-Aktion schreibt selbst einen Journal-Eintrag
+        ('deleted' bzw. 'restored'); das urspruengliche Journal bleibt
+        erhalten. Liefert den Zustand NACH dem Undo (bei 'created':
+        der geloeschte Zustand).
+        """
+        with self._lock, self._connect() as conn:
+            entry = conn.execute(
+                "SELECT * FROM forecast_plan_journal "
+                "WHERE plan_item_id = ? ORDER BY id DESC LIMIT 1",
+                (plan_item_id,),
+            ).fetchone()
+            if entry is None:
+                raise ValueError(
+                    f"plan item {plan_item_id} has no journal entry"
+                )
+            action = entry["action"]
+            before = self._load_plan_snapshot(entry["before_json"])
+            row = conn.execute(
+                "SELECT * FROM forecast_plan_items WHERE id = ?",
+                (plan_item_id,),
+            ).fetchone()
+            if action == "created":
+                if row is None:
+                    raise ValueError(f"plan item {plan_item_id} not found")
+                cur_before = self._plan_snapshot(row)
+                conn.execute(
+                    "DELETE FROM forecast_plan_items WHERE id = ?",
+                    (plan_item_id,),
+                )
+                conn.execute(
+                    "INSERT INTO forecast_plan_journal "
+                    "(plan_item_id, action, before_json, after_json, revision) "
+                    "VALUES (?, 'deleted', ?, NULL, ?)",
+                    (
+                        plan_item_id,
+                        json.dumps(
+                            cur_before, sort_keys=True, ensure_ascii=False
+                        ),
+                        cur_before["revision"],
+                    ),
+                )
+                return self._plan_item_from_row(row)
+            if before is None:
+                raise ValueError(
+                    "journal entry has no before-state to restore"
+                )
+            if row is not None:
+                cur_before = self._plan_snapshot(row)
+                conn.execute(
+                    """UPDATE forecast_plan_items SET
+                       iban = ?, currency = ?, kind = ?, amount_cents = ?,
+                       category_id = ?, title = ?, due_date = ?,
+                       source_type = ?, status = ?, client_token = ?,
+                       notes = ?, created_at = ?,
+                       updated_at = datetime('now'),
+                       revision = revision + 1
+                       WHERE id = ?""",
+                    (
+                        before["iban"],
+                        before["currency"],
+                        before["kind"],
+                        before["amount_cents"],
+                        before["category_id"],
+                        before["title"],
+                        before["due_date"],
+                        before["source_type"],
+                        before["status"],
+                        before["client_token"],
+                        before["notes"],
+                        before["created_at"],
+                        plan_item_id,
+                    ),
+                )
+            else:
+                conn.execute(
+                    """INSERT INTO forecast_plan_items (
+                       id, iban, currency, kind, amount_cents, category_id,
+                       title, due_date, source_type, status, revision,
+                       client_token, notes, created_at
+                   ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)""",
+                    (
+                        before["id"],
+                        before["iban"],
+                        before["currency"],
+                        before["kind"],
+                        before["amount_cents"],
+                        before["category_id"],
+                        before["title"],
+                        before["due_date"],
+                        before["source_type"],
+                        before["status"],
+                        before["client_token"],
+                        before["notes"],
+                        before["created_at"],
+                    ),
+                )
+            new_row = conn.execute(
+                "SELECT * FROM forecast_plan_items WHERE id = ?",
+                (plan_item_id,),
+            ).fetchone()
+            after = self._plan_snapshot(new_row)
+            undo_before_json = (
+                json.dumps(cur_before, sort_keys=True, ensure_ascii=False)
+                if row is not None
+                else None
+            )
+            conn.execute(
+                "INSERT INTO forecast_plan_journal "
+                "(plan_item_id, action, before_json, after_json, revision) "
+                "VALUES (?, 'restored', ?, ?, ?)",
+                (
+                    plan_item_id,
+                    undo_before_json,
+                    json.dumps(after, sort_keys=True, ensure_ascii=False),
+                    after["revision"],
+                ),
+            )
+        return self._plan_item_from_row(new_row)
+
     # -- monthly report ----------------------------------------------
 
     def monthly_report(
         self, month: str, *, account_id: Optional[int] = None,
         include_transfers: bool = False,
+        currency: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Aggregierter Monatsbericht: Cashflow, Kategorien, Top-Empfänger, Budget-Status.
 
@@ -3223,6 +4019,7 @@ class FinanceDB:
         """
         if not (len(month) == 7 and month[4] == "-"):
             raise ValueError(f"month must be YYYY-MM, got {month!r}")
+        self._validate_iso_date(f"{month}-01", field="month")
         clauses = ["substr(t.booking_date, 1, 7) = ?"]
         params: List[Any] = [month]
         if account_id is not None:
@@ -3232,6 +4029,16 @@ class FinanceDB:
             clauses.append(self._non_transfer_clause("t"))
         where = "WHERE " + " AND ".join(clauses)
         with self._lock, self._connect() as conn:
+            if currency is None:
+                currencies = conn.execute(
+                    f"SELECT DISTINCT t.currency FROM transactions t {where}", params
+                ).fetchall()
+                if len(currencies) > 1:
+                    raise ValueError("Multiple currencies: select a report currency")
+                currency = str(currencies[0]["currency"]) if currencies else DEFAULT_CURRENCY
+            currency = currency.upper()
+            where += " AND t.currency = ?"
+            params.append(currency)
             totals = conn.execute(
                 f"""
                 SELECT
@@ -3277,6 +4084,8 @@ class FinanceDB:
         return {
             "month": month,
             "account_id": account_id,
+            "currency": currency,
+            "budget_currency": DEFAULT_CURRENCY,
             "income_cents": int(totals["income"] or 0),
             "expense_cents": int(totals["expense"] or 0),
             "net_cents": int(totals["net"] or 0),
@@ -3298,7 +4107,10 @@ class FinanceDB:
                 }
                 for r in counterparties
             ],
-            "budget_status": self.budget_status(month),
+            "budget_status": (
+                self.budget_status(month, account_id=account_id)
+                if currency == DEFAULT_CURRENCY else []
+            ),
         }
 
     # -- transfer linking --------------------------------------------

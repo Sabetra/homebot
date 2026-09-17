@@ -170,6 +170,18 @@ VALID_GOAL_STATUSES: frozenset = frozenset(
     {"active", "paused", "achieved", "archived"}
 )
 
+# Forecast plan items (Forecast UX AP1, 2026-09-16). Single Source of
+# Truth: ``db_schema.py`` importiert diese Saetze fuer DAO-Validierung
+# (analog VALID_GOAL_STATUSES); die UI/Tools nutzen sie dafuer.
+VALID_PLAN_ITEM_KINDS: frozenset = frozenset({"income", "expense"})
+VALID_PLAN_ITEM_STATUSES: frozenset = frozenset(
+    {"active", "paused", "done", "rejected"}
+)
+VALID_PLAN_ITEM_SOURCES: frozenset = frozenset({"manual", "detected"})
+VALID_PLAN_ACTIONS: frozenset = frozenset(
+    {"created", "updated", "deleted", "restored"}
+)
+
 # Mapping used once during DB initialisation to rename legacy German values
 # that were stored by the previous extraction schema.
 ACCOUNT_TYPE_MIGRATIONS: dict = {

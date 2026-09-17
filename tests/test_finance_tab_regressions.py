@@ -147,11 +147,11 @@ def test_goal_table_rows_maps_goal_and_progress() -> None:
     row = rows[0]
     assert row["Name"] == "Urlaub"
     assert row["Konto"] == "DE02120300000000202051"
-    assert row["Ziel (€)"] == 3000.0
-    assert row["Gespart (€)"] == 1500.0
-    assert row["Offen (€)"] == 1500.0
+    assert row["Ziel"] == 3000.0
+    assert row["Gespart"] == 1500.0
+    assert row["Offen"] == 1500.0
     assert row["%"] == 50.0
-    assert row["Monatsrate (€)"] == 250.0
+    assert row["Monatsrate"] == 250.0
     assert row["Zieldatum"] == "2026-08-01"
     assert row["Status"] == "aktiv"
 
@@ -161,9 +161,9 @@ def test_goal_table_rows_tolerates_missing_parts() -> None:
 
     assert row["Name"] == "X"
     assert row["Konto"] == ""
-    assert row["Gespart (€)"] is None
-    assert row["Offen (€)"] is None
-    assert row["Monatsrate (€)"] is None
+    assert row["Gespart"] is None
+    assert row["Offen"] is None
+    assert row["Monatsrate"] is None
     assert row["Zieldatum"] == ""
     assert row["Status"] == ""
 
@@ -326,3 +326,148 @@ def test_projection_headline_text_overdue_includes_date() -> None:
     )
 
     assert "2026-01-01" in text
+
+
+@pytest.mark.parametrize("month, valid", [("2026-09", True), ("2026-13", False), ("2026-00", False), ("2026-9", False), ("", False)])
+def test_month_input_validation(month, valid):
+    assert finance_tab._valid_month(month) is valid
+
+
+def _candidate_test_app():
+    from types import SimpleNamespace
+    import streamlit as st
+    from finance.tab import _render_goals_candidates
+
+    class Tools:
+        def suggest_goal_candidates(self, params):
+            st.session_state["search_count"] = st.session_state.get("search_count", 0) + 1
+            return {"success": True, "candidates": [{"counterparty": "Synthetic Saving", "occurrences": 3,
+                    "average_amount": 100, "monthly_equivalent": 100, "annual_equivalent": 1200}]}
+
+        def upsert_goal(self, params):
+            st.session_state["created_goal"] = params
+            return {"success": True}
+
+    _render_goals_candidates(Tools(), [SimpleNamespace(iban="SYNTHETIC_CHF", currency="CHF"),
+                                     SimpleNamespace(iban="SYNTHETIC_EUR", currency="EUR")])
+
+
+def test_candidate_can_be_created_on_subsequent_rerun():
+    from streamlit.testing.v1 import AppTest
+
+    app = AppTest.from_function(_candidate_test_app).run()
+    assert not app.exception
+    app.button(key="finance_goals_cand_run").click().run()
+    assert not app.exception
+    app.button(key="finance_goals_cand_use_0").click().run()
+    assert not app.exception
+    assert app.session_state.filtered_state["created_goal"] == {
+        "name": "Synthetic Saving", "iban": "SYNTHETIC_CHF", "currency": "CHF",
+        "target_amount": 1200, "monthly_rate": 100,
+    }
+    assert app.session_state.filtered_state["search_count"] == 1
+
+
+def test_candidate_cache_is_scoped_to_account():
+    from streamlit.testing.v1 import AppTest
+
+    app = AppTest.from_function(_candidate_test_app).run()
+    app.button(key="finance_goals_cand_run").click().run()
+    app.selectbox(key="finance_goals_cand_iban").select("SYNTHETIC_EUR").run()
+    assert not app.exception
+    assert "finance_goals_cand_use_0" not in [button.key for button in app.button]
+    assert "created_goal" not in app.session_state.filtered_state
+
+
+def _assignment_test_app():
+    from types import SimpleNamespace
+    from typing import Any, cast
+    import streamlit as st
+    from finance.tab import _render_goal_assign
+
+    class DB:
+        def list_accounts(self):
+            return [SimpleNamespace(iban="SYNTHETIC", id=1)]
+
+        def assigned_transaction_ids(self):
+            return [33]
+
+        def query_transactions(self, **kwargs):
+            return [SimpleNamespace(id=identifier, amount_cents=10000,
+                    booking_date="2026-09-01", counterparty="Synthetic") for identifier in (11, 22, 33)]
+
+    class Tools:
+        def list_goal_contributions(self, params):
+            return {"success": True, "contributions": []}
+
+        def assign_goal_contribution(self, params):
+            st.session_state["assigned_tx"] = params["transaction_id"]
+            return {"success": True}
+
+    _render_goal_assign(cast(Any, DB()), Tools(), {"goal_id": 1, "iban": "SYNTHETIC"})
+
+
+def test_goal_assignment_uses_id_and_excludes_other_goals():
+    from streamlit.testing.v1 import AppTest
+
+    app = AppTest.from_function(_assignment_test_app).run()
+    assert not app.exception
+    options = app.selectbox(key="finance_goals_assign_select_1").options
+    assert len(options) == 2
+    assert options[0] != options[1]
+    app.selectbox(key="finance_goals_assign_select_1").select(22).run()
+    app.button(key="finance_goals_assign_btn_1").click().run()
+    assert not app.exception
+    assert app.session_state.filtered_state["assigned_tx"] == 22
+
+
+def _analytics_test_app():
+    from types import SimpleNamespace
+    from typing import Any, cast
+    import streamlit as st
+    from finance.tab import _render_analytics_tab
+
+    class DB:
+        def list_accounts(self):
+            return [SimpleNamespace(id=1, iban="SYNTHETIC", bank_name="Synthetic")]
+
+        def list_transaction_currencies(self, account_id=None):
+            return ["CHF", "EUR"]
+
+        def aggregate(self, **kwargs):
+            st.session_state["aggregate_scope"] = kwargs
+            return []
+
+        def monthly_report(self, month, **kwargs):
+            st.session_state["report_scope"] = kwargs
+            return {"income_cents": 10000, "expense_cents": -5000, "net_cents": 5000,
+                    "tx_count": 2, "budget_status": []}
+
+    _render_analytics_tab(cast(Any, DB()))
+    st.button("Synthetic rerun", key="synthetic_rerun")
+
+
+def test_analytics_report_keeps_currency_and_survives_rerun():
+    from streamlit.testing.v1 import AppTest
+
+    app = AppTest.from_function(_analytics_test_app).run()
+    app.selectbox(key="finance_analytics_currency").select("EUR").run()
+    app.button(key="finance_report_btn").click().run()
+    assert not app.exception
+    assert app.session_state.filtered_state["aggregate_scope"]["currency"] == "EUR"
+    assert app.session_state.filtered_state["report_scope"]["currency"] == "EUR"
+    assert len(app.metric) == 4
+    app.button(key="synthetic_rerun").click().run()
+    assert not app.exception
+    assert len(app.metric) == 4
+
+
+def test_invalid_month_is_reported_without_streamlit_exception():
+    from streamlit.testing.v1 import AppTest
+
+    app = AppTest.from_function(_analytics_test_app).run()
+    app.text_input(key="finance_report_month").input("2026-13").run()
+    app.button(key="finance_report_btn").click().run()
+    assert not app.exception
+    assert len(app.error) == 1
+    assert "report_scope" not in app.session_state.filtered_state

@@ -17,6 +17,7 @@ from __future__ import annotations
 import logging
 import sqlite3
 import tempfile
+import uuid
 from datetime import date
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, List, Optional
@@ -25,7 +26,7 @@ import pandas as pd
 import streamlit as st
 from i18n import t as i18n_t
 
-from finance.db_schema import FinanceDB
+from finance.db_schema import FinanceDB, PlanRevisionConflict
 from finance.models import DEFAULT_CURRENCY
 from utils.followup_question_extractor import extract_followup_questions
 
@@ -92,6 +93,13 @@ def _get_llm_client():
 
 def _format_eur(value: float) -> str:
     return f"{value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+def _valid_month(value: str) -> bool:
+    try:
+        return len(value) == 7 and date.fromisoformat(f"{value}-01").strftime("%Y-%m") == value
+    except ValueError:
+        return False
 
 
 def _format_price_change(change: Optional[dict]) -> str:
@@ -419,9 +427,12 @@ def _render_accounts_tab(db: FinanceDB) -> None:
         cols = st.columns([3, 2, 1])
         iban_options = [a.iban for a in accounts]
         sel_iban = cols[0].selectbox(_tr("finance_ui.accounts.account_label", "Konto"), iban_options, key="finance_acct_type_iban")
+        selected_account = next(a for a in accounts if a.iban == sel_iban)
+        type_options = ["checking", "credit_card", "savings", "cash", "investment", "other"]
         sel_type = cols[1].selectbox(
-            _tr("finance_ui.accounts.type_label", "Typ"), ["checking", "credit_card", "savings", "cash", "investment", "other"],
-            key="finance_acct_type_kind",
+            _tr("finance_ui.accounts.type_label", "Typ"), type_options,
+            index=type_options.index(selected_account.account_type) if selected_account.account_type in type_options else 0,
+            key=f"finance_acct_type_kind_{selected_account.id}",
         )
         if cols[2].button(_tr("finance_ui.accounts.set_button", "Setzen"), key="finance_acct_type_set"):
             sel_acc = next((a for a in accounts if a.iban == sel_iban), None)
@@ -445,11 +456,19 @@ def _render_analytics_tab(db: FinanceDB) -> None:
     )
     account_id: Optional[int] = account_options[selected_label]
 
+    currencies = db.list_transaction_currencies(account_id) or [DEFAULT_CURRENCY]
+    currency = st.selectbox(
+        _tr("finance_ui.forecast.col_currency", "Währung"), currencies,
+        key="finance_analytics_currency",
+    )
     col1, col2 = st.columns(2)
     start = col1.date_input(_tr("finance_ui.analytics.date_from", "Von"), value=None, key="finance_analytics_start")
     end = col2.date_input(_tr("finance_ui.analytics.date_to", "Bis"), value=None, key="finance_analytics_end")
     start_str = start.isoformat() if isinstance(start, date) else None
     end_str = end.isoformat() if isinstance(end, date) else None
+    if start_str and end_str and start_str > end_str:
+        st.error(_tr("finance_ui.validation.date_range", "Das Von-Datum muss vor dem Bis-Datum liegen."))
+        return
 
     # Monthly trend
     monthly = db.aggregate(
@@ -457,6 +476,7 @@ def _render_analytics_tab(db: FinanceDB) -> None:
         account_id=account_id,
         start_date=start_str,
         end_date=end_str,
+        currency=currency,
     )
     if monthly:
         import pandas as pd
@@ -482,7 +502,7 @@ def _render_analytics_tab(db: FinanceDB) -> None:
         )
         fig.update_layout(
             barmode="relative", title="Monatliche Einnahmen / Ausgaben / Netto",
-            yaxis_title=DEFAULT_CURRENCY, xaxis_title="Monat",
+            yaxis_title=currency, xaxis_title="Monat",
         )
         st.plotly_chart(fig, width='stretch')
     else:
@@ -495,6 +515,7 @@ def _render_analytics_tab(db: FinanceDB) -> None:
         account_id=account_id,
         start_date=start_str,
         end_date=end_str,
+        currency=currency,
     )
     if top:
         import pandas as pd
@@ -503,25 +524,25 @@ def _render_analytics_tab(db: FinanceDB) -> None:
             [
                 {
                     "Gegenseite": r["key"],
-                    f"Einnahmen ({DEFAULT_CURRENCY})": r["income_cents"] / 100.0,
-                    f"Ausgaben ({DEFAULT_CURRENCY})": r["expense_cents"] / 100.0,
-                    f"Netto ({DEFAULT_CURRENCY})": r["net_cents"] / 100.0,
+                    f"Einnahmen ({currency})": r["income_cents"] / 100.0,
+                    f"Ausgaben ({currency})": r["expense_cents"] / 100.0,
+                    f"Netto ({currency})": r["net_cents"] / 100.0,
                     "Anzahl": r["count"],
                 }
                 for r in top
             ]
         )
         df_top = df_top.reindex(
-            df_top[f"Netto ({DEFAULT_CURRENCY})"].abs().sort_values(ascending=False).index
+            df_top[f"Netto ({currency})"].abs().sort_values(ascending=False).index
         ).head(20)
         st.dataframe(df_top, width='stretch', hide_index=True)
 
     # Balance at date
-    if account_id is not None:
+    if account_id is not None and len(currencies) == 1:
         st.markdown(_tr("finance_ui.analytics.balance_on_date", "### Kontostand zum Stichtag"))
         as_of = st.date_input(_tr("finance_ui.analytics.cutoff_date", "Stichtag"), value=date.today(), key="finance_balance_date")
         balance = db.balance_at(account_id=account_id, as_of_date=as_of.isoformat())
-        st.metric(_tr("finance_ui.analytics.balance_label", "Saldo am {date}", date=as_of.isoformat()), _format_eur(balance["balance"]))
+        st.metric(_tr("finance_ui.analytics.balance_label", "Saldo am {date}", date=as_of.isoformat()), f"{_format_eur(balance['balance'])} {currency}")
 
     # --- Kategorien-Aufschlüsselung ---
     st.markdown(_tr("finance_ui.analytics.category_breakdown", "### Kategorien-Aufschluesselung"))
@@ -530,6 +551,7 @@ def _render_analytics_tab(db: FinanceDB) -> None:
         account_id=account_id,
         start_date=start_str,
         end_date=end_str,
+        currency=currency,
     )
     if cat_agg:
         import pandas as pd
@@ -566,8 +588,14 @@ def _render_analytics_tab(db: FinanceDB) -> None:
         value=date.today().strftime("%Y-%m"),
         key="finance_report_month",
     )
+    report_scope = (rep_month, account_id, currency)
     if st.button(_tr("finance_ui.analytics.show_report", "Report anzeigen"), key="finance_report_btn"):
-        rep = db.monthly_report(rep_month, account_id=account_id)
+        st.session_state["finance_report_request"] = report_scope
+    if st.session_state.get("finance_report_request") == report_scope:
+        if not _valid_month(rep_month):
+            st.error(_tr("finance_ui.validation.month", "Bitte einen gültigen Monat im Format YYYY-MM eingeben."))
+            return
+        rep = db.monthly_report(rep_month, account_id=account_id, currency=currency)
         cols = st.columns(4)
         cols[0].metric(_tr("finance_ui.analytics.income_metric", "Einnahmen"), _format_eur(rep["income_cents"] / 100.0))
         cols[1].metric(_tr("finance_ui.analytics.expense_metric", "Ausgaben"), _format_eur(rep["expense_cents"] / 100.0))
@@ -577,14 +605,15 @@ def _render_analytics_tab(db: FinanceDB) -> None:
             import pandas as pd
 
             st.markdown(_tr("finance_ui.analytics.budget_status", "#### Budget-Status"))
+            st.caption(_tr("finance_ui.budgets.scope", "Haushaltslimits in {currency}; Istwerte für die gewählte Kontoauswahl.", currency=DEFAULT_CURRENCY))
             st.dataframe(
                 pd.DataFrame(
                     [
                         {
                             "Kategorie": r["category"],
-                            "Budget (€)": r["budget_cents"] / 100.0,
-                            "Ist (€)": r["actual_cents"] / 100.0,
-                            "Rest (€)": r["remaining_cents"] / 100.0,
+                            f"Budget ({currency})": r["budget_cents"] / 100.0,
+                            f"Ist ({currency})": r["actual_cents"] / 100.0,
+                            f"Rest ({currency})": r["remaining_cents"] / 100.0,
                             "Buchungen": r["tx_count"],
                         }
                         for r in rep["budget_status"]
@@ -593,6 +622,105 @@ def _render_analytics_tab(db: FinanceDB) -> None:
                 width='stretch',
                 hide_index=True,
             )
+
+
+# ---------------------------------------------------------------------------
+# Forecast Plan-Items (Forecast-UX AP1, 2026-09-16)
+# ---------------------------------------------------------------------------
+
+_PLAN_STATUS_KEYS = (
+    ("active", "finance_ui.forecast.plan_status_active"),
+    ("paused", "finance_ui.forecast.plan_status_paused"),
+    ("done", "finance_ui.forecast.plan_status_done"),
+    ("rejected", "finance_ui.forecast.plan_status_rejected"),
+)
+
+
+def _plan_field(item: Any, name: str) -> Any:
+    """PlanItem-Feld aus Dataclass ODER Dict (defensive Zugriffe, testbar)."""
+    if isinstance(item, dict):
+        return item.get(name)
+    return getattr(item, name, None)
+
+
+def _plan_status_label(status: Any) -> str:
+    """i18n-Label fuer einen Plan-Item-Status (unbekannter Status: Rohwert)."""
+    text = str(status or "").strip()
+    for value, key in _PLAN_STATUS_KEYS:
+        if value == text:
+            return _tr(key, value)
+    return text
+
+
+def _plan_kind_label(kind: Any) -> str:
+    """i18n-Label fuer die Plan-Item-Art (unbekannte Art: Rohwert)."""
+    text = str(kind or "").strip()
+    if text == "income":
+        return _tr("finance_ui.forecast.plan_kind_income", "Einnahme")
+    if text == "expense":
+        return _tr("finance_ui.forecast.plan_kind_expense", "Ausgabe")
+    return text
+
+
+def _plan_amount_label(item: Any) -> str:
+    """Cents-Feld eines Plan-Items als Betrag (None-/Fehler-sicher)."""
+    try:
+        return _format_eur(float(_plan_field(item, "amount_cents")) / 100.0)
+    except (TypeError, ValueError):
+        return "–"
+
+
+def _plan_preview_parts(kind: Any, amount: Any, due_date: Any) -> Optional[tuple[str, str]]:
+    """(Wirkung, Monat) fuer die Anlege-Form-Vorschau; ``None`` bei ungültig.
+
+    Reine Funktion (testbar): Wirkung = vorzeichenbehafteter Betrag
+    (Einnahme +, Ausgabe -), Monat = Fälligkeitsmonat (YYYY-MM).
+    """
+    try:
+        value = float(amount)
+    except (TypeError, ValueError):
+        return None
+    if value <= 0:
+        return None
+    month = str(due_date or "").strip()[:7]
+    if len(month) != 7:
+        return None
+    sign = "+" if str(kind or "").strip() == "income" else "-"
+    return f"{sign}{_format_eur(value)}", month
+
+
+def _plan_item_rows(items: Any) -> list[dict[str, Any]]:
+    """Tabellenzeilen fuer bestehende Plan-Items (reine Funktion, testbar)."""
+    rows: list[dict[str, Any]] = []
+    for item in items or []:
+        if item is None:
+            continue
+        kind = str(_plan_field(item, "kind") or "").strip()
+        if kind not in ("income", "expense"):
+            continue
+        try:
+            amount = float(_plan_field(item, "amount_cents")) / 100.0
+        except (TypeError, ValueError):
+            continue
+        if amount <= 0:
+            continue
+        rows.append(
+            {
+                _tr("finance_ui.forecast.plan_col_title", "Titel"): str(_plan_field(item, "title") or ""),
+                _tr("finance_ui.forecast.plan_col_kind", "Art"): _plan_kind_label(kind),
+                _tr("finance_ui.forecast.plan_col_amount", "Betrag"): _format_eur(amount),
+                _tr("finance_ui.forecast.plan_col_due", "Fällig"): str(_plan_field(item, "due_date") or ""),
+                _tr("finance_ui.forecast.plan_col_note", "Notiz"): str(_plan_field(item, "notes") or ""),
+                _tr("finance_ui.forecast.plan_col_status", "Status"): _plan_status_label(_plan_field(item, "status")),
+                _tr("finance_ui.forecast.plan_col_revision", "Rev."): str(_plan_field(item, "revision") or ""),
+            }
+        )
+    return rows
+
+
+def _plan_flash(message: str) -> None:
+    """Flash-Nachricht ueber ``st.rerun()`` hinweg anzeigen (Session-State)."""
+    st.session_state["finance_forecast_plan_flash"] = message
 
 
 def _render_forecast_tab(db: FinanceDB) -> None:
@@ -626,15 +754,32 @@ def _render_forecast_tab(db: FinanceDB) -> None:
     confidence = float(col_c.slider(_tr("finance_ui.forecast.confidence", "Konfidenz"), 0.50, 0.99, 0.80, 0.01, key="finance_forecast_confidence"))
     include_balance = bool(col_d.checkbox(_tr("finance_ui.forecast.include_balance", "Guthaben-Prognose"), value=True, key="finance_forecast_balance"))
 
-    forecast = tools.cash_flow_forecast(
-        {
-            "forecast_months": forecast_months,
-            "lookback_months": lookback_months,
-            "confidence_level": confidence,
-            "include_balance": include_balance,
-            **iban_filter,
-        }
-    )
+    include_manual_plan = bool(st.checkbox(
+        _tr("finance_ui.forecast.plan_include", "Mit geplanten Ein-/Auszahlungen rechnen"),
+        value=False, key="finance_forecast_plan_include",
+    ))
+    manual_start_balance: Optional[float] = None
+    if include_manual_plan:
+        raw_start = st.number_input(
+            _tr("finance_ui.forecast.plan_start_balance", "Startsaldo (optional, ersetzt den Ist-Stand)"),
+            value=float("nan"), format="%.2f", key="finance_forecast_plan_start",
+        )
+        if raw_start == raw_start:  # NaN-Check: leer = Ist-Stand bleibt Basis
+            manual_start_balance = float(raw_start)
+
+    forecast_params: dict = {
+        "forecast_months": forecast_months,
+        "lookback_months": lookback_months,
+        "confidence_level": confidence,
+        "include_balance": include_balance,
+        **iban_filter,
+    }
+    if include_manual_plan:
+        forecast_params["include_manual_plan"] = True
+    if manual_start_balance is not None:
+        forecast_params["manual_start_balance"] = manual_start_balance
+
+    forecast = tools.cash_flow_forecast(forecast_params)
     if not forecast.get("success"):
         st.error(_tr("finance_ui.forecast.error", "Prognose fehlgeschlagen: {error}", error=str(forecast.get("error") or "?")))
         return
@@ -652,19 +797,24 @@ def _render_forecast_tab(db: FinanceDB) -> None:
         if not months:
             st.caption(_tr("finance_ui.forecast.no_forecast", "Keine Währungsreihen für die Prognose verfügbar."))
             continue
-        df = pd.DataFrame(
-            [
-                {
-                    _tr("finance_ui.forecast.col_month", "Monat"): m["month"],
-                    _tr("finance_ui.forecast.col_income", "Einnahmen"): _format_eur(m.get("income", 0.0)),
-                    _tr("finance_ui.forecast.col_recurring", "Wiederkehrend"): _format_eur(m.get("recurring", 0.0)),
-                    _tr("finance_ui.forecast.col_variable", "Variable Ausgaben"): _format_eur(m.get("variable", 0.0)),
-                    _tr("finance_ui.forecast.col_net", "Netto"): _format_eur(m.get("net", 0.0)),
-                    **({_tr("finance_ui.forecast.col_balance", "Guthaben"): _format_eur(m["balance"])} if "balance" in m else {}),
-                }
-                for m in months
-            ]
-        )
+        has_plan = include_manual_plan and any("net_with_plan" in m for m in months)
+        rows: list[dict[str, Any]] = []
+        for m in months:
+            row: dict[str, Any] = {
+                _tr("finance_ui.forecast.col_month", "Monat"): m["month"],
+                _tr("finance_ui.forecast.col_income", "Einnahmen"): _format_eur(m.get("income", 0.0)),
+                _tr("finance_ui.forecast.col_recurring", "Wiederkehrend"): _format_eur(m.get("recurring", 0.0)),
+                _tr("finance_ui.forecast.col_variable", "Variable Ausgaben"): _format_eur(m.get("variable", 0.0)),
+                _tr("finance_ui.forecast.col_net", "Netto"): _format_eur(m.get("net", 0.0)),
+            }
+            if "balance" in m:
+                row[_tr("finance_ui.forecast.col_balance", "Guthaben")] = _format_eur(m["balance"])
+            if has_plan and "net_with_plan" in m:
+                row[_tr("finance_ui.forecast.col_net_with_plan", "Netto (mit Plan)")] = _format_eur(m["net_with_plan"])
+            if has_plan and "balance_with_plan" in m:
+                row[_tr("finance_ui.forecast.col_balance_with_plan", "Guthaben (mit Plan)")] = _format_eur(m["balance_with_plan"])
+            rows.append(row)
+        df = pd.DataFrame(rows)
         st.dataframe(df, width='stretch', hide_index=True)
 
         if balance_info is not None and all("balance" in m for m in months):
@@ -674,7 +824,9 @@ def _render_forecast_tab(db: FinanceDB) -> None:
             high_series = [m.get("balance_high", m["balance"]) for m in months]
             start_balance = balance_info.get("start_balance")
             if start_balance is not None:
-                x = [x[0]] + x
+                # Startpunkt = Referenzdatum, nicht der erste Prognose-Monat.
+                start_label = forecast.get("reference_date") or x[0]
+                x = [start_label] + x
                 balance_series = [start_balance] + balance_series
                 low_series = [start_balance] + low_series
                 high_series = [start_balance] + high_series
@@ -696,12 +848,204 @@ def _render_forecast_tab(db: FinanceDB) -> None:
                 line=dict(color="#2c3e50", width=3),
                 name=_tr("finance_ui.forecast.balance", "Guthaben"),
             )
+            if include_manual_plan and start_balance is not None and all("balance_with_plan" in m for m in months):
+                fig.add_scatter(
+                    x=x,
+                    y=[start_balance] + [m["balance_with_plan"] for m in months],
+                    mode="lines+markers",
+                    line=dict(color="#27ae60", width=2, dash="dot"),
+                    name=_tr("finance_ui.forecast.col_balance_with_plan", "Guthaben (mit Plan)"),
+                )
             fig.update_layout(height=340, margin=dict(l=10, r=10, t=40, b=10), legend=dict(orientation="h", yanchor="bottom", y=1.02))
             fig.add_hline(y=0, line=dict(color="red", width=1, dash="dot"))
             st.plotly_chart(fig, width='stretch')
 
+    rest_month = forecast.get("rest_month")
+    if isinstance(rest_month, dict):
+        st.markdown(
+            _tr(
+                "finance_ui.forecast.rest_month_title",
+                "#### Restmonat ({reference})",
+                reference=forecast.get("reference_date", ""),
+            )
+        )
+        rest_parts = [
+            f"{_tr('finance_ui.forecast.col_due', 'Fällig')}: {rest_month.get('period_start', '')} – {rest_month.get('period_end', '')}",
+            f"{_tr('finance_ui.forecast.rest_days', 'Verbleibende Tage')}: {rest_month.get('days_remaining', '')}",
+        ]
+        if "manual_plan" in rest_month:
+            rest_parts.append(f"{_tr('finance_ui.forecast.plan_title', 'Geplante Ein-/Auszahlungen')}: {_format_eur(rest_month['manual_plan'])}")
+        if "net_with_plan" in rest_month:
+            rest_parts.append(f"{_tr('finance_ui.forecast.col_net', 'Netto')}: {_format_eur(rest_month['net_with_plan'])}")
+        if "balance_with_plan" in rest_month:
+            rest_parts.append(f"{_tr('finance_ui.forecast.col_balance_with_plan', 'Guthaben (mit Plan)')}: {_format_eur(rest_month['balance_with_plan'])}")
+        st.caption("  |  ".join(rest_parts))
+
     _render_forecast_bills(tools, iban_filter)
     _render_forecast_audit(tools, iban_filter)
+    _render_forecast_plan_section(db, iban_filter)
+
+
+def _render_forecast_plan_section(db: FinanceDB, iban_filter: dict) -> None:
+    """Geplante Ein-/Auszahlungen (Forecast-UX AP1).
+
+    Anlegen (mit Vorschau), Listen, Status setzen, Löschen (mit
+    Bestätigung) und einstufiges Rückgängig. Plan-Items sind Annahmen,
+    nie Buchungseinträge (kein Guthaben-Effekt).
+    """
+    st.markdown(_tr("finance_ui.forecast.plan_title", "### Geplante Ein-/Auszahlungen"))
+    accounts = db.list_accounts()
+    if not accounts:
+        st.info(_tr("finance_ui.goals.need_accounts", "Kein Konto vorhanden. Bitte zuerst einen Auszug importieren."))
+        return
+    _render_forecast_plan_create(db, accounts, iban_filter)
+    _render_forecast_plan_list(db, iban_filter)
+
+
+def _render_forecast_plan_create(db: FinanceDB, accounts: list, iban_filter: dict) -> None:
+    """Anlege-Form fuer Plan-Items (Vorschau, Speichern, Verwerfen)."""
+    st.markdown(_tr("finance_ui.forecast.plan_add", "#### Neues Plan-Item"))
+    iban_options = [a.iban for a in accounts]
+    default_iban = (iban_filter or {}).get("iban")
+    default_index = iban_options.index(default_iban) if default_iban in iban_options else 0
+    with st.form("finance_forecast_plan_create", clear_on_submit=True):
+        kind = st.radio(
+            _tr("finance_ui.forecast.plan_kind", "Art"),
+            ["income", "expense"],
+            format_func=_plan_kind_label,
+            horizontal=True,
+            key="finance_forecast_plan_kind",
+        )
+        amount = st.number_input(
+            _tr("finance_ui.forecast.plan_amount", "Betrag"),
+            min_value=0.0, step=100.0, format="%.2f",
+            key="finance_forecast_plan_amount",
+        )
+        due_date = st.date_input(
+            _tr("finance_ui.forecast.plan_due", "Fällig am"),
+            value=date.today(),
+            key="finance_forecast_plan_due",
+        )
+        iban = st.selectbox(
+            _tr("finance_ui.forecast.account_label", "Konto"),
+            iban_options,
+            index=default_index,
+            key="finance_forecast_plan_iban",
+        )
+        note = st.text_input(
+            _tr("finance_ui.forecast.plan_note", "Notiz (optional)"),
+            key="finance_forecast_plan_note",
+        )
+        preview = _plan_preview_parts(kind, amount, due_date)
+        if preview is not None:
+            effect, month = preview
+            st.caption(
+                _tr("finance_ui.forecast.plan_preview", "Vorschau: {effect} im Monat {month}", effect=effect, month=month)
+            )
+        save_col, discard_col = st.columns(2)
+        submitted = save_col.form_submit_button(_tr("finance_ui.forecast.plan_save", "Speichern"))
+        discard_col.form_submit_button(_tr("finance_ui.forecast.plan_discard", "Verwerfen"))
+    if not submitted:
+        # "Verwerfen" = Form wird geleert (clear_on_submit), sonst nichts tun.
+        return
+    try:
+        amount_value = float(amount)
+    except (TypeError, ValueError):
+        st.error(_tr("finance_ui.forecast.plan_amount_required", "Der Betrag muss positiv sein."))
+        return
+    if amount_value <= 0:
+        st.error(_tr("finance_ui.forecast.plan_amount_required", "Der Betrag muss positiv sein."))
+        return
+    due_iso = due_date.isoformat() if hasattr(due_date, "isoformat") else str(due_date or "").strip()
+    if not due_iso:
+        st.error(_tr("finance_ui.forecast.plan_due_required", "Fälligkeitsdatum fehlt."))
+        return
+    try:
+        db.create_plan_item(
+            iban=iban,
+            kind=kind,
+            amount_cents=int(round(amount_value * 100)),
+            due_date=due_iso,
+            currency=next((a.currency for a in accounts if a.iban == iban), DEFAULT_CURRENCY),
+            notes=str(note or "").strip() or None,
+            client_token=uuid.uuid4().hex,
+        )
+    except (ValueError, sqlite3.Error) as exc:
+        st.error(_tr("finance_ui.forecast.plan_save_error", "Speichern fehlgeschlagen: {error}", error=str(exc)))
+        return
+    _plan_flash(_tr("finance_ui.forecast.plan_saved", "Plan-Item gespeichert."))
+    st.rerun()
+
+
+def _render_forecast_plan_list(db: FinanceDB, iban_filter: dict) -> None:
+    """Bestehende Plan-Items: Status, Loeschen (mit Bestätigung), Rueckgaengig."""
+    flash = st.session_state.pop("finance_forecast_plan_flash", None)
+    if flash:
+        st.success(flash)
+    iban = (iban_filter or {}).get("iban")
+    try:
+        items = db.list_plan_items(iban=iban) if iban else db.list_plan_items()
+    except sqlite3.Error as exc:
+        st.error(_tr("finance_ui.forecast.plan_error", "Fehler: {error}", error=str(exc)))
+        return
+    if not items:
+        st.info(_tr("finance_ui.forecast.plan_empty", "Noch keine geplanten Ein-/Auszahlungen."))
+        return
+    st.markdown(_tr("finance_ui.forecast.plan_list", "#### Bestehende Plan-Items"))
+    rows = _plan_item_rows(items)
+    if rows:
+        st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
+    status_labels = {value: _tr(key, value) for value, key in _PLAN_STATUS_KEYS}
+    for item in items:
+        if item is None:
+            continue
+        item_id = _plan_field(item, "id")
+        if item_id is None:
+            continue
+        title = str(_plan_field(item, "title") or "") or f"#{item_id}"
+        with st.expander(f"{title} ({_plan_status_label(_plan_field(item, 'status'))})"):
+            caption_parts = [
+                str(_plan_field(item, "due_date") or ""),
+                _plan_kind_label(_plan_field(item, "kind")),
+                _plan_amount_label(item),
+                str(_plan_field(item, "currency") or ""),
+                f"{_tr('finance_ui.forecast.plan_col_revision', 'Rev.')} {_plan_field(item, 'revision') or ''}",
+            ]
+            st.caption("  |  ".join(part for part in caption_parts if part))
+            note_text = str(_plan_field(item, "notes") or "").strip()
+            if note_text:
+                st.caption(note_text)
+            cols = st.columns(6)
+            expected_revision = _plan_field(item, "revision")
+            for col, status in zip(cols[:4], ("active", "paused", "done", "rejected")):
+                if col.button(status_labels[status], key=f"finance_forecast_plan_status_{item_id}_{status}"):
+                    try:
+                        db.set_plan_item_status(item_id, status, expected_revision=expected_revision)
+                    except PlanRevisionConflict:
+                        st.error(_tr("finance_ui.forecast.plan_error", "Fehler: {error}", error="Revision-Konflikt. Bitte aktualisieren."))
+                        return
+                    except sqlite3.Error as exc:
+                        st.error(_tr("finance_ui.forecast.plan_error", "Fehler: {error}", error=str(exc)))
+                        return
+                    _plan_flash(_tr("finance_ui.forecast.plan_status_changed", "Status auf {status} gesetzt.", status=status_labels[status]))
+                    st.rerun()
+            if cols[4].button(_tr("finance_ui.forecast.plan_delete", "Löschen"), key=f"finance_forecast_plan_delete_{item_id}"):
+                if st.checkbox(_tr("finance_ui.forecast.plan_delete_confirm", "Löschen bestätigen"), key=f"finance_forecast_plan_delete_confirm_{item_id}"):
+                    try:
+                        db.delete_plan_item(item_id)
+                    except sqlite3.Error as exc:
+                        st.error(_tr("finance_ui.forecast.plan_error", "Fehler: {error}", error=str(exc)))
+                        return
+                    _plan_flash(_tr("finance_ui.forecast.plan_deleted", "Plan-Item gelöscht (mit „Rückgängig“ wiederherstellbar)."))
+                    st.rerun()
+            if cols[5].button(_tr("finance_ui.forecast.plan_undo", "Rückgängig"), key=f"finance_forecast_plan_undo_{item_id}"):
+                try:
+                    db.undo_plan_change(item_id)
+                except (ValueError, sqlite3.Error) as exc:
+                    st.error(_tr("finance_ui.forecast.plan_error", "Fehler: {error}", error=str(exc)))
+                    return
+                _plan_flash(_tr("finance_ui.forecast.plan_undone", "Letzte Änderung rückgängig gemacht."))
+                st.rerun()
 
 
 def _render_forecast_bills(tools: Any, iban_filter: dict) -> None:
@@ -928,7 +1272,7 @@ def _render_categorization_tab(db: FinanceDB) -> None:
                         continue
                     tx = tx_by_id.get(tx_id)
                     kind = "income" if tx and tx.amount_cents > 0 else "expense"
-                    cat_id = db.upsert_category(name=cat_name, kind=kind)
+                    cat_id = db.upsert_category(name=cat_name, kind=kind, overwrite_kind=False)
                     db.assign_category(tx_id, cat_id, source="user", confidence=1.0)
                     applied_count += 1
                     if bool(row["Als Regel"]) and tx is not None:
@@ -988,7 +1332,7 @@ def _render_categorization_tab(db: FinanceDB) -> None:
                     st.error(_tr("finance_ui.categorization.tx_not_found", "Tx-ID nicht gefunden."))
                 else:
                     kind = "income" if tx.amount_cents > 0 else "expense"
-                    cat_id = db.upsert_category(name=manual_cat, kind=kind)
+                    cat_id = db.upsert_category(name=manual_cat, kind=kind, overwrite_kind=False)
                     db.assign_category(tx.id, cat_id, source="user", confidence=1.0)
                     rules_extra = 0
                     if manual_rule:
@@ -1013,7 +1357,8 @@ def _render_budgets_tab(db: FinanceDB) -> None:
     st.caption(
         _tr(
             "finance_ui.budgets.caption",
-            "Monatliche Soll-Werte pro Kategorie. Ausgaben-Budgets sind negativ (z.B. -400 EUR fuer Lebensmittel-Limit), Einnahmen-Budgets positiv.",
+            "Monatliche Haushaltslimits in {currency}. Budgets und Istwerte sind positiv; andere Währungen werden nicht eingerechnet.",
+            currency=DEFAULT_CURRENCY,
         )
     )
     cats = db.list_categories()
@@ -1035,8 +1380,9 @@ def _render_budgets_tab(db: FinanceDB) -> None:
             key="finance_budget_month",
         )
         amount = cols[2].number_input(
-            _tr("finance_ui.budgets.amount_label", "Betrag (EUR) (signed)"),
-            value=-400.0,
+            _tr("finance_ui.budgets.amount_label", "Betrag ({currency})", currency=DEFAULT_CURRENCY),
+            min_value=0.0,
+            value=400.0,
             step=10.0,
             format="%.2f",
             key="finance_budget_amount",
@@ -1048,6 +1394,8 @@ def _render_budgets_tab(db: FinanceDB) -> None:
             cat = next((c for c in cats if c.name == cat_name), None)
             if cat is None:
                 st.error(_tr("finance_ui.budgets.category_not_found", "Kategorie nicht gefunden."))
+            elif not _valid_month(month):
+                st.error(_tr("finance_ui.validation.month", "Bitte einen gültigen Monat im Format YYYY-MM eingeben."))
             else:
                 db.upsert_budget(
                     category_id=cat.id, month=month, budget_cents=_to_cents(amount)
@@ -1068,7 +1416,7 @@ def _render_budgets_tab(db: FinanceDB) -> None:
                 "ID": b.id,
                 "Monat": b.month,
                 "Kategorie": b.category_name or "?",
-                "Budget (€)": b.budget_cents / 100.0,
+                f"Budget ({DEFAULT_CURRENCY})": b.budget_cents / 100.0,
             }
             for b in budgets
         ]
@@ -1082,6 +1430,9 @@ def _render_budgets_tab(db: FinanceDB) -> None:
         value=date.today().strftime("%Y-%m"),
         key="finance_budget_status_month",
     )
+    if not _valid_month(sel_month):
+        st.error(_tr("finance_ui.validation.month", "Bitte einen gültigen Monat im Format YYYY-MM eingeben."))
+        return
     status = db.budget_status(sel_month)
     if not status:
         st.info(_tr("finance_ui.budgets.no_data_for_month", "Keine Budget-Daten fuer {month}.", month=sel_month))
@@ -1091,9 +1442,9 @@ def _render_budgets_tab(db: FinanceDB) -> None:
             {
                 "Kategorie": s["category"],
                 "Typ": s["kind"],
-                "Budget (€)": s["budget_cents"] / 100.0,
-                "Ist (€)": s["actual_cents"] / 100.0,
-                "Verbleibend (€)": s["remaining_cents"] / 100.0,
+                f"Budget ({DEFAULT_CURRENCY})": s["budget_cents"] / 100.0,
+                f"Ist ({DEFAULT_CURRENCY})": s["actual_cents"] / 100.0,
+                f"Verbleibend ({DEFAULT_CURRENCY})": s["remaining_cents"] / 100.0,
                 "Buchungen": s["tx_count"],
             }
             for s in status
@@ -1105,8 +1456,8 @@ def _render_budgets_tab(db: FinanceDB) -> None:
 
     # Plot: Soll vs Ist je Kategorie
     fig = go.Figure()
-    fig.add_bar(name="Budget", x=df_st["Kategorie"], y=df_st["Budget (€)"], marker_color="#3498db")
-    fig.add_bar(name="Ist", x=df_st["Kategorie"], y=df_st["Ist (€)"], marker_color="#e67e22")
+    fig.add_bar(name="Budget", x=df_st["Kategorie"], y=df_st[f"Budget ({DEFAULT_CURRENCY})"], marker_color="#3498db")
+    fig.add_bar(name="Ist", x=df_st["Kategorie"], y=df_st[f"Ist ({DEFAULT_CURRENCY})"], marker_color="#e67e22")
     fig.update_layout(
         barmode="group", title=_tr("finance_ui.budgets.chart_title", "Soll vs. Ist - {month}", month=sel_month), yaxis_title=DEFAULT_CURRENCY
     )
@@ -1184,11 +1535,12 @@ def _goal_table_rows(items: Any) -> list[dict[str, Any]]:
             {
                 _tr("finance_ui.goals.col_name", "Name"): str(goal.get("name") or ""),
                 _tr("finance_ui.goals.col_account", "Konto"): str(goal.get("iban") or ""),
-                _tr("finance_ui.goals.col_target", "Ziel (€)"): goal.get("target_amount"),
-                _tr("finance_ui.goals.col_saved", "Gespart (€)"): _progress_amount(progress, "progress_cents"),
-                _tr("finance_ui.goals.col_remaining", "Offen (€)"): _progress_amount(progress, "remaining_cents"),
+                _tr("finance_ui.forecast.col_currency", "Währung"): str(goal.get("currency") or ""),
+                _tr("finance_ui.goals.col_target", "Ziel"): goal.get("target_amount"),
+                _tr("finance_ui.goals.col_saved", "Gespart"): _progress_amount(progress, "progress_cents"),
+                _tr("finance_ui.goals.col_remaining", "Offen"): _progress_amount(progress, "remaining_cents"),
                 _tr("finance_ui.goals.col_pct", "%"): progress.get("progress_pct"),
-                _tr("finance_ui.goals.col_rate", "Monatsrate (€)"): goal.get("monthly_rate"),
+                _tr("finance_ui.goals.col_rate", "Monatsrate"): goal.get("monthly_rate"),
                 _tr("finance_ui.goals.col_target_date", "Zieldatum"): str(goal.get("target_date") or ""),
                 _tr("finance_ui.goals.col_status", "Status"): _goal_status_label(goal.get("status")),
             }
@@ -1205,6 +1557,7 @@ def _candidate_table_rows(candidates: Any) -> list[dict[str, Any]]:
         rows.append(
             {
                 _tr("finance_ui.goals.candidates_col_counterparty", "Gegenseite"): str(candidate.get("counterparty") or ""),
+                _tr("finance_ui.forecast.col_currency", "Währung"): str(candidate.get("currency") or ""),
                 _tr("finance_ui.goals.candidates_col_occurrences", "Vorkommen"): candidate.get("occurrences"),
                 _tr("finance_ui.goals.candidates_col_avg", "Ø Betrag"): candidate.get("average_amount"),
                 _tr("finance_ui.goals.candidates_col_monthly", "Monats-Äquivalent"): candidate.get("monthly_equivalent"),
@@ -1386,6 +1739,7 @@ def _render_goals_create_form(tools: Any, accounts: list) -> None:
     params: dict[str, Any] = {
         "name": str(name).strip(),
         "iban": account,
+        "currency": next(a.currency for a in accounts if a.iban == account),
         "target_amount": float(target_amount),
         "status": status,
     }
@@ -1489,9 +1843,12 @@ def _render_goal_projection(tools: Any, goal: dict[str, Any]) -> None:
             key=f"finance_goals_horizon_{goal_id}",
         )
     )
-    if not st.button(
+    projection_scope = (goal_id, horizon)
+    if st.button(
         _tr("finance_ui.goals.projection_button", "📈 Projektion berechnen"), key=f"finance_goals_project_{goal_id}"
     ):
+        st.session_state[f"finance_goals_projection_request_{goal_id}"] = projection_scope
+    if st.session_state.get(f"finance_goals_projection_request_{goal_id}") != projection_scope:
         return
     res = tools.project_goal({"goal_id": goal_id, "horizon_months": horizon})
     if not res.get("success"):
@@ -1513,7 +1870,7 @@ def _render_goal_projection(tools: Any, goal: dict[str, Any]) -> None:
         st.info(text)
 
     if projection.get("rate") is not None:
-        st.caption(f"{_tr('finance_ui.goals.col_rate', 'Monatsrate (€)')}: {_fmt_money(projection.get('rate'))}")
+        st.caption(f"{_tr('finance_ui.goals.col_rate', 'Monatsrate')}: {_fmt_money(projection.get('rate'))} {goal.get('currency') or ''}")
     if projection.get("required_rate_for_target_date") is not None:
         st.caption(
             _tr(
@@ -1589,7 +1946,7 @@ def _render_goal_contributions(tools: Any, goal: dict[str, Any]) -> None:
         if st.button(
             "✖",
             key=f"finance_goals_unassign_{goal_id}_{tx_id}",
-            help=_tr("finance_ui.goals.unassign_button", "Zuordnung aufheben"),
+            help=f"{_tr('finance_ui.goals.unassign_button', 'Zuordnung aufheben')} #{tx_id}: {_tx_field(c, 'booking_date')} / {_tx_field(c, 'counterparty')}",
         ):
             res = tools.unassign_goal_contribution({"goal_id": goal_id, "transaction_id": tx_id})
             if res.get("success"):
@@ -1605,10 +1962,7 @@ def _render_goal_assign(db: FinanceDB, tools: Any, goal: dict[str, Any]) -> None
     if not res.get("success"):
         st.error(_tr("finance_ui.goals.assign_error", "Zuordnung fehlgeschlagen: {error}", error=res.get("error")))
         return
-    assigned_ids: set[int] = set()
-    for c in res.get("contributions") or []:
-        if isinstance(c, dict) and c.get("transaction_id") is not None:
-            assigned_ids.add(int(c["transaction_id"]))
+    assigned_ids = set(db.assigned_transaction_ids())
 
     iban = str(goal.get("iban") or "").strip()
     account = next((a for a in db.list_accounts() if str(a.iban or "").strip() == iban), None)
@@ -1623,16 +1977,17 @@ def _render_goal_assign(db: FinanceDB, tools: Any, goal: dict[str, Any]) -> None
         st.info(_tr("finance_ui.goals.assign_empty", "Keine freien Buchungen auf diesem Konto."))
         return
 
-    labels = [_transaction_option_label(tx) for tx in options]
-    label = st.selectbox(
+    options_by_id = {tx.id: tx for tx in options}
+    selected_id = st.selectbox(
         _tr("finance_ui.goals.assign_select", "Buchung"),
-        labels,
+        list(options_by_id),
+        format_func=lambda tx_id: f"#{tx_id} · {_transaction_option_label(options_by_id[tx_id])}",
         key=f"finance_goals_assign_select_{goal_id}",
     )
     if st.button(
         _tr("finance_ui.goals.assign_button", "➕ Zuordnen"), key=f"finance_goals_assign_btn_{goal_id}"
     ):
-        tx = options[labels.index(label)]
+        tx = options_by_id[selected_id]
         res = tools.assign_goal_contribution({"goal_id": goal_id, "transaction_id": tx.id})
         if res.get("success"):
             st.success(
@@ -1655,11 +2010,20 @@ def _render_goals_candidates(tools: Any, accounts: list) -> None:
         [a.iban for a in accounts],
         key="finance_goals_cand_iban",
     )
-    if not st.button(
+    if not iban:
+        return
+    cache_key = "finance_goals_candidates_result"
+    if st.button(
         _tr("finance_ui.goals.candidates_button", "🔍 Kandidaten ermitteln"), key="finance_goals_cand_run"
     ):
+        st.session_state[cache_key] = {
+            "iban": iban,
+            "result": tools.suggest_goal_candidates({"iban": iban, "min_occurrences": 3}),
+        }
+    cached = st.session_state.get(cache_key)
+    if not cached or cached.get("iban") != iban:
         return
-    res = tools.suggest_goal_candidates({"iban": iban, "min_occurrences": 3})
+    res = cached["result"]
     if not res.get("success"):
         st.error(_tr("finance_ui.goals.candidates_error", "Kandidaten konnten nicht ermittelt werden: {error}", error=res.get("error")))
         return
@@ -1679,6 +2043,7 @@ def _render_goals_candidates(tools: Any, accounts: list) -> None:
         ):
             continue
         params = _candidate_goal_params(candidate, iban)
+        params["currency"] = candidate.get("currency") or next(a.currency for a in accounts if a.iban == iban)
         if not params["name"]:
             st.error(_tr("finance_ui.goals.name_required", "Name und Konto sind erforderlich."))
             continue
@@ -1687,6 +2052,7 @@ def _render_goals_candidates(tools: Any, accounts: list) -> None:
             continue
         created = tools.upsert_goal(params)
         if created.get("success"):
+            st.session_state.pop(cache_key, None)
             st.success(
                 _tr(
                     "finance_ui.goals.candidates_create_success",
@@ -1718,6 +2084,9 @@ def _render_transactions_tab(db: FinanceDB) -> None:
     start = col1.date_input(_tr("finance_ui.transactions.date_from", "Von"), value=None, key="finance_tx_start")
     end = col2.date_input(_tr("finance_ui.transactions.date_to", "Bis"), value=None, key="finance_tx_end")
     counterparty = col3.text_input(_tr("finance_ui.transactions.counterparty_filter", "Gegenseite/Zweck enthaelt"), key="finance_tx_filter")
+    if isinstance(start, date) and isinstance(end, date) and start > end:
+        st.error(_tr("finance_ui.validation.date_range", "Das Von-Datum muss vor dem Bis-Datum liegen."))
+        return
 
     rows = db.query_transactions(
         account_id=account_id,

@@ -371,10 +371,7 @@ class TestCashFlowForecast:
         result = monarch_tools.cash_flow_forecast(self._params())
         account_id = monarch_db.find_account_id_by_iban(CH_IBAN)
         assert account_id is not None
-        # Haushalts-Perspektive: der Startsaldo der Guthaben-Kurve rechnet
-        # verlinkte interne Transfers netto heraus (Fixture ohne Transfers:
-        # identisch zu balance_at).
-        expected_start = monarch_db.effective_balance_at(account_id, REF)["balance"]
+        expected_start = monarch_db.balance_at(account_id, REF)["balance"]
 
         assert result["balance"] is not None
         assert result["balance"]["start_balance"] == pytest.approx(expected_start, abs=0.02)
@@ -432,7 +429,7 @@ class TestCashFlowForecast:
         assert after["balance"] == before["balance"]
 
     def test_transfer_exclusion(self, monarch_db, monarch_tools):
-        """Verlinkter Transfer (CHF-out / EUR-in) wird aus der Prognose entfernt."""
+        """Transfers affect the bank balance but not the recurring cashflow fit."""
         before = monarch_tools.cash_flow_forecast(self._params())
         account_id = monarch_db.find_account_id_by_iban(CH_IBAN)
         assert account_id is not None
@@ -469,7 +466,16 @@ class TestCashFlowForecast:
         monarch_db.link_transfer(outgoing_tx_id=outgoing[0].id, incoming_tx_id=incoming[0].id)
 
         linked = monarch_tools.cash_flow_forecast(self._params())
-        assert linked["results"] == before["results"]
+        assert linked["balance"]["start_balance"] == pytest.approx(
+            monarch_db.balance_at(account_id, REF)["balance"]
+        )
+        assert linked["balance"]["start_balance"] == pytest.approx(before["balance"]["start_balance"] - 500)
+        for original, adjusted in zip(before["results"][0]["months"], linked["results"][0]["months"]):
+            for key in original:
+                if key.startswith("balance"):
+                    assert adjusted[key] == pytest.approx(original[key] - 500)
+                else:
+                    assert adjusted[key] == original[key]
 
 
 class TestSubscriptionAudit:

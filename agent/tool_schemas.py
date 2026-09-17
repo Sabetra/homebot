@@ -563,7 +563,7 @@ def get_tool_schemas() -> List[Dict[str, Any]]:
                 "name": "finance_aggregate",
                 "description": (
                     "Aggregiert Einnahmen/Ausgaben/Net-Saldo aus der Finanz-DB "
-                    "nach Monat, Konto, Gegenseite oder Kategorie. WANN VERWENDEN: "
+                    "nach Monat, Konto, Gegenseite oder Kategorie, immer waehrungsgetrennt. WANN VERWENDEN: "
                     "Auswertungen wie 'Wie viel habe ich im Q1 ausgegeben?', "
                     "'Top-5 Empfnger nach Volumen', 'Monatliche Sparquote'."
                 ),
@@ -577,6 +577,7 @@ def get_tool_schemas() -> List[Dict[str, Any]]:
                         "iban": {"type": "string"},
                         "start_date": {"type": "string"},
                         "end_date": {"type": "string"},
+                        "currency": {"type": "string", "description": "Optionaler ISO-Waehrungsfilter, z.B. CHF oder EUR"},
                     },
                     "required": ["group_by"],
                 },
@@ -766,9 +767,9 @@ def get_tool_schemas() -> List[Dict[str, Any]]:
             "function": {
                 "name": "finance_set_budget",
                 "description": (
-                    "Setzt ein monatliches Budget für eine Kategorie (signed: "
-                    "expenses negativ, z.B. -500.00 für 500€ Limit). WANN "
-                    "VERWENDEN: User sagt 'Budget für Lebensmittel im März = 400€'."
+                    "Setzt ein positives monatliches Haushaltsbudget in CHF fuer eine Kategorie. "
+                    "Keine Waehrungsumrechnung. WANN VERWENDEN: User sagt "
+                    "'Budget fuer Lebensmittel im Maerz = 400 CHF'."
                 ),
                 "parameters": {
                     "type": "object",
@@ -777,7 +778,7 @@ def get_tool_schemas() -> List[Dict[str, Any]]:
                         "month": {"type": "string", "description": "YYYY-MM"},
                         "amount": {
                             "type": "number",
-                            "description": "Signed: negativ für expenses, positiv für income",
+                            "description": "Positives Limit in CHF; negative Altwerte werden als Betrag normalisiert",
                         },
                         "kind": {
                             "type": "string",
@@ -793,7 +794,7 @@ def get_tool_schemas() -> List[Dict[str, Any]]:
             "function": {
                 "name": "finance_budget_status",
                 "description": (
-                    "Soll/Ist-Vergleich aller Kategorien für einen Monat. "
+                    "Soll/Ist-Vergleich aller Kategorien fuer einen Monat in CHF. Andere Waehrungen sind ausgeschlossen. "
                     "Liefert pro Kategorie budget, actual, remaining. WANN "
                     "VERWENDEN: 'Wie steht mein Budget im April?'."
                 ),
@@ -813,6 +814,7 @@ def get_tool_schemas() -> List[Dict[str, Any]]:
                 "description": (
                     "Vollständiger Monatsbericht: Income/Expense/Net, "
                     "Kategorienverteilung, Top-10-Counterparties, Budget-Status. "
+                    "Bei mehreren Waehrungen currency angeben; Budgets gelten nur in CHF. "
                     "WANN VERWENDEN: User sagt 'Monatsauswertung März' oder "
                     "'Wie war mein letzter Monat?'."
                 ),
@@ -824,6 +826,7 @@ def get_tool_schemas() -> List[Dict[str, Any]]:
                             "type": "string",
                             "description": "Optional: nur ein Konto",
                         },
+                        "currency": {"type": "string", "description": "ISO-Waehrung, bei gemischten Daten erforderlich"},
                     },
                     "required": ["month"],
                 },
