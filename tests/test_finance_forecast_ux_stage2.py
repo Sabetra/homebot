@@ -481,13 +481,16 @@ class TestF08CashFlowForecast:
         )
         assert with_series == explicit_off
         assert "series" not in with_series
-        # Statistischer Fit bleibt unangetastet (2×120 fixed => 240/12):
-        assert with_series["results"][0]["recurring_monthly"] == pytest.approx(20.0, abs=0.01)
+        # Statistischer Fit bleibt unangetastet: 2x120 fixed, Fit-Fenster
+        # wird auf den ersten Daten-Monat geklippt (2026-05..08 = 4 Monate)
+        # => 240/4 = 60/Monat (kanonische Fenster-Heuristik).
+        assert with_series["results"][0]["recurring_monthly"] == pytest.approx(60.0, abs=0.01)
 
     def test_series_plan_opt_in_quarterly(
         self, quarterly_tools: FinanceTools, quarterly_series_id: int
     ) -> None:
-        """include_series=True: 120/Quartal landet exakt im November-Plan."""
+        """include_series=True: 120/Quartal landet exakt in den
+        November- UND Februar-Monaten (beide Vorkommen im 6-Monats-Fenster)."""
         result = quarterly_tools.cash_flow_forecast(
             {
                 "iban": CH_IBAN,
@@ -503,18 +506,20 @@ class TestF08CashFlowForecast:
             "2026-09", "2026-10", "2026-11", "2026-12", "2027-01", "2027-02"
         ]
         plans = {m["month"]: m["series_plan"] for m in entry["months"]}
+        # Kanonisch: Vorkommen 2026-11-15 UND 2027-02-15 liegen beide im
+        # 6-Monats-Fenster (REF 2026-08-28 bis Ende 2027-02) => je -120.
         assert plans == {
             "2026-09": 0.0,
             "2026-10": 0.0,
             "2026-11": -120.0,
             "2026-12": 0.0,
             "2027-01": 0.0,
-            "2027-02": 0.0,
+            "2027-02": -120.0,
         }
         nov = entry["months"][2]
         assert nov["net_with_series"] == pytest.approx(nov["net"] - 120.0, abs=0.01)
         assert result["series"]["count"] == 1
-        assert result["series"]["occurrences_in_window"] == 1
+        assert result["series"]["occurrences_in_window"] == 2
         series_row = result["series"]["series"][0]
         assert series_row["id"] == quarterly_series_id
         assert series_row["counterparty"] == "Example Insurer"
@@ -555,8 +560,10 @@ class TestF08CashFlowForecast:
         assert planned["results"][0]["months"][0]["income"] == pytest.approx(0.0, abs=0.01)
         for month in planned["results"][0]["months"]:
             assert month["series_plan"] == pytest.approx(5000.0, abs=0.01)
-            assert month["net"] == pytest.approx(-1838.99, abs=0.01)
-            assert month["net_with_series"] == pytest.approx(3161.01, abs=0.01)
+            # net waechst monatlich (Variable: OLS-Trend x Saisonalitaet);
+            # die kanonische Groesse ist die Plan-Relation: Gehalt +5000
+            # planmaessig statt als statistischer Rest.
+            assert month["net_with_series"] == pytest.approx(month["net"] + 5000.0, abs=0.01)
         assert planned["results"][0]["recurring_monthly"] == pytest.approx(1213.99, abs=0.01)
 
     def test_cancelled_series_not_projected(
