@@ -1366,12 +1366,100 @@ class FinanceTools:
                 else "Manual-Plan: keine aktiven Plan-Items ab Referenzdatum"
             )
 
+        series_overlay: Optional[Dict[str, Any]] = None
+        series_net_by_currency_month: Dict[str, Dict[str, int]] = {}
+        series_excluded_pairs: set = set()
+        if include_series:
+            # F08 (AP2 S2): bestaetigte aktive Serien bilden den
+            # deterministischen Plan (Prompt 5.2: kanonische
+            # Planvorkommen-Folge) statt statistisch gefitteter
+            # Historien-Monatsraten. Ausnahmen (skip/move/amount) und
+            # Geltung (effective_to = Kuenigung) wirken exakt einmal;
+            # Einnahmen-Serien machen z. B. das Gehalt planbar
+            # (Vorzeichen via direction). Die Paare ALLER modellierten
+            # Serien (auch paused/ended) fallen aus dem statistischen
+            # Rest heraus: keine Doppelzaehlung, kuendierte Veraetraege
+            # werden nicht in die Zukunft projiziert.
+            plan_relevant = self._plan_relevant_series(iban, reference)
+            series_excluded_pairs = self._series_scope_pairs(iban)
+            horizon_key = self._next_month_key(reference_key, forecast_months)
+            horizon_end = date(
+                horizon_key[0],
+                horizon_key[1],
+                calendar.monthrange(horizon_key[0], horizon_key[1])[1],
+            )
+            included_series: List[Any] = []
+            occurrences_in_window = 0
+            for series in plan_relevant:
+                included_series.append(series)
+                for occ in self._series_window_occurrences(series, reference, horizon_end):
+                    occurrences_in_window += 1
+                    month_label = occ.date[:7]
+                    cents = int(occ.amount_cents) * (
+                        1 if occ.direction == "income" else -1
+                    )
+                    cur_map = series_net_by_currency_month.setdefault(
+                        series.currency, {}
+                    )
+                    cur_map[month_label] = cur_map.get(month_label, 0) + cents
+            series_overlay = {
+                "count": len(included_series),
+                "series": [
+                    {
+                        "id": series.id,
+                        "iban": series.iban,
+                        "currency": series.currency,
+                        "direction": series.direction,
+                        "cadence": series.cadence,
+                        "period_n": int(series.period_n),
+                        "anchor_day": int(series.anchor_day),
+                        "amount": round(_from_cents(int(series.amount_cents)), 2),
+                        "counterparty": series.counterparty,
+                        "status": series.status,
+                        "source": series.source,
+                        "effective_from": series.effective_from,
+                        "effective_to": series.effective_to,
+                    }
+                    for series in included_series
+                ],
+                "occurrences_in_window": occurrences_in_window,
+            }
+            notes.append(
+                "Series-Overlay: bestaetigte aktive Serien als "
+                "planmaessiger Netto-Betrag (Einnahmen +, Ausgaben -) "
+                "eingerechnet; zugehoerige Buchungen aus dem "
+                "statistischen Rest ausgeschlossen (keine Doppelzaehlung)"
+                if included_series
+                else "Series-Overlay: keine aktiven Serien am Referenzdatum"
+            )
+
         results = []
         for currency in currencies:
-            fit_state = self._fit_currency_series(facts, currency, reference_key, lookback_months)
+            fit_state = self._fit_currency_series(
+                facts, currency, reference_key, lookback_months,
+                exclude_pairs=series_excluded_pairs,
+            )
             if fit_state is None:
-                notes.append(f"{currency}: keine Buchungen im Fit-Fenster")
-                continue
+                if include_series and currency in series_net_by_currency_month:
+                    # Reine Plan-Waehrung (keine Buchungen im
+                    # Fit-Fenster): Null-Fit, den Plan tragen die Serien
+                    # vollstaendig (F08).
+                    fit_state = {
+                        "n": 0,
+                        "var": (0.0, 0.0, {m: 1.0 for m in range(1, 13)}),
+                        "inc": (0.0, 0.0, {m: 1.0 for m in range(1, 13)}),
+                        "var_residuals": [],
+                        "inc_residuals": [],
+                        "recurring_monthly": 0.0,
+                        "seasonality_applied": False,
+                    }
+                    notes.append(
+                        f"{currency}: reine Serien-Planung (keine Buchungen im "
+                        "Fit-Fenster)"
+                    )
+                else:
+                    notes.append(f"{currency}: keine Buchungen im Fit-Fenster")
+                    continue
             months = self._project_months(
                 fit_state, reference_key, forecast_months, confidence, balance_start
             )
@@ -1403,6 +1491,24 @@ class FinanceTools:
                         month["balance_with_plan"] = round(month["balance"] + cum, 2)
                         month["balance_low_with_plan"] = round(month["balance_low"] + cum, 2)
                         month["balance_high_with_plan"] = round(month["balance_high"] + cum, 2)
+            if include_series:
+                cur_series = series_net_by_currency_month.get(currency, {})
+                cumulative_cents = 0
+                for month in months:
+                    month_cents = cur_series.get(month["month"], 0)
+                    cumulative_cents += month_cents
+                    series_net = round(_from_cents(month_cents), 2)
+                    month["series_plan"] = series_net
+                    month["net_with_series"] = round(month["net"] + series_net, 2)
+                    if "balance" in month:
+                        cum = round(_from_cents(cumulative_cents), 2)
+                        month["balance_with_series"] = round(month["balance"] + cum, 2)
+                        month["balance_low_with_series"] = round(
+                            month["balance_low"] + cum, 2
+                        )
+                        month["balance_high_with_series"] = round(
+                            month["balance_high"] + cum, 2
+                        )
             results.append(
                 {
                     "currency": currency,
@@ -1429,6 +1535,11 @@ class FinanceTools:
             # mit 0.0 -- stabiles Schema fuer UI/Tests).
             payload["plan"] = plan_overlay
             payload["rest_month"] = rest_month
+        if include_series:
+            # Additive Opt-in-Keys (F08, AP2 S2): Serien-Plan und dessen
+            # Details; ohne include_series tauchen diese Keys nicht auf
+            # (byte-kompatibles Default).
+            payload["series"] = series_overlay
         if balance_start is not None:
             balance_payload: Dict[str, Any] = {
                 "start_balance": round(balance_start, 2),
