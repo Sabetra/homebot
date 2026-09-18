@@ -38,6 +38,7 @@ from finance.series_engine import (
     SeriesSpec,
     detect_candidates,
     expand_series,
+    next_occurrences,
 )
 
 logger = logging.getLogger(__name__)
@@ -792,6 +793,149 @@ class FinanceTools:
         cat = (category or "").casefold()
         return any(hint in cat for hint in SUBSCRIPTION_CATEGORY_HINTS)
 
+    # ------------------------------------------------------------------
+    # Forecast-UX AP2 S2 (F01/F02/F08): additive Serien-Logik auf der
+    # gemeinsamen Engine (finance/series_engine.py, Prompt 5.2: kanonische
+    # Planvorkommen-Folge). Alle BESTEHENDEN Rueckgabe-Keys von
+    # upcoming_bills / subscription_audit / cash_flow_forecast bleiben
+    # unveraendert; F08 ist strikt opt-in (include_series=False Default,
+    # byte-kompatibel).
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _series_pair_key(currency: Any, counterparty: Any) -> Tuple[str, str]:
+        """Stabile (Waehrung, Gegenpartei)-Bindung, case-/ws-insensitiv (F03)."""
+        return (
+            str(currency or "").strip().upper(),
+            " ".join(str(counterparty or "").split()).casefold(),
+        )
+
+    def _active_expense_series(self, iban: Optional[str]) -> List[Any]:
+        """Bestaetigte aktive Ausgabenserien (status='active'), optional per IBAN."""
+        return [
+            series
+            for series in self._db.list_series(status="active", iban=iban or None)
+            if series.direction == "expense"
+        ]
+
+    def _plan_relevant_series(self, iban: Optional[str], reference: date) -> List[Any]:
+        """Aktive Serien, die am Referenzdatum noch gelten (F08).
+
+        ``effective_to`` in der Vergangenheit = kuendigungsbedingt beendet:
+        nicht mehr Teil des Plans (Prompt 5.1).
+        """
+        ref_iso = reference.isoformat()
+        return [
+            series
+            for series in self._db.list_series(status="active", iban=iban or None)
+            if series.effective_to is None or series.effective_to >= ref_iso
+        ]
+
+    def _series_scope_pairs(self, iban: Optional[str]) -> set:
+        """(Waehrung, Gegenpartei)-Paare ALLER modellierten Serien (F08).
+
+        Active/paused/ended: modellisierte Veraetraege gehoeren nicht in
+        den statistischen Rest -- auch kuendierte (effective_to) werden
+        nicht in die Zukunft projiziert.
+        """
+        return {
+            self._series_pair_key(series.currency, series.counterparty)
+            for series in self._db.list_series(iban=iban or None)
+        }
+
+    @staticmethod
+    def _series_spec(series: Any) -> SeriesSpec:
+        """RecurringSeries (DAO) -> SeriesSpec (Engine)."""
+        return SeriesSpec(
+            key=f"series:{series.id}",
+            direction=series.direction,
+            cadence=series.cadence,
+            period_n=int(series.period_n),
+            anchor_day=int(series.anchor_day),
+            anchor_date=series.anchor_date,
+            amount_cents=int(series.amount_cents),
+            effective_from=series.effective_from,
+            effective_to=series.effective_to,
+            counterparty=series.counterparty or "",
+            currency=series.currency,
+            iban=series.iban,
+        )
+
+    def _series_exceptions_map(self, series: Any) -> Dict[str, SeriesException]:
+        """DAO-Ausnahmen -> Engine-Ausnahmen (Key = Original-Termin)."""
+        spec_key = f"series:{series.id}"
+        return {
+            exc.original_due_date: SeriesException(
+                key=spec_key,
+                original_due_date=exc.original_due_date,
+                exception_type=exc.exception_type,
+                new_due_date=exc.new_due_date,
+                amount_cents=exc.amount_cents,
+            )
+            for exc in self._db.list_series_exceptions(series.id)
+        }
+
+    def _series_window_occurrences(
+        self, series: Any, window_start: date, window_end: date
+    ) -> List[Any]:
+        """Alle Planvorkommen der Serie in [window_start, window_end].
+
+        Die Engine wendet Geltung (effective_from/to) und Ausnahmen
+        (skip/move/amount) exakt einmal an (T11).
+        """
+        return expand_series(
+            self._series_spec(series),
+            exceptions=self._series_exceptions_map(series),
+            window_start=window_start.isoformat(),
+            window_end=window_end.isoformat(),
+        )
+
+    @staticmethod
+    def _cadence_periods_per_year(cadence: str, period_n: int) -> float:
+        """Zahlungen pro Jahr eines Rhythmus (F02-Aequivalente)."""
+        if cadence == "monthly":
+            return 12.0
+        if cadence == "n_months":
+            return 12.0 / period_n
+        if cadence == "yearly":
+            return 1.0
+        if cadence == "weekly":
+            return 52.0
+        if cadence == "n_weeks":
+            return 52.0 / period_n
+        raise ValueError(f"unknown cadence {cadence!r}")
+
+    @classmethod
+    def _cadence_equivalents(
+        cls, cadence: str, period_n: int, amount: float
+    ) -> Tuple[float, float]:
+        """(Monats-, Jahres-Äquivalent) eines Zahlungsbetrags (F02).
+
+        120/Quartal (n_months 3) => (40.0, 480.0); 120/Monat => (120.0, 1440.0).
+        """
+        annual = round(amount * cls._cadence_periods_per_year(cadence, period_n), 2)
+        return round(annual / 12.0, 2), annual
+
+    @classmethod
+    def _anchor_dates_in_window(
+        cls, reference: date, window_end: date, anchor_day: int
+    ) -> List[date]:
+        """Alle Anker-Fälligkeiten in [reference, window_end] (F01-Heuristik).
+
+        Reuse der Clamp-Semantik von _next_due_on_or_after (Anker 29-31
+        am Monatsletzten); die erste Fälligkeit ist exakt die bisherige
+        next_due-Logik, die Folgenden sind die Folgemonate.
+        """
+        out: List[date] = []
+        cursor = reference
+        for _ in range(240):
+            due = cls._next_due_on_or_after(cursor, anchor_day)
+            if due > window_end:
+                break
+            out.append(due)
+            cursor = due + timedelta(days=1)
+        return out
+
     def upcoming_bills(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Deterministischer Fälligkeits-Kalender für kommende Zahlungen.
 
@@ -830,6 +974,34 @@ class FinanceTools:
 
         window_end = reference + timedelta(days=days_ahead)
         bills = []
+        # F01 (AP2 S2): echter Faelligkeits-Kalender -- nicht nur der
+        # naechste Termin je Gruppe, sondern ALLE Vorkommen im Fenster.
+        # Bestaetigte Serien liefern die exakte Expansion (Rhythmus/
+        # Ausnahmen/Geltung); ihre (Waehrung, Gegenpartei)-Paare bleiben
+        # der Heuristik vorenthalten (keine Doppelzaehlung). Die
+        # Bestands-Keys (bills/total_in_window) bleiben unveraendert.
+        active_expense_series = self._active_expense_series(iban)
+        covered_series_pairs = {
+            self._series_pair_key(series.currency, series.counterparty)
+            for series in active_expense_series
+        }
+        series_occurrences: List[Dict[str, Any]] = []
+        for series in active_expense_series:
+            for occ in self._series_window_occurrences(series, reference, window_end):
+                series_occurrences.append(
+                    {
+                        "date": occ.date,
+                        "original_date": occ.original_date,
+                        "amount": round(_from_cents(int(occ.amount_cents)), 2),
+                        "currency": series.currency,
+                        "counterparty": series.counterparty,
+                        "iban": series.iban,
+                        "source": "series",
+                        "series_id": series.id,
+                        "exception": occ.exception,
+                    }
+                )
+        heuristic_occurrences: List[Dict[str, Any]] = []
         for group in groups:
             counterparty = group["counterparty"]
             expense_dates = sorted(
@@ -843,6 +1015,21 @@ class FinanceTools:
             next_due = self._next_due_on_or_after(reference, anchor_day)
             if next_due > window_end:
                 continue
+            if (
+                self._series_pair_key(group["currency"], group["counterparty"])
+                not in covered_series_pairs
+            ):
+                for due in self._anchor_dates_in_window(reference, window_end, anchor_day):
+                    heuristic_occurrences.append(
+                        {
+                            "date": due.isoformat(),
+                            "original_date": due.isoformat(),
+                            "amount": group["average_expense"],
+                            "currency": group["currency"],
+                            "counterparty": counterparty,
+                            "source": "heuristic",
+                        }
+                    )
             category = next(
                 (fact["category"] for fact in facts if fact["counterparty"] == counterparty), ""
             )
@@ -863,6 +1050,16 @@ class FinanceTools:
         bills.sort(key=lambda bill: (bill["next_due"], bill["counterparty"]))
         currencies = {bill["currency"] for bill in bills}
         single_currency = currencies.pop() if len(currencies) == 1 else None
+        window_occurrences = series_occurrences + heuristic_occurrences
+        window_occurrences.sort(
+            key=lambda occ: (occ["date"], occ["counterparty"] or "")
+        )
+        occurrence_currencies = {occ["currency"] for occ in window_occurrences}
+        single_occurrence_currency = (
+            occurrence_currencies.pop()
+            if len(occurrence_currencies) == 1
+            else None
+        )
         return {
             "success": True,
             "method": "recurring_projection",
@@ -873,6 +1070,13 @@ class FinanceTools:
             "bills": bills,
             "total_in_window": (
                 round(sum(bill["amount"] for bill in bills), 2) if single_currency else None
+            ),
+            "window_occurrence_count": len(window_occurrences),
+            "window_occurrences": window_occurrences,
+            "window_bills_total": (
+                round(sum(occ["amount"] for occ in window_occurrences), 2)
+                if single_occurrence_currency
+                else None
             ),
         }
 
@@ -910,6 +1114,18 @@ class FinanceTools:
         (Kennzeichnung balance.start_balance_source = "manual").
         Defaults bleiben unveraendert: ohne die Opt-ins tauchen diese
         Keys nicht auf (byte-kompatibles Phase-1-Verhalten).
+
+        include_series=True (Forecast UX AP2 S2, F08) rechnet bestaetigte
+        aktive Serien als deterministischen Plan ein: pro Monat
+        series_plan/net_with_series/balance_with_series (Einnahmen +,
+        Ausgaben -; Ausnahmen und Kuenigungen exakt einmal) und
+        payload.series (count/series/occurrences_in_window). Die
+        (Waehrung, Gegenpartei)-Paare aller modellierten Serien (auch
+        paused/ended) fallen aus dem statistischen Rest (recurring/
+        variable/income-Fit) heraus -- keine Doppelzaehlung; Gehalt und
+        kuendierte Veraetraege sind damit planbar bzw. verschwinden
+        korrekt. Opt-in, Default False: ohne den Parameter bleiben
+        Ausgabe und Fit byte-kompatibel zur Manual-Plan-Phase.
         """
         try:
             reference = self._parse_reference_date(params.get("reference_date"))
@@ -935,6 +1151,7 @@ class FinanceTools:
         include_balance = bool(params.get("include_balance", True))
         include_goals = bool(params.get("include_goals", False))
         include_manual_plan = bool(params.get("include_manual_plan", False))
+        include_series = bool(params.get("include_series", False))
         manual_start_balance: Optional[float] = None
         if params.get("manual_start_balance") is not None:
             try:
@@ -1865,6 +2082,7 @@ class FinanceTools:
         currency: str,
         reference_key: Tuple[int, int],
         lookback_months: int,
+        exclude_pairs: set = frozenset(),
     ) -> Optional[Dict[str, Any]]:
         """Waehrungs-Monatsreihen in recurring/variable/Einnahmen zerlegen und fitten.
 
@@ -1872,8 +2090,19 @@ class FinanceTools:
         deterministische Plan; variable Wiederkehrende (z. B.
         Lebensmittel) gehoren in den stochastischen Rest.
         Liefert None, wenn im Fit-Fenster keine Buchungen existieren.
+
+        ``exclude_pairs`` (F08, AP2 S2): (Waehrung, Gegenpartei)-Paare
+        (via _series_pair_key), die durch bestaetigte Serien planmaessig
+        getragen werden und aus dem statistischen Rest herausfallen --
+        keine Doppelzaehlung. Default leer -> Verhalten unveraendert.
         """
-        currency_facts = [fact for fact in facts if fact["currency"] == currency]
+        currency_facts = [
+            fact
+            for fact in facts
+            if fact["currency"] == currency
+            and self._series_pair_key(fact["currency"], fact["counterparty"])
+            not in exclude_pairs
+        ]
         expense_pairs = self._expense_recurring_pairs(
             currency_facts, min_occurrences=2, fixed_only=True
         )
@@ -2042,6 +2271,74 @@ class FinanceTools:
                     "subscription_like": self._is_subscription_like(counterparty, category),
                 }
             )
+        # F02 (AP2 S2): Abo-Monatsaequivalent != Betrag pro Zahlung.
+        # Bestaetigte Serien liefern exakte Rhythmus-Aequivalente
+        # (120/Quartal => 40/Monat, 480/Jahr) + naechste echte
+        # Faelligkeit (Ausnahmen exakt einmal). Unbestaetigte Gruppen
+        # tragen cadence=None (zwei Beobachtungen allein beweisen keinen
+        # Rhythmus). Alle Bestands-Keys bleiben unveraendert.
+        series_by_pair: Dict[Tuple[str, str], List[Any]] = {}
+        for series in self._active_expense_series(iban):
+            series_by_pair.setdefault(
+                self._series_pair_key(series.currency, series.counterparty), []
+            ).append(series)
+        confirmed_count = 0
+        series_monthly_total = 0.0
+        series_annual_total = 0.0
+        for audit in audits:
+            matching = series_by_pair.get(
+                self._series_pair_key(audit["currency"], audit["counterparty"]), []
+            )
+            if not matching:
+                audit["cadence"] = None
+                audit["period_n"] = None
+                audit["payment_per_period"] = None
+                audit["monthly_equivalent"] = None
+                audit["annual_equivalent"] = None
+                audit["next_due_date"] = None
+                audit["series_ids"] = []
+                continue
+            confirmed_count += 1
+            monthly_equivalent = 0.0
+            annual_equivalent = 0.0
+            payment_per_period = 0.0
+            series_ids: List[int] = []
+            next_due: Optional[str] = None
+            for series in matching:
+                amount = round(_from_cents(int(series.amount_cents)), 2)
+                monthly_equivalent += self._cadence_equivalents(
+                    series.cadence, int(series.period_n), amount
+                )[0]
+                annual_equivalent += self._cadence_equivalents(
+                    series.cadence, int(series.period_n), amount
+                )[1]
+                payment_per_period += amount
+                series_ids.append(series.id)
+                for occ in next_occurrences(
+                    self._series_spec(series),
+                    1,
+                    reference.isoformat(),
+                    self._series_exceptions_map(series),
+                ):
+                    if next_due is None or occ.date < next_due:
+                        next_due = occ.date
+            audit["cadence"] = (
+                matching[0].cadence
+                if len({s.cadence for s in matching}) == 1
+                else "mixed"
+            )
+            audit["period_n"] = (
+                int(matching[0].period_n)
+                if len({(s.cadence, s.period_n) for s in matching}) == 1
+                else None
+            )
+            audit["payment_per_period"] = round(payment_per_period, 2)
+            audit["monthly_equivalent"] = round(monthly_equivalent, 2)
+            audit["annual_equivalent"] = round(annual_equivalent, 2)
+            audit["next_due_date"] = next_due
+            audit["series_ids"] = sorted(series_ids)
+            series_monthly_total += audit["monthly_equivalent"]
+            series_annual_total += audit["annual_equivalent"]
         audits.sort(key=lambda item: (-item["monthly_cost"], item["counterparty"]))
         single_currency = next(
             (item["currency"] for item in audits if len({a["currency"] for a in audits}) == 1),
@@ -2059,6 +2356,13 @@ class FinanceTools:
             ),
             "currency": single_currency,
             "groups": audits,
+            "confirmed_count": confirmed_count,
+            "series_monthly_equivalent": (
+                round(series_monthly_total, 2) if single_currency else None
+            ),
+            "series_annual_equivalent": (
+                round(series_annual_total, 2) if single_currency else None
+            ),
         }
 
     def set_goal_status(self, params: Dict[str, Any]) -> Dict[str, Any]:
