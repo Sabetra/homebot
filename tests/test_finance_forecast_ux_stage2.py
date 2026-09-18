@@ -249,15 +249,17 @@ class TestF01UpcomingBills:
         )
         assert result["success"] is True
         occ = result["window_occurrences"]
-        assert [(o["due_date"], o["counterparty"]) for o in occ] == [
+        assert [(o["date"], o["counterparty"]) for o in occ] == [
             ("2026-09-03", "Example Landlord"),
             ("2026-09-10", "Example Grocer"),
             ("2026-09-12", "Netflix"),
+            ("2026-10-03", "Example Landlord"),
+            ("2026-10-10", "Example Grocer"),
             ("2026-10-12", "Netflix"),
         ]
-        assert result["window_occurrence_count"] == 4
+        assert result["window_occurrence_count"] == 6
         assert result["window_bills_total"] == pytest.approx(
-            1200.0 + 625.0 + 2 * 13.99, abs=0.01
+            2 * (1200.0 + 625.0 + 13.99), abs=0.01
         )
         # Bestands-Keys bleiben bei "nächste Fälligkeit" (byte-kompatibel):
         assert result["count"] == 3
@@ -282,7 +284,7 @@ class TestF01UpcomingBills:
         occ = result["window_occurrences"]
         landlord_occ = [o for o in occ if o["counterparty"] == "Example Landlord"]
         assert len(landlord_occ) == 1
-        assert landlord_occ[0]["due_date"] == "2026-09-03"
+        assert landlord_occ[0]["date"] == "2026-09-03"
         assert landlord_occ[0]["amount"] == 1200.0
         assert landlord_occ[0]["source"] == "series"
         assert landlord_occ[0]["series_id"] == int(series.id)
@@ -300,7 +302,7 @@ class TestF01UpcomingBills:
         )
         assert result["success"] is True
         occ = result["window_occurrences"]
-        assert [(o["due_date"], o["source"]) for o in occ] == [
+        assert [(o["date"], o["source"]) for o in occ] == [
             ("2026-11-15", "series")
         ]
         assert occ[0]["amount"] == 120.0
@@ -326,7 +328,7 @@ class TestF01UpcomingBills:
         utility_occ = [
             o for o in result["window_occurrences"] if o["counterparty"] == "Example Utility"
         ]
-        assert [(o["due_date"], o["source"]) for o in utility_occ] == [
+        assert [(o["date"], o["source"]) for o in utility_occ] == [
             ("2026-10-15", "series")
         ]
 
@@ -340,8 +342,8 @@ class TestF01UpcomingBills:
             anchor_date="2026-06-15",
             amount_cents=990,
             counterparty="Example Utility",
+            effective_to="2026-07-01",
         )
-        db.set_series_status(int(series.id), "active", effective_to="2026-07-01")
         result = monarch_tools.upcoming_bills(
             {"iban": CH_IBAN, "reference_date": REF, "days_ahead": 60}
         )
@@ -358,12 +360,13 @@ class TestF02SubscriptionAudit:
         """120/Quartal => 40/Monat, 480/Jahr (bestätigte Serie)."""
         result = quarterly_tools.subscription_audit({"iban": CH_IBAN, "reference_date": REF})
         assert result["success"] is True
-        audit = [a for a in result["audit"] if a["counterparty"] == "Example Insurer"]
+        audit = [a for a in result["groups"] if a["counterparty"] == "Example Insurer"]
         assert len(audit) == 1
         a = audit[0]
         # Bestands-Keys:
-        assert a["payment_count"] == 2
+        assert a["occurrences"] == 2
         assert a["monthly_cost"] == pytest.approx(120.0, abs=0.01)
+        assert a["annual_cost"] == pytest.approx(1440.0, abs=0.01)
         assert a["next_due_date"] == "2026-11-15"
         # Neue Rhythmus-Keys:
         assert a["cadence"] == "n_months"
@@ -371,11 +374,13 @@ class TestF02SubscriptionAudit:
         assert a["payment_per_period"] == pytest.approx(120.0, abs=0.01)
         assert a["monthly_equivalent"] == pytest.approx(40.0, abs=0.01)
         assert a["annual_equivalent"] == pytest.approx(480.0, abs=0.01)
-        assert a["confirmed_count"] == 1
-        assert a["series_monthly_equivalent"] == pytest.approx(40.0, abs=0.01)
-        assert a["series_annual_equivalent"] == pytest.approx(480.0, abs=0.01)
-        assert result["total_monthly"] == pytest.approx(40.0, abs=0.01)
-        assert result["total_annual"] == pytest.approx(480.0, abs=0.01)
+        assert a["series_ids"] == [quarterly_series_id]
+        # Top-Level (Stage 2, additive):
+        assert result["confirmed_count"] == 1
+        assert result["series_monthly_equivalent"] == pytest.approx(40.0, abs=0.01)
+        assert result["series_annual_equivalent"] == pytest.approx(480.0, abs=0.01)
+        assert result["total_monthly"] == pytest.approx(120.0, abs=0.01)
+        assert result["total_annual"] == pytest.approx(1440.0, abs=0.01)
 
     def test_unconfirmed_group_has_none_equivalents(
         self, monarch_tools: FinanceTools
@@ -383,19 +388,22 @@ class TestF02SubscriptionAudit:
         """Ohne bestätigte Serie: cadence=None, Äquivalente None (konservativ)."""
         result = monarch_tools.subscription_audit({"iban": CH_IBAN, "reference_date": REF})
         assert result["success"] is True
-        netflix = [a for a in result["audit"] if a["counterparty"] == "Netflix"][0]
+        netflix = [a for a in result["groups"] if a["counterparty"] == "Netflix"][0]
         assert netflix["monthly_cost"] == pytest.approx(13.99, abs=0.01)
-        assert netflix["annual_equivalent"] == pytest.approx(167.88, abs=0.01)
+        assert netflix["annual_cost"] == pytest.approx(167.88, abs=0.01)
         assert netflix["cadence"] is None
         assert netflix["period_n"] is None
         assert netflix["payment_per_period"] is None
         assert netflix["monthly_equivalent"] is None
-        assert netflix["confirmed_count"] == 0
-        assert netflix["series_monthly_equivalent"] is None
-        assert netflix["series_annual_equivalent"] is None
+        assert netflix["annual_equivalent"] is None
+        assert netflix["next_due_date"] is None
+        assert netflix["series_ids"] == []
+        assert result["confirmed_count"] == 0
+        assert result["series_monthly_equivalent"] == 0.0
+        assert result["series_annual_equivalent"] == 0.0
 
     def test_skip_exception_shifts_next_due(self, quarterly_db: FinanceDB) -> None:
-        """skip 11-15: next_due = nächstes Quartal (12-15), Ausnahme exakt einmal."""
+        """skip 11-15: next_due = 2027-02-15, Ausnahme exakt einmal."""
         tools = FinanceTools(db=quarterly_db)
         series = _make_series(
             quarterly_db,
@@ -408,18 +416,21 @@ class TestF02SubscriptionAudit:
         )
         quarterly_db.set_series_exception(int(series.id), "2026-11-15", "skip")
         result = tools.subscription_audit({"iban": CH_IBAN, "reference_date": REF})
-        audit = [a for a in result["audit"] if a["counterparty"] == "Example Insurer"]
+        audit = [a for a in result["groups"] if a["counterparty"] == "Example Insurer"]
         assert len(audit) == 1
-        assert audit[0]["next_due_date"] == "2026-02-15"
+        assert audit[0]["next_due_date"] == "2027-02-15"
 
     def test_pinned_netflix_legacy_keys(self, monarch_tools: FinanceTools) -> None:
         """Netflix (13.99/Monat): Bestands-Keys byte-kompatibel."""
         result = monarch_tools.subscription_audit({"iban": CH_IBAN, "reference_date": REF})
-        netflix = [a for a in result["audit"] if a["counterparty"] == "Netflix"][0]
-        assert netflix["next_due_date"] == "2026-09-12"
+        netflix = [a for a in result["groups"] if a["counterparty"] == "Netflix"][0]
         assert netflix["monthly_cost"] == pytest.approx(13.99, abs=0.01)
-        assert netflix["annual_equivalent"] == pytest.approx(167.88, abs=0.01)
+        assert netflix["annual_cost"] == pytest.approx(167.88, abs=0.01)
         assert netflix["subscription_like"] is True
+        # Neue Stage-2-Keys (unbestaetigt: keine Serie):
+        assert netflix["cadence"] is None
+        assert netflix["next_due_date"] is None
+        assert netflix["series_ids"] == []
 
 
 class TestF08CashFlowForecast:
