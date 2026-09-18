@@ -41,7 +41,7 @@ python -m utils.gpu_devices
 ## Logs & Monitoring
 - Release-Berichte: `monitoring/release_quality/` (projekt-relativ, git-ignoriert)
 - Autosave-Status: `Get-Content monitoring\autosave.log -Tail 5`
-- DB-Backup: `Get-Content monitoring\db_backup.log -Tail 5`
+- DB-Backup: `Get-Content ~\homebot_backups\db_backup.log -Tail 5` (Log-Pfad: `HOMEBOT_BACKUP_LOG`-Env-Override, Default `~/homebot_backups/db_backup.log`)
 
 ## Wichtige Hinweise
 - **Kein externer Support-Dienst.** Alle Diagnosen laufen lokal;
