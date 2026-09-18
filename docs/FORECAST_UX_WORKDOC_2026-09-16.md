@@ -1,8 +1,8 @@
-<!-- last-verified: 2026-09-17 -->
+<!-- last-verified: 2026-09-18 -->
 # WORKDOC — Forecast UX (Plan-Items), 2026-09-16
 
 Aufgabe: `docs_archive/FORECAST_UX_QWEN_IMPLEMENTATION_PROMPT_2026-09-16.md`
-Status: AP1 (UI + Core) ABGESCHLOSSEN (2026-09-16, alle DoD-Punkte ✅, 222/222 Tests grün). AP2 Stage 1 (Engine + DAO + Tools-API) ABGESCHLOSSEN (2026-09-17, breite Suite 516/516 grün). AP2 Stage 2 (F01/F02/F08) offen.
+Status: AP1 (UI + Core) ABGESCHLOSSEN (2026-09-16, alle DoD-Punkte ✅, 222/222 Tests grün). AP2 Stage 1 (Engine + DAO + Tools-API) ABGESCHLOSSEN (2026-09-17, breite Suite 516/516 grün). AP2 Stage 2 (F01/F02/F08) ABGESCHLOSSEN (2026-09-18, 16/16 Stage-2-Tests + 1691/1691 Voll-Suite grün). AP2 Stage 3 (UI + i18n) offen.
 
 ---
 
@@ -236,7 +236,7 @@ gleiche Empfänger verschiedener Konten/Währungen bleiben isoliert.
 | Stufe | Inhalt | Status |
 |-------|--------|--------|
 | S1 | Gemeinsames Modell: `recurring_series` + `series_exceptions` + `series_candidates` + `series_occurrence_links` + Journal (Schema/DAO), `finance/series_engine.py` (Expansion/Detektion/Matching, rein deterministisch), Tools-API (list/confirm/reject/pause/end/skip/move/amount/calendar/detect) | Engine fertig (60/60 grün); DAO implementiert & getestet (58/58); Tools-API offen |
-| S2 | F01/F02-Fix in `upcoming_bills`/`subscription_audit` (additive Keys + korrekte Fenster-/Monatäquivalent-Logik), F08: opt-in `include_series` in `cash_flow_forecast` (Byte-Kompatibilität Default) | offen |
+| S2 | F01/F02-Fix in `upcoming_bills`/`subscription_audit` (additive Keys + korrekte Fenster-/Monatäquivalent-Logik), F08: opt-in `include_series` in `cash_flow_forecast` (Byte-Kompatibilität Default) | ABGESCHLOSSEN 2026-09-18 (16/16 Stage-2-Tests, Gate grün) |
 | S3 | UI (Serien-/Kandidaten-Sektion in Forecast-Tab) + i18n `finance_ui.forecast.series.*` DE/EN/BG + AppTest + Vollvalidierung | offen |
 
 ### AP2-Entscheidungen (bewusst, dokumentiert)
