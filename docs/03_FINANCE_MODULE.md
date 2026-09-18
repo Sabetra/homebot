@@ -545,4 +545,36 @@ Daten.
 
 ---
 
+## 22. Serien: Forecast-UX Stage 3 (2026-09-18)
+
+Die Serien-/Kandidaten-API aus §21 ist jetzt im Finance-Tab
+(Forecast-Sektion, `finance/tab.py` → `_render_forecast_series_section`)
+nutzbar — deterministisch, ohne LLM, ausschließlich über die kanonischen
+FinanceTools (keine DAO-Schreibzugriffe im UI-Pfad):
+
+| UI-Baustein | Verhalten | Kanonisches Tool |
+|-------------|-----------|------------------|
+| Erkennungs-Button | deterministische Kandidatenerkennung; Flash mit `{count}`/`{new}` + `st.rerun()` | `detect_series_candidates` (IBAN-Filter) |
+| Kandidaten-Expander | nur `pending`; Gegenpartei/Turnus/Betrag/Art/Konfidenz/Beobachtungen; Bestätigen/Ablehnen | `confirm_candidate` / `reject_candidate` (mit `fingerprint`) |
+| Serien-Tabelle | Gegenpartei, Turnus, Betrag, Art, Status, Quelle, Gültigkeitsfenster | `list_series` (IBAN-Filter) |
+| Statusaktionen | active → Pausieren/Beenden; paused → Fortsetzen/Beenden; ended → Hinweis, keine Aktionen | `pause_series` / `resume_series` / `end_series` (mit `series_id`) |
+| Fehlerpfad | `success=False` → `st.error` mit `{error}`, kein Crash | — |
+
+i18n: 35 neue Keys `finance_ui.forecast.series*` in DE/EN/BG
+(nach `plan_due_required`); Labels über `_tr` mit Default-Fallback.
+Helfer: `_series_status_label`, `_series_source_label`,
+`_series_cadence_label`, `_series_amount_label` (reine Funktionen;
+unbekannte Werte → Rohwert bzw. `–`).
+
+**Verifikation (2026-09-18, Projekt-venv `venv_bot_20260802`):**
+`tests/test_finance_forecast_ux_stage3.py` **30/30** (AppTest mit
+deterministischem Tools-Stub; inkl. i18n-Konsistenz über
+`tests/test_i18n_consistency.py`); Finance-Regression 192/192;
+Voll-Suite `tests/` **1721/1721 PASS** (Exit 0); `py_compile` +
+Locale-JSON-Validierung OK; `scripts/check_licenses.py` OK.
+Kein LLM-Load, keine produktiven Daten. Details + Gate-Log: Workdoc
+`docs/FORECAST_UX_WORKDOC_2026-09-16.md` (Abschnitt S3).
+
+---
+
 *Für Änderungen am Finance-Modul, dieses Dokument aktualisieren.*

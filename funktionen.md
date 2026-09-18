@@ -1709,3 +1709,30 @@ Verifiziert: `tests/test_finance_series_tools.py` 47/47; DAO + Engine
 118/118; Tools/Goals-Schema/Profile-Gating 136/136; breite
 Finance-/Tool-/Schema-Suite 516/516 im Projekt-venv. Kein LLM-/GPU-Lauf,
 keine produktiven Daten.
+
+## AD. Forecast-UX Stage 3 — Serien-/Kandidaten-UI (2026-09-18)
+
+Die Serien-API aus §AC ist jetzt im Finance-Tab (Forecast-Sektion)
+deterministisch bedienbar — **ohne LLM**, ausschließlich über die
+kanonischen FinanceTools (UI schreibt NIE direkt in die DAO):
+
+| Baustein | Ort | Verhalten |
+|----------|-----|-----------|
+| `_render_forecast_series_section` | `finance/tab.py` | Sektion "Wiederkehrende Serien & Vorschläge" (Kandidaten + Serien); Flash-Nachrichten via `st.session_state` über `st.rerun()` |
+| `_render_forecast_series_candidates` | `finance/tab.py` | Erkennungs-Button → `detect_series_candidates`; nur `pending`-Kandidaten als Expander; Bestätigen/Ablehnen → `confirm_candidate`/`reject_candidate` (mit `fingerprint`) |
+| `_render_forecast_series_list` | `finance/tab.py` | `list_series` → Tabelle; Statusaktionen je Status: active → Pausieren/Beenden, paused → Fortsetzen/Beenden, ended → Hinweis + keine Aktionen |
+| `_series_status_label` / `_series_source_label` / `_series_cadence_label` / `_series_amount_label` | `finance/tab.py` | Reine Label-Funktionen; unbekannte Werte → Rohwert bzw. `–` |
+| i18n | `i18n/locales/{de,en,bg}.json` | 35 Keys `finance_ui.forecast.series*` (nach `plan_due_required`); Labels über `_tr` mit Default-Fallback |
+| Tests | `tests/test_finance_forecast_ux_stage3.py` | 30 Tests: Labels, i18n-Konsistenz (alle 35 Keys in DE/EN/BG), AppTest-Rendern (Kandidaten + Serien, Button-Keys), Erkennen (IBAN-Filter, Flash), Bestätigen/Ablehnen (fingerprint), Pause/Fortsetzen/Beenden (series_id), Fehlerpfad (`st.error`, kein Crash), kein LLM-Referenz im Serien-Block |
+
+Design-Prinzipien: Kandidaten bleiben Vorschläge (`pending`) — Bestätigung
+ist immer eine explizite Nutzerentscheidung (keine Auto-Bestätigung).
+Fehlerpfade zeigen `st.error` mit `{error}` statt zu crashen. Der
+Serien-Block ist vollständig stubbbar (AppTest mit deterministischem
+Tools-Stub) — kein LLM-Load, keine GPU.
+
+Verifiziert (Projekt-venv `venv_bot_20260802`): Stage-3-Suite 30/30;
+Finance-Regression 192/192; Voll-Suite `tests/` 1721/1721 PASS (Exit 0);
+`py_compile finance/tab.py` + Locale-JSON-Validierung OK;
+`scripts/check_licenses.py` OK. Details: `docs/03_FINANCE_MODULE.md` §22
+und Workdoc `docs/FORECAST_UX_WORKDOC_2026-09-16.md` (Abschnitt S3).

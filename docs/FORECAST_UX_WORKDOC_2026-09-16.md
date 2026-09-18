@@ -2,7 +2,7 @@
 # WORKDOC — Forecast UX (Plan-Items), 2026-09-16
 
 Aufgabe: `docs_archive/FORECAST_UX_QWEN_IMPLEMENTATION_PROMPT_2026-09-16.md`
-Status: AP1 (UI + Core) ABGESCHLOSSEN (2026-09-16, alle DoD-Punkte ✅, 222/222 Tests grün). AP2 Stage 1 (Engine + DAO + Tools-API) ABGESCHLOSSEN (2026-09-17, breite Suite 516/516 grün). AP2 Stage 2 (F01/F02/F08) ABGESCHLOSSEN (2026-09-18, 16/16 Stage-2-Tests + 1691/1691 Voll-Suite grün). AP2 Stage 3 (UI + i18n) offen.
+Status: AP1 (UI + Core) ABGESCHLOSSEN (2026-09-16, alle DoD-Punkte ✅, 222/222 Tests grün). AP2 Stage 1 (Engine + DAO + Tools-API) ABGESCHLOSSEN (2026-09-17, breite Suite 516/516 grün). AP2 Stage 2 (F01/F02/F08) ABGESCHLOSSEN (2026-09-18, 16/16 Stage-2-Tests + 1691/1691 Voll-Suite grün). AP2 Stage 3 (UI + i18n + Tests) ABGESCHLOSSEN (2026-09-18, 30/30 Stage-3-Tests + 1721/1721 Voll-Suite grün). **Alle AP2-Stage abgeschlossen.**
 
 ---
 
@@ -415,5 +415,28 @@ unverändert (die Monarch-Core-Suite pinnt dieselben Seeds als Referenz):
 `finance/tools.py`), `4e01cd1`/`7e3a776` (Stage-2-Suite), `6c06d0a`
 (Test-Alignment, HEAD vor diesem Eintrag) — Push `origin/main` 2026-09-18.
 
-**Offen (S3):** UI (Serien-/Kandidaten-Sektion in Forecast-Tab) + i18n
-`finance_ui.forecast.series.*` DE/EN/BG + AppTest + Vollvalidierung.
+### S3 (UI + i18n + Tests) — ABGESCHLOSSEN 2026-09-18
+
+**Umsetzung (`finance/tab.py` = UI, kanonische FinanceTools = Daten, kein LLM):**
+
+| Bereich | Verhalten | Beleg |
+|---------|-----------|-------|
+| Kandidaten | Erkennungs-Button → `detect_series_candidates` (IBAN-Filter, Flash mit `{count}`/`{new}` + `st.rerun()`); pending-Kandidaten als Expander (Gegenpartei, Turnus, Betrag, Art, Konfidenz, Beobachtungen); Bestätigen/Ablehnen → `confirm_candidate`/`reject_candidate` mit `fingerprint`; nicht-pending-Kandidaten bleiben ausgeblendet | `tests/test_finance_forecast_ux_stage3.py`: `test_series_section_renders_candidates_and_series`, `test_detect_button_uses_iban_filter_and_reports_result`, `test_confirm_candidate_sends_fingerprint`, `test_reject_candidate_sends_fingerprint` |
+| Serien | `list_series` → Tabelle (Gegenpartei, Turnus, Betrag, Art, Status, Quelle, Gültigkeitsfenster); Statusaktionen je Status: active → Pausieren/Beenden, paused → Fortsetzen/Beenden, ended → Hinweis + keine Aktionen; alle über `pause_series`/`resume_series`/`end_series` mit `series_id` | `test_pause_resume_end_use_canonical_tools_with_series_id` |
+| Fehler | Tool-Fehler (`success=False`) → `st.error` mit `{error}`; kein Crash, keine DAO-Schreibzugriffe im UI-Pfad | `test_failed_tools_show_errors_without_crash` |
+| i18n | 35 neue Keys `finance_ui.forecast.series*` in DE/EN/BG (nach `plan_due_required`); Labels über `_tr` mit Default-Fallback; `from`/`to` als `{from_date}`/`{to_date}` (keine Python-Reservewörter) | `test_series_i18n_keys_present_in_all_locales` |
+| Kein LLM | Serien-Block referenziert keinen LLM-Client (`chat_logic`/`model_loader`/`_get_llm_client`); AppTest wird vollständig von einem deterministischen Tools-Stub gesteuert | `test_series_block_has_no_llm_references` |
+| Helper | `_series_status_label`/`_series_source_label`/`_series_cadence_label`/`_series_amount_label` (reine Funktionen, unit-getestet, unbekannt → Rohwert/`–`) | `test_series_*_label*` (17 Testfälle) |
+
+**Gate (2026-09-18, Projekt-venv `venv_bot_20260802`):**
+
+- `tests/test_finance_forecast_ux_stage3.py`: **30/30 PASS** (9.3 s)
+- Finance-Regression (Tab-Regression, Stage-2, Series-DAO/Tools, i18n-Konsistenz): **192/192 PASS** (117 s)
+- Voll-Suite `tests/`: **1721/1721 PASS** (344 s, Exit 0)
+- `py_compile finance/tab.py`: OK · `de/en/bg.json` parsen: OK · `scripts/check_licenses.py`: OK
+- Staged-Secret-Check: nur `finance/tab.py`, `i18n/locales/{de,en,bg}.json`,
+  `tests/test_finance_forecast_ux_stage3.py` (synthetische Testdaten, keine
+  echten Kontodaten/PII).
+
+**Commits (2026-09-18):** `16a4654` (S3-UI + i18n), `31e0af5`
+(Stage-3-Suite) — Push `origin/main` 2026-09-18.
