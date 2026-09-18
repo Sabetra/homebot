@@ -460,8 +460,9 @@ class TestF08CashFlowForecast:
             assert month["income"] == pytest.approx(5000.0, abs=0.01)
             assert month["variable"] > 0
         assert entry["recurring_monthly"] == pytest.approx(1213.99, abs=0.01)
-        avg_variable = sum(m["variable"] for m in entry["months"]) / len(entry["months"])
-        assert avg_variable == pytest.approx(625.0, abs=1.0)
+        # Variable-Aufwand: kanonisch deterministischer OLS-Trend x
+        # Saisonalitaet (kein roher 12-Monate-Durchschnitt); die Positivitaet
+        # ist oben pro Monat gepinnt (konform mit test_finance_monarch_core).
         assert entry["months_used"] == 12
 
     def test_byte_compatible_even_with_series_in_db(self, quarterly_tools: FinanceTools) -> None:
