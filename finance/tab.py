@@ -884,6 +884,7 @@ def _render_forecast_tab(db: FinanceDB) -> None:
     _render_forecast_bills(tools, iban_filter)
     _render_forecast_audit(tools, iban_filter)
     _render_forecast_plan_section(db, iban_filter)
+    _render_forecast_series_section(tools, iban_filter)
 
 
 def _render_forecast_plan_section(db: FinanceDB, iban_filter: dict) -> None:
@@ -1113,6 +1114,168 @@ def _series_amount_label(item: Any) -> str:
         return _format_eur(float(_plan_field(item, "amount")))
     except (TypeError, ValueError):
         return "–"
+
+
+def _render_forecast_series_section(tools: Any, iban_filter: dict) -> None:
+    """Wiederkehrende Serien + Erkennungs-Kandidaten (AP2 S3).
+
+    Kandidaten sind Vorschlaege (pending) — Bestaetigung/Abweisung ist immer
+    eine explizite Nutzerentscheidung. Statusaktionen laufen ueber die
+    kanonischen Finance-Tools (keine direkten DAO-Schreibzugriffe, kein LLM).
+    """
+    flash = st.session_state.pop("finance_forecast_series_flash", None)
+    if flash:
+        st.success(flash)
+    st.markdown(_tr("finance_ui.forecast.series_title", "### Wiederkehrende Serien & Vorschläge"))
+    _render_forecast_series_candidates(tools, iban_filter)
+    st.divider()
+    _render_forecast_series_list(tools, iban_filter)
+
+
+def _render_forecast_series_candidates(tools: Any, iban_filter: dict) -> None:
+    """Kandidaten: erkennen (deterministisch), listen, bestaetigen, ablehnen."""
+    st.markdown(_tr("finance_ui.forecast.series_cand_title", "#### Erkennungs-Kandidaten"))
+    if st.button(_tr("finance_ui.forecast.series_detect", "Wiederkehrende Muster erkennen"), key="finance_forecast_series_detect"):
+        result = tools.detect_series_candidates(dict(iban_filter or {}))
+        if result.get("success"):
+            _series_flash(
+                _tr(
+                    "finance_ui.forecast.series_detected",
+                    "{count} Kandidat(en) gefunden ({new} neu).",
+                    count=result.get("count", 0),
+                    new=result.get("new_candidates", 0),
+                )
+            )
+            st.rerun()
+        st.error(_tr("finance_ui.forecast.series_error", "Fehler: {error}", error=str(result.get("error") or "?")))
+        return
+    res = tools.list_series_candidates(dict(iban_filter or {}))
+    if not res.get("success"):
+        st.error(_tr("finance_ui.forecast.series_error", "Fehler: {error}", error=str(res.get("error") or "?")))
+        return
+    pending = [c for c in res.get("candidates") or [] if isinstance(c, dict) and c.get("status") == "pending"]
+    if not pending:
+        st.info(_tr("finance_ui.forecast.series_cand_empty", "Keine ausstehenden Vorschläge."))
+        return
+    for idx, cand in enumerate(pending):
+        fingerprint = str(cand.get("fingerprint") or "").strip()
+        if not fingerprint:
+            continue
+        counterparty = str(cand.get("counterparty") or "—").strip()
+        cadence_text = _series_cadence_label(cand.get("cadence"), cand.get("period_n"))
+        amount_text = _series_amount_label(cand)
+        currency = str(cand.get("currency") or "")
+        kind_text = _plan_kind_label(cand.get("direction"))
+        confidence = cand.get("confidence")
+        conf_text = (
+            f" · {_tr('finance_ui.forecast.series_confidence', 'Konfidenz')} {confidence:.2f}"
+            if isinstance(confidence, (int, float)) and not isinstance(confidence, bool)
+            else ""
+        )
+        with st.expander(f"{counterparty} · {cadence_text} · {amount_text} {currency} {kind_text}{conf_text}"):
+            evidence = [e for e in (cand.get("evidence") or []) if isinstance(e, dict)]
+            if evidence:
+                st.caption(_tr("finance_ui.forecast.series_cand_evidence", "Beobachtungen"))
+                st.dataframe(
+                    pd.DataFrame(
+                        [
+                            {
+                                _tr("finance_ui.forecast.col_due", "Fällig"): str(e.get("date") or ""),
+                                _tr("finance_ui.forecast.col_amount", "Betrag"): _format_eur(float(e.get("amount") or 0.0)),
+                            }
+                            for e in evidence
+                        ]
+                    ),
+                    width="stretch",
+                    hide_index=True,
+                )
+            else:
+                st.caption(_tr("finance_ui.forecast.series_cand_no_evidence", "Keine Beobachtungen."))
+            col_confirm, col_reject = st.columns(2)
+            if col_confirm.button(_tr("finance_ui.forecast.series_cand_confirm", "Bestätigen"), key=f"finance_forecast_series_cand_confirm_{idx}"):
+                confirm_res = tools.confirm_candidate({"fingerprint": fingerprint})
+                if confirm_res.get("success"):
+                    _series_flash(_tr("finance_ui.forecast.series_cand_confirmed", "Kandidat als Serie bestätigt."))
+                    st.rerun()
+                st.error(_tr("finance_ui.forecast.series_error", "Fehler: {error}", error=str(confirm_res.get("error") or "?")))
+            if col_reject.button(_tr("finance_ui.forecast.series_cand_reject", "Ablehnen"), key=f"finance_forecast_series_cand_reject_{idx}"):
+                reject_res = tools.reject_candidate({"fingerprint": fingerprint})
+                if reject_res.get("success"):
+                    _series_flash(_tr("finance_ui.forecast.series_cand_rejected", "Kandidat abgelehnt."))
+                    st.rerun()
+                st.error(_tr("finance_ui.forecast.series_error", "Fehler: {error}", error=str(reject_res.get("error") or "?")))
+
+
+def _series_status_action(tools: Any, tool_name: str, series_id: Any) -> None:
+    """Gemeinsame Logik fuer Pausieren/Fortsetzen/Beenden (kanonische Tools)."""
+    new_status = {"pause_series": "paused", "resume_series": "active", "end_series": "ended"}[tool_name]
+    result = getattr(tools, tool_name)({"series_id": series_id})
+    if result.get("success"):
+        _series_flash(_tr("finance_ui.forecast.series_status_changed", "Status auf {status} gesetzt.", status=_series_status_label(new_status)))
+        st.rerun()
+    st.error(_tr("finance_ui.forecast.series_error", "Fehler: {error}", error=str(result.get("error") or "?")))
+
+
+def _render_forecast_series_list(tools: Any, iban_filter: dict) -> None:
+    """Bestaetigte Serien: Uebersicht + Statusaktionen (pause/resume/end)."""
+    st.markdown(_tr("finance_ui.forecast.series_list_title", "#### Bestätigte Serien"))
+    res = tools.list_series(dict(iban_filter or {}))
+    if not res.get("success"):
+        st.error(_tr("finance_ui.forecast.series_error", "Fehler: {error}", error=str(res.get("error") or "?")))
+        return
+    series = [s for s in res.get("series") or [] if isinstance(s, dict)]
+    if not series:
+        st.info(_tr("finance_ui.forecast.series_empty", "Noch keine wiederkehrenden Serien."))
+        return
+    rows = [
+        {
+            "ID": s.get("id"),
+            _tr("finance_ui.forecast.col_counterparty", "Gegenseite"): str(s.get("counterparty") or "—"),
+            _tr("finance_ui.forecast.series_col_cadence", "Turnus"): _series_cadence_label(s.get("cadence"), s.get("period_n")),
+            _tr("finance_ui.forecast.col_amount", "Betrag"): _series_amount_label(s),
+            _tr("finance_ui.forecast.col_currency", "Währung"): str(s.get("currency") or ""),
+            _tr("finance_ui.forecast.series_col_direction", "Art"): _plan_kind_label(s.get("direction")),
+            _tr("finance_ui.forecast.series_col_status", "Status"): _series_status_label(s.get("status")),
+            _tr("finance_ui.forecast.series_col_source", "Quelle"): _series_source_label(s.get("source")),
+        }
+        for s in series
+    ]
+    st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
+    for s in series:
+        series_id = s.get("id")
+        if series_id is None:
+            continue
+        status = str(s.get("status") or "")
+        counterparty = str(s.get("counterparty") or f"#{series_id}").strip()
+        cadence_text = _series_cadence_label(s.get("cadence"), s.get("period_n"))
+        amount_text = _series_amount_label(s)
+        currency = str(s.get("currency") or "")
+        with st.expander(f"{counterparty} · {cadence_text} · {amount_text} {currency} · {_series_status_label(status)}"):
+            effective_from = str(s.get("effective_from") or "").strip()
+            effective_to = str(s.get("effective_to") or "").strip()
+            if effective_from or effective_to:
+                st.caption(
+                    _tr(
+                        "finance_ui.forecast.series_window",
+                        "Gültig {from_date} – {to_date}",
+                        from_date=effective_from or "…",
+                        to_date=effective_to or "…",
+                    )
+                )
+            if status == "active":
+                cols = st.columns(2)
+                if cols[0].button(_tr("finance_ui.forecast.series_pause", "Pausieren"), key=f"finance_forecast_series_pause_{series_id}"):
+                    _series_status_action(tools, "pause_series", series_id)
+                if cols[1].button(_tr("finance_ui.forecast.series_end", "Beenden"), key=f"finance_forecast_series_end_{series_id}"):
+                    _series_status_action(tools, "end_series", series_id)
+            elif status == "paused":
+                cols = st.columns(2)
+                if cols[0].button(_tr("finance_ui.forecast.series_resume", "Fortsetzen"), key=f"finance_forecast_series_resume_{series_id}"):
+                    _series_status_action(tools, "resume_series", series_id)
+                if cols[1].button(_tr("finance_ui.forecast.series_end", "Beenden"), key=f"finance_forecast_series_end_{series_id}"):
+                    _series_status_action(tools, "end_series", series_id)
+            elif status == "ended":
+                st.caption(_tr("finance_ui.forecast.series_ended_hint", "Beendet — keine Vorkommen mehr im Kalender."))
 
 
 def _render_forecast_bills(tools: Any, iban_filter: dict) -> None:
