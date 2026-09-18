@@ -598,16 +598,16 @@ class TestF08CashFlowForecast:
             {
                 "iban": CH_IBAN,
                 "reference_date": REF,
-                "months_ahead": 6,
-                "confidence": 0.8,
+                "forecast_months": 6,
+                "confidence_level": 0.8,
                 "include_series": True,
             }
         )
-        assert result["balance_start"] == pytest.approx(
-            quarterly_tools.db_balance_at(CH_IBAN, REF), abs=0.01
-        )
+        account_id = quarterly_tools._db.find_account_id_by_iban(CH_IBAN)
+        expected_start = quarterly_tools._db.balance_at(account_id, REF)["balance"]
+        assert result["balance"]["start_balance"] == pytest.approx(expected_start, abs=0.01)
         cumulative = 0.0
-        for month in result["months"]:
+        for month in result["results"][0]["months"]:
             cumulative += month["series_plan"]
             assert month["balance_with_series"] == pytest.approx(
                 month["balance"] + cumulative, abs=0.01
