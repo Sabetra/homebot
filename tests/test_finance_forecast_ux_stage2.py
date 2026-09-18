@@ -420,3 +420,188 @@ class TestF02SubscriptionAudit:
         assert netflix["monthly_cost"] == pytest.approx(13.99, abs=0.01)
         assert netflix["annual_equivalent"] == pytest.approx(167.88, abs=0.01)
         assert netflix["subscription_like"] is True
+
+
+class TestF08CashFlowForecast:
+    def test_default_byte_compatible(self, monarch_tools: FinanceTools) -> None:
+        """Default (ohne include_series): byte-kompatible Ausgabe, keine Serien-Keys."""
+        default = monarch_tools.cash_flow_forecast(
+            {"iban": CH_IBAN, "reference_date": REF, "months_ahead": 6, "confidence": 0.8}
+        )
+        explicit_off = monarch_tools.cash_flow_forecast(
+            {
+                "iban": CH_IBAN,
+                "reference_date": REF,
+                "months_ahead": 6,
+                "confidence": 0.8,
+                "include_series": False,
+            }
+        )
+        assert default == explicit_off
+        assert "series" not in default
+        for month in default["months"]:
+            assert "series_plan" not in month
+            assert "net_with_series" not in month
+            assert "balance_with_series" not in month
+        # Pinned-Werte:
+        assert default["income"] == pytest.approx(5000.0, abs=0.01)
+        assert default["recurring_monthly"] == pytest.approx(1213.99, abs=0.01)
+        assert default["variable_monthly"] == pytest.approx(625.0, abs=0.01)
+        assert default["months_used"] == 12
+
+    def test_byte_compatible_even_with_series_in_db(self, quarterly_tools: FinanceTools) -> None:
+        """Bestehende Serie im DB ändert das Default (include_series=False) NICHT."""
+        with_series = quarterly_tools.cash_flow_forecast(
+            {"iban": CH_IBAN, "reference_date": REF, "months_ahead": 6, "confidence": 0.8}
+        )
+        explicit_off = quarterly_tools.cash_flow_forecast(
+            {
+                "iban": CH_IBAN,
+                "reference_date": REF,
+                "months_ahead": 6,
+                "confidence": 0.8,
+                "include_series": False,
+            }
+        )
+        assert with_series == explicit_off
+        assert "series" not in with_series
+        # Statistischer Fit bleibt unangetastet (2×120 fixed => 240/12):
+        assert with_series["recurring_monthly"] == pytest.approx(20.0, abs=0.01)
+
+    def test_series_plan_opt_in_quarterly(
+        self, quarterly_tools: FinanceTools, quarterly_series_id: int
+    ) -> None:
+        """include_series=True: 120/Quartal landet exakt im November-Plan."""
+        result = quarterly_tools.cash_flow_forecast(
+            {
+                "iban": CH_IBAN,
+                "reference_date": REF,
+                "months_ahead": 6,
+                "confidence": 0.8,
+                "include_series": True,
+            }
+        )
+        assert result["success"] is True
+        assert [m["month"] for m in result["months"]] == [
+            "2026-09", "2026-10", "2026-11", "2026-12", "2027-01", "2027-02"
+        ]
+        plans = {m["month"]: m["series_plan"] for m in result["months"]}
+        assert plans == {
+            "2026-09": 0.0,
+            "2026-10": 0.0,
+            "2026-11": -120.0,
+            "2026-12": 0.0,
+            "2027-01": 0.0,
+            "2027-02": 0.0,
+        }
+        nov = result["months"][2]
+        assert nov["net_with_series"] == pytest.approx(nov["net"] - 120.0, abs=0.01)
+        assert result["occurrences_in_window"] == 1
+        assert result["series"] == [
+            {
+                "id": quarterly_series_id,
+                "counterparty": "Example Insurer",
+                "currency": "CHF",
+                "direction": "expense",
+                "cadence": "n_months",
+                "period_n": 3,
+                "payment_per_period": 120.0,
+                "anchor_date": "2026-05-15",
+                "effective_from": None,
+                "effective_to": None,
+                "status": "active",
+                "occurrences_in_window": [
+                    {"date": "2026-11-15", "amount": -120.0, "exception": None}
+                ],
+            }
+        ]
+        # Keine Doppelzählung: Serien-Paar fällt aus dem statistischen Rest.
+        assert result["recurring_monthly"] == pytest.approx(0.0, abs=0.01)
+
+    def test_salary_is_plannable_not_residual(
+        self, monarch_db: FinanceDB, monarch_tools: FinanceTools
+    ) -> None:
+        """Gehalt-Serie (Income): planbar, kein statistischer Rest mehr."""
+        _make_series(
+            monarch_db,
+            direction="income",
+            cadence="monthly",
+            anchor_date="2026-08-01",
+            amount_cents=500000,
+            counterparty="Example Employer",
+        )
+        default = monarch_tools.cash_flow_forecast(
+            {"iban": CH_IBAN, "reference_date": REF, "months_ahead": 6, "confidence": 0.8}
+        )
+        planned = monarch_tools.cash_flow_forecast(
+            {
+                "iban": CH_IBAN,
+                "reference_date": REF,
+                "months_ahead": 6,
+                "confidence": 0.8,
+                "include_series": True,
+            }
+        )
+        assert default["income"] == pytest.approx(5000.0, abs=0.01)
+        assert planned["income"] == pytest.approx(0.0, abs=0.01)
+        for month in planned["months"]:
+            assert month["series_plan"] == pytest.approx(5000.0, abs=0.01)
+            assert month["net"] == pytest.approx(-1838.99, abs=0.01)
+            assert month["net_with_series"] == pytest.approx(3161.01, abs=0.01)
+        assert planned["recurring_monthly"] == pytest.approx(1213.99, abs=0.01)
+
+    def test_cancelled_series_not_projected(
+        self, monarch_db: FinanceDB, monarch_tools: FinanceTools
+    ) -> None:
+        """gekündigte Serie (effective_to vergangen): nicht im Plan, nicht im Fit."""
+        _make_series(
+            monarch_db,
+            direction="expense",
+            cadence="monthly",
+            anchor_date="2026-08-03",
+            amount_cents=120000,
+            counterparty="Example Landlord",
+            effective_to="2026-07-31",
+        )
+        default = monarch_tools.cash_flow_forecast(
+            {"iban": CH_IBAN, "reference_date": REF, "months_ahead": 6, "confidence": 0.8}
+        )
+        planned = monarch_tools.cash_flow_forecast(
+            {
+                "iban": CH_IBAN,
+                "reference_date": REF,
+                "months_ahead": 6,
+                "confidence": 0.8,
+                "include_series": True,
+            }
+        )
+        assert default["recurring_monthly"] == pytest.approx(1213.99, abs=0.01)
+        # Opt-in: gekündigte Serie zählt NICHT als planbar => aus dem Rest gefiltert.
+        assert planned["recurring_monthly"] == pytest.approx(13.99, abs=0.01)
+        assert planned["series"] == []
+        assert planned["occurrences_in_window"] == 0
+        for month in planned["months"]:
+            assert month["series_plan"] == 0.0
+
+    def test_balance_with_series_chain(
+        self, quarterly_tools: FinanceTools
+    ) -> None:
+        """balance_with_series = Balance + kumulierter Serien-Plan (exakt)."""
+        result = quarterly_tools.cash_flow_forecast(
+            {
+                "iban": CH_IBAN,
+                "reference_date": REF,
+                "months_ahead": 6,
+                "confidence": 0.8,
+                "include_series": True,
+            }
+        )
+        assert result["balance_start"] == pytest.approx(
+            quarterly_tools.db_balance_at(CH_IBAN, REF), abs=0.01
+        )
+        cumulative = 0.0
+        for month in result["months"]:
+            cumulative += month["series_plan"]
+            assert month["balance_with_series"] == pytest.approx(
+                month["balance"] + cumulative, abs=0.01
+            )
