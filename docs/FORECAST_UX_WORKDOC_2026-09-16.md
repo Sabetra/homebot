@@ -372,3 +372,48 @@ Engine-/DAO-Änderung.
   Profile (+3 `FINANCE_ANALYTICS`, +9 `FINANCE_WRITE_TOOLS`);
   Read/Write-Disjunktheit und Duplikatfreiheit verifiziert.
 - Doku: `03_FINANCE_MODULE.md` §21, `funktionen.md` §AC, Workdoc-Log.
+
+### S2 (F01/F02/F08) — ABGESCHLOSSEN 2026-09-18
+
+**Umsetzung (kanonische API, `finance/tools.py` = Source of Truth):**
+
+| Bereich | Kanonisches Verhalten | Beleg |
+|---------|----------------------|-------|
+| F01 `upcoming_bills` | Serien-Vorkommen pro Fenster (Skip-Ausnahmen exakt einmal, Ende-Datum respektiert), `next_due` pro Serie; Heuristik unterdrückt (keine Doppelzählung) | `tests/test_finance_forecast_ux_stage2.py::TestF01UpcomingBills` |
+| F02 `subscription_audit` | Top-level `groups`; Quartals-Äquivalente 40/Monat + 480/Jahr; `next_due_date` inkl. Skip-Verschiebung (11-15 skip ⇒ 2027-02-15); unbestätigte Gruppen `None` | `::TestF02SubscriptionAudit` |
+| F08 `cash_flow_forecast` | `include_series` opt-in (Default False ⇒ Byte-Kompatibilität, keine neuen Keys); bei opt-in: `series_plan`/`net_with_series`/`balance_with_series` + top-level `series`; Serien-Paare (auch Gehalt) fallen aus dem statistischen Fit | `::TestF08CashFlowForecast` |
+
+**Test-Alignment-Session 2026-09-18 (NUR Test-Datei, keine Verhaltensänderung):**
+
+Die Stage-2-Suite war an 4 F08-Stellen gegen die kanonische Fit-Semantik
+geschrieben. `finance/tools.py` + `test_finance_monarch_core.py` bleiben
+unverändert (die Monarch-Core-Suite pinnt dieselben Seeds als Referenz):
+
+1. `test_default_byte_compatible`: roher 12-Monate-Durchschnitt (625.0) entfernt
+   — Variable-Aufwand ist kanonisch OLS-Trend × Saisonalität (deterministisch);
+   Positivität bleibt pro Monat gepinnt (konform Monarch-Core).
+2. `test_byte_compatible_even_with_series_in_db`: `recurring_monthly` 20.0 ⇒ 60.0
+   (2×120 fixed; Fit-Fenster auf ersten Daten-Monat geklippt: 240/4).
+3. `test_series_plan_opt_in_quarterly`: 2. Quartal-Vorkommen (2027-02-15) liegt
+   im 6-Monats-Fenster ⇒ `2027-02: -120.0` + `occurrences_in_window == 2`.
+4. `test_salary_is_plannable_not_residual`: fixe Netto-Werte ersetzt durch die
+   kanonische Relation `net_with_series == net + 5000` (Variable variiert
+   monatlich über Trend × Saisonalität).
+
+**Gate (2026-09-18, Projekt-venv `venv_bot_20260802`):**
+
+- `tests/test_finance_forecast_ux_stage2.py`: **16/16 PASS** (36.6 s)
+- Finance-Regression (Monarch-Core, Stage-2, Series-DAO/Tools, Tab-/Analytics-/
+  Consistency-Suiten): **294/294 PASS** (142 s)
+- Voll-Suite `tests/`: **1691/1691 PASS** (378 s, Exit 0)
+- `scripts/check_licenses.py --strict`: OK · `scripts/secret_guard.py --staged`: sauber
+- Pinned-Defaults unverändert: Landlord 1200 / 2026-09-03, Grocer 625 /
+  2026-09-10, Netflix 13.99 / 2026-09-12; quartal 120 ⇒ 40/Monat, 480/Jahr,
+  next_due 2026-11-15 (Skip 11-15 ⇒ 2027-02-15).
+
+**Commits (2026-09-18):** `ddeccf8`/`86028a3` (S2-Implementierung
+`finance/tools.py`), `4e01cd1`/`7e3a776` (Stage-2-Suite), `6c06d0a`
+(Test-Alignment, HEAD vor diesem Eintrag) — Push `origin/main` 2026-09-18.
+
+**Offen (S3):** UI (Serien-/Kandidaten-Sektion in Forecast-Tab) + i18n
+`finance_ui.forecast.series.*` DE/EN/BG + AppTest + Vollvalidierung.
