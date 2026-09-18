@@ -1048,6 +1048,73 @@ def _render_forecast_plan_list(db: FinanceDB, iban_filter: dict) -> None:
                 st.rerun()
 
 
+# ---------------------------------------------------------------------------
+# Forecast Serien & Kandidaten (Forecast-UX AP2 Stage 3, 2026-09-18)
+# ---------------------------------------------------------------------------
+
+_SERIES_STATUS_KEYS = (
+    ("active", "finance_ui.forecast.series_status_active"),
+    ("paused", "finance_ui.forecast.series_status_paused"),
+    ("ended", "finance_ui.forecast.series_status_ended"),
+)
+
+
+def _series_flash(message: str) -> None:
+    """Flash-Nachricht ueber ``st.rerun()`` hinweg anzeigen (Session-State)."""
+    st.session_state["finance_forecast_series_flash"] = message
+
+
+def _series_cadence_label(cadence: Any, period_n: Any) -> str:
+    """i18n-Label fuer den Serien-Turnus (unbekannt: Rohwert; reine Funktion)."""
+    text = str(cadence or "").strip()
+    if text == "monthly":
+        return _tr("finance_ui.forecast.series_cadence_monthly", "Monatlich")
+    if text == "weekly":
+        return _tr("finance_ui.forecast.series_cadence_weekly", "Wöchentlich")
+    if text == "yearly":
+        return _tr("finance_ui.forecast.series_cadence_yearly", "Jährlich")
+    try:
+        n = int(period_n)
+    except (TypeError, ValueError):
+        n = 1
+    if text == "n_months":
+        if n <= 1:
+            return _tr("finance_ui.forecast.series_cadence_monthly", "Monatlich")
+        return _tr("finance_ui.forecast.series_cadence_n_months", "Alle {n} Monate", n=n)
+    if text == "n_weeks":
+        if n <= 1:
+            return _tr("finance_ui.forecast.series_cadence_weekly", "Wöchentlich")
+        return _tr("finance_ui.forecast.series_cadence_n_weeks", "Alle {n} Wochen", n=n)
+    return text
+
+
+def _series_status_label(status: Any) -> str:
+    """i18n-Label fuer den Serien-Status (unbekannt: Rohwert)."""
+    text = str(status or "").strip()
+    for value, key in _SERIES_STATUS_KEYS:
+        if value == text:
+            return _tr(key, value)
+    return text
+
+
+def _series_source_label(source: Any) -> str:
+    """i18n-Label fuer die Serien-Herkunft (unbekannt: Rohwert)."""
+    text = str(source or "").strip()
+    if text == "manual":
+        return _tr("finance_ui.forecast.series_source_manual", "manuell")
+    if text == "detected":
+        return _tr("finance_ui.forecast.series_source_detected", "erkannt")
+    return text
+
+
+def _series_amount_label(item: Any) -> str:
+    """Serien-Betrag (Tool-Dict, Dezimal) formatiert; None-/Fehler-sicher."""
+    try:
+        return _format_eur(float(_plan_field(item, "amount")))
+    except (TypeError, ValueError):
+        return "–"
+
+
 def _render_forecast_bills(tools: Any, iban_filter: dict) -> None:
     """Kommende Faelligkeiten: Projektion der wiederkehrenden Fälligkeiten."""
     st.markdown(_tr("finance_ui.forecast.bills_title", "### Kommende Fälligkeiten"))
