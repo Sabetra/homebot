@@ -1198,9 +1198,17 @@ class FinanceTools:
                     amount=bill["amount"],
                 )
             )
-            bill["cadence_source"] = (
-                "estimated" if bill["estimated_cadence"] is not None else None
-            )
+            # AP3: Dreistatus-Quellen-Marker (wie subscription_audit) --
+            # bestaetigte Serie > konservative Schaeetzung > unbekannt.
+            if (
+                self._series_pair_key(bill["currency"], bill["counterparty"])
+                in covered_series_pairs
+            ):
+                bill["cadence_source"] = "series"
+            else:
+                bill["cadence_source"] = (
+                    "estimated" if bill["estimated_cadence"] is not None else None
+                )
         currencies = {bill["currency"] for bill in bills}
         single_currency = currencies.pop() if len(currencies) == 1 else None
         window_occurrences = series_occurrences + heuristic_occurrences
