@@ -26,6 +26,7 @@ from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 from finance.db_schema import (
     FinanceDB,
     Goal,
+    SeriesRevisionConflict,
     _from_cents,
     _normalize_iban,
     _normalize_like_needle,
@@ -2318,6 +2319,172 @@ class FinanceTools:
             "success": True,
             "count": len(rows),
             "suppressions": rows,
+        }
+
+    def update_manual_series(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """AP3: Manuelle Serien-Parameter aktualisieren (Betrag, Rhythmus, Titel...).
+
+        Write-Tool. Optimistic Locking: ``expected_revision`` ist optional --
+        weggelassen wird die aktuelle Revision der Serie verwendet. Es werden
+        nur explizit uebergebene Felder geaendert (None/fehlend = unveraendert).
+        Moegliche Felder: amount (Betrag pro Periode), cadence, period_n,
+        anchor_date, anchor_day, counterparty, title, currency, direction,
+        effective_from, effective_to.
+        """
+        series_id = self._coerce_series_id(params)
+        if series_id is None:
+            return {
+                "success": False,
+                "error": "series_id ist erforderlich (positive ganze Zahl)",
+                "error_class": "invalid_param",
+            }
+        fields: Dict[str, Any] = {}
+        if params.get("amount") is not None:
+            try:
+                amount_cents = int(_to_cents(float(params["amount"])))
+            except (TypeError, ValueError):
+                return {
+                    "success": False,
+                    "error": "amount muss eine positive Zahl sein",
+                    "error_class": "invalid_param",
+                }
+            if amount_cents <= 0:
+                return {
+                    "success": False,
+                    "error": "amount muss groesser als 0 sein",
+                    "error_class": "invalid_param",
+                }
+            fields["amount_cents"] = amount_cents
+        for src, dst in (
+            ("cadence", "cadence"),
+            ("period_n", "period_n"),
+            ("anchor_day", "anchor_day"),
+            ("anchor_date", "anchor_date"),
+            ("counterparty", "counterparty"),
+            ("title", "title"),
+            ("currency", "currency"),
+            ("direction", "direction"),
+            ("effective_from", "effective_from"),
+            ("effective_to", "effective_to"),
+        ):
+            if params.get(src) is not None:
+                fields[dst] = params[src]
+        if not fields:
+            return {
+                "success": False,
+                "error": (
+                    "mind. ein Feld erforderlich (amount, cadence, period_n, "
+                    "anchor_date, anchor_day, counterparty, title, currency, "
+                    "effective_from, effective_to)"
+                ),
+                "error_class": "invalid_param",
+            }
+        expected_revision = params.get("expected_revision")
+        try:
+            if expected_revision is None:
+                expected_revision = int(self._db.get_series(series_id).revision)
+            series = self._db.update_series(
+                series_id, int(expected_revision), **fields
+            )
+        except SeriesRevisionConflict as exc:
+            return {
+                "success": False,
+                "error": str(exc),
+                "error_class": "conflict",
+                "hint": (
+                    "Die Serie wurde parallel geaendert. Mit list_series neu "
+                    "laden und mit der aktuellen expected_revision wiederholen."
+                ),
+            }
+        except ValueError as exc:
+            return {
+                "success": False,
+                "error": str(exc),
+                "error_class": self._series_error_class(exc),
+            }
+        return {"success": True, "series": self._series_to_dict(series)}
+
+    def create_manual_series(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """AP3: Manuelle wiederkehrende Serie anlegen (z.B. jaehrliche Kosten).
+
+        Write-Tool. Pflicht: iban, amount (Betrag pro Periode > 0), cadence
+        (monthly|n_months|weekly|n_weeks|yearly), anchor_date (YYYY-MM-DD).
+        Optional: counterparty, title, currency, period_n (fuer n_months/
+        n_weeks), effective_from, effective_to. Eine Serie ist eine
+        Prognose-Annahme -- es werden KEINE Buchungen erzeugt.
+        """
+        iban = _normalize_iban(str(params.get("iban") or ""))
+        if not iban:
+            return {
+                "success": False,
+                "error": "iban ist erforderlich (gültige IBAN-String)",
+                "error_class": "invalid_param",
+            }
+        try:
+            amount_cents = int(_to_cents(float(params.get("amount"))))
+        except (TypeError, ValueError):
+            return {
+                "success": False,
+                "error": "amount ist erforderlich (positive Zahl, z.B. 120.00)",
+                "error_class": "invalid_param",
+            }
+        if amount_cents <= 0:
+            return {
+                "success": False,
+                "error": "amount muss groesser als 0 sein",
+                "error_class": "invalid_param",
+            }
+        cadence = str(params.get("cadence") or "").strip().lower()
+        if cadence not in VALID_CADENCES:
+            return {
+                "success": False,
+                "error": (
+                    "cadence muss einer sein von: "
+                    f"{', '.join(sorted(VALID_CADENCES))}"
+                ),
+                "error_class": "invalid_param",
+            }
+        anchor_date = self._coerce_iso_date(params.get("anchor_date"))
+        if anchor_date is None:
+            return {
+                "success": False,
+                "error": "anchor_date ist erforderlich (YYYY-MM-DD)",
+                "error_class": "invalid_param",
+            }
+        kwargs: Dict[str, Any] = {
+            "iban": iban,
+            "direction": "expense",
+            "cadence": cadence,
+            "anchor_date": anchor_date,
+            "amount_cents": amount_cents,
+        }
+        for key in (
+            "counterparty",
+            "title",
+            "currency",
+            "period_n",
+            "anchor_day",
+            "effective_from",
+            "effective_to",
+        ):
+            if params.get(key) is not None:
+                kwargs[key] = params[key]
+        try:
+            series = self._db.create_series(**kwargs)
+        except ValueError as exc:
+            return {
+                "success": False,
+                "error": str(exc),
+                "error_class": self._series_error_class(exc),
+            }
+        return {
+            "success": True,
+            "series": self._series_to_dict(series),
+            "note": (
+                "Bestaetigte Serie -- sie fliesst ab sofort in die Prognose "
+                "(upcoming_bills) ein. Aenderung: update_manual_series, "
+                "Pausieren: pause_series."
+            ),
         }
 
     def _set_series_status(
