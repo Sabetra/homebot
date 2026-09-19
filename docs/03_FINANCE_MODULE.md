@@ -575,6 +575,93 @@ Locale-JSON-Validierung OK; `scripts/check_licenses.py` OK.
 Kein LLM-Load, keine produktiven Daten. Details + Gate-Log: Workdoc
 `docs/FORECAST_UX_WORKDOC_2026-09-16.md` (Abschnitt S3).
 
+## 23. Serien: Forecast-UX Stage 4 / AP3 (2026-09-19)
+
+Forecast-only-Support für wiederkehrende Verbindlichkeiten: **geschätzte Cadence**
+(deterministische Schätzung ohne Fallback), **reversible Prognose-Unterdrückung**
+(berührt weder Buchungen noch bestätigte Serien) und **manuelle Serien**
+(anlegen/aktualisieren mit Optimistic Locking).
+
+### 23.1 Geschätzte Cadence (`estimate_cadence`, `finance/series_engine.py`)
+
+`upcoming_bills()` und `subscription_audit()` tragen je Ausgabengruppe:
+
+| Feld | Bedeutung |
+|------|-----------|
+| `estimated_cadence` | `monthly`/`n_months`/`yearly`/`weekly`/`n_weeks` oder `null` |
+| `estimated_period_n` | Perioden-Multiplikator (1 bei monthly/yearly) |
+| `estimated_anchor` | erste Beobachtung als Ankerdatum |
+| `estimated_next_due` | nächste geschätzte Fälligkeit (Monatsgitter für monthly-artig, Wochenschritt für weekly-artig) |
+| `estimated_monthly` / `estimated_annual` | Cadence-Äquivalente (nur bei bekanntem Betrag) |
+| `estimated_confidence` | `low` (2 Beobachtungen) / `medium` (3+) |
+| `cadence_source` | **Drei-Zustands-Signal**: `"series"` (bestätigte Serie), `"estimated"` (geschätzt), sonst `null` |
+
+Konservative Regeln: < 2 Beobachtungen oder eindeutiger Rhythmus nicht
+bestimmbar → alle Felder `null`. Kein Fallback auf „monthly", keine
+Phantom-Projektion. Bestätigte Serien haben Priorität
+(`cadence_source = "series"`), auch wenn eine Schätzung existiert.
+
+### 23.2 Reversible Prognose-Unterdrückung (forecast-only)
+
+Neue Tabelle `forecast_suppressions` (`db_schema.py`): `iban`, `counterparty`
+(`UNIQUE (iban, counterparty)`), `currency`, `reason`, `active (0/1)`,
+Zeitstempel; Index auf `(active, iban)`.
+
+| Tool | Art | Verhalten |
+|------|-----|-----------|
+| `suppress_forecast` | Write | Pflicht `iban` + `counterparty`; optional `currency`/`reason`. Idempotent: bestehende Zeile (auch inaktiv) wird zurückgesetzt und re-aktiviert |
+| `restore_forecast` | Write | Zeile auf `active=0` (Historie bleibt); ohne Treffer → `error_class="not_found"` |
+| `list_forecast_suppressions` | Read | aktive Zeilen; `include_inactive=true` zeigt auch wieder aktivierte; optional IBAN-Filter |
+
+Scope: (iban, normalisierte Gegenpartei, Währung). Die Filterung wirkt in
+`upcoming_bills()` (Bills + Window-Okkurrenzen; zusätzlich `suppressed`-Liste)
+und `subscription_audit()` (Groups; zusätzlich `suppressed`-Liste).
+**Buchungen und bestätigte Serien bleiben unverändert** (testabgesichert).
+
+### 23.3 Manuelle Serien
+
+| Tool | Pflicht | Verhalten |
+|------|---------|-----------|
+| `create_manual_series` | `iban`, `amount` > 0, `cadence`, `anchor_date` | legt eine bestätigte Serie an (status `active`, `direction=expense`), **erzeugt KEINE Buchungen**; optional `counterparty`, `title`, `currency`, `period_n`, `anchor_day`, `effective_from`, `effective_to` |
+| `update_manual_series` | `series_id` + mind. ein Feld | änderbar: `amount`, `cadence`, `period_n`, `anchor_date`, `anchor_day`, `counterparty`, `title`, `currency`, `direction`, `effective_*`; Optimistic Locking via `expected_revision` (Default: aktuelle Revision; Stale → `error_class="conflict"` mit Hinweis zum Neuladen) |
+
+`cadence` ∈ {monthly, n_months, weekly, n_weeks, yearly}; `amount` ist der
+Betrag pro Periode (intern Cents).
+
+### 23.4 Agent, UI, i18n
+
+- **Agent**: alle fünf Tools registriert — `agent_toolkit.py` (Mapping
+  `finance_*` → Wrapper), `agent/tool_schemas.py` (Schemas mit
+  „WANN VERWENDEN"-Hinweisen); Profile: `suppress_forecast`,
+  `restore_forecast`, `create_manual_series`, `update_manual_series` in
+  `FINANCE_WRITE_TOOLS` (nur Finance-Pipeline),
+  `list_forecast_suppressions` in `FINANCE_ANALYTICS`.
+- **UI** (`finance/tab.py`, Forecast-Sektion): „Kommende Fälligkeiten" und
+  Audit-Tabelle zeigen Spalten *Turnus* + *Quelle* (bestätigt/geschätzt) und
+  je Zeile einen „🚫 Aus Prognose"-Button; Sektion „Aus der Prognose entfernt
+  (reversibel)" mit „↩️ Wiederherstellen"-Button pro Konto/Gegenpartei.
+  Helfer: `_forecast_source_label`, `_suppress_action`, `_restore_action`,
+  `_render_forecast_suppressed` (reine Funktionen; nur kanonische Tools).
+- **i18n**: neue Keys `finance_ui.forecast.bills_col_source`,
+  `bills_source_series`, `bills_source_estimated`, `suppress_btn`,
+  `suppress_help`, `suppress_ok`, `restore_btn`, `restore_ok`,
+  `suppressed_title` in DE/EN/BG (Labels über `_tr` mit Default-Fallback).
+
+### 23.5 Verifikation (2026-09-19, Projekt-venv `venv_bot_20260802`)
+
+- `tests/test_finance_forecast_ux_stage4.py` **39/39 PASS** — geschätzte
+  Cadence (konfident/unsicher/irregular, Priority über Serien), Suppression
+  (Exclusion in beiden Forecast-Tools, Buchungen unverändert, Idempotenz,
+  Restore ohne Löschung, Scope-Isolation zwischen Konten, bestätigte Serien
+  unangetastet), `create_manual_series` (Happy Path, keine Buchungen,
+  Projektion im Fenster, 8 Invalid-Param-Fälle), `update_manual_series`
+  (Revision-Inkrement, Cadence-Wechsel, Stale-Revision-Konflikt, 5
+  Invalid-Param-Fälle, `not_found`) — alle auf temporären SQLite-DBs,
+  keine produktiven Daten.
+- Regression: Stage-2 + Stage-3 + Series-Tools + Series-DAO **151/151 PASS**.
+- `py_compile` (`finance/tools.py`, Testdatei) OK; Locale-JSONs gültig;
+  alle i18n-Keys in DE/EN/BG vorhanden.
+
 ---
 
 *Für Änderungen am Finance-Modul, dieses Dokument aktualisieren.*
