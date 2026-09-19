@@ -868,6 +868,11 @@ Nach der Tool-Ausführung bekommst du die Ergebnisse und kannst weitere Tools ve
             "finance_skip_occurrence": self._finance_skip_occurrence,
             "finance_move_occurrence": self._finance_move_occurrence,
             "finance_change_occurrence_amount": self._finance_change_occurrence_amount,
+            "finance_suppress_forecast": self._finance_suppress_forecast,
+            "finance_restore_forecast": self._finance_restore_forecast,
+            "finance_list_forecast_suppressions": self._finance_list_forecast_suppressions,
+            "finance_update_manual_series": self._finance_update_manual_series,
+            "finance_create_manual_series": self._finance_create_manual_series,
             "finance_monthly_report": self._finance_monthly_report,
             "finance_list_transfer_candidates": self._finance_list_transfer_candidates,
             "finance_link_transfer": self._finance_link_transfer,
@@ -3909,6 +3914,21 @@ if _HAS_MPL:
 
     def _finance_change_occurrence_amount(self, params: Dict) -> Dict:
         return self._finance_tools.change_occurrence_amount(params)
+
+    def _finance_suppress_forecast(self, params: Dict) -> Dict:
+        return self._finance_tools.suppress_forecast(params)
+
+    def _finance_restore_forecast(self, params: Dict) -> Dict:
+        return self._finance_tools.restore_forecast(params)
+
+    def _finance_list_forecast_suppressions(self, params: Dict) -> Dict:
+        return self._finance_tools.list_forecast_suppressions(params)
+
+    def _finance_update_manual_series(self, params: Dict) -> Dict:
+        return self._finance_tools.update_manual_series(params)
+
+    def _finance_create_manual_series(self, params: Dict) -> Dict:
+        return self._finance_tools.create_manual_series(params)
 
     def _finance_monthly_report(self, params: Dict) -> Dict:
         return self._finance_tools.monthly_report(params)

@@ -1950,6 +1950,191 @@ def get_tool_schemas() -> List[Dict[str, Any]]:
         {
             "type": "function",
             "function": {
+                "name": "finance_suppress_forecast",
+                "description": (
+                    "Unterdrückt eine wiederkehrende Ausgabe (Gegenpartei) "
+                    "REVERSIBEL in der Prognose: upcoming_bills und "
+                    "subscription_audit zeigen sie dann nicht mehr -- aber "
+                    "Buchungen und bestätigte Serien bleiben unberührt. "
+                    "WANN VERWENDEN: 'Diese Rechnung kommt nie wieder, aus "
+                    "der Prognose nehmen', 'Falsche Prognose entfernen'."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "iban": {
+                            "type": "string",
+                            "description": "Konto-IBAN (aus upcoming_bills/subscription_audit)",
+                        },
+                        "counterparty": {
+                            "type": "string",
+                            "description": "Gegenpartei-Name exakt wie in der Prognose",
+                        },
+                        "currency": {
+                            "type": "string",
+                            "description": "Währungs-Code (optional, z.B. EUR)",
+                        },
+                        "reason": {
+                            "type": "string",
+                            "description": "Begründung/Freitext (optional)",
+                        },
+                    },
+                    "required": ["iban", "counterparty"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "finance_restore_forecast",
+                "description": (
+                    "Aktiviert eine per finance_suppress_forecast "
+                    "unterdrückte Prognose wieder (reversibel; die Zeile wird "
+                    "deaktiviert, NICHT gelöscht). "
+                    "WANN VERWENDEN: 'Prognose doch wieder einbauen', "
+                    "'Unterdrückung aufheben'."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "iban": {"type": "string", "description": "Konto-IBAN"},
+                        "counterparty": {
+                            "type": "string",
+                            "description": "Gegenpartei-Name (wie bei der Unterdrückung)",
+                        },
+                    },
+                    "required": ["iban", "counterparty"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "finance_list_forecast_suppressions",
+                "description": (
+                    "Listet Prognose-Unterdrückungen (Default: nur aktive; "
+                    "include_inactive zeigt auch wieder aktivierte). "
+                    "WANN VERWENDEN: 'Was ist aus der Prognose entfernt?', "
+                    "'Unterdrückte Rechnungen'."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "iban": {"type": "string", "description": "Konto-IBAN (optional)"},
+                        "include_inactive": {
+                            "type": "boolean",
+                            "description": "auch inaktive Zeilen (Default false)",
+                        },
+                    },
+                    "required": [],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "finance_update_manual_series",
+                "description": (
+                    "Aktualisiert Parameter einer (manuellen) Serie: amount "
+                    "(Betrag pro Periode), cadence, period_n, anchor_date, "
+                    "anchor_day, counterparty, title, currency, direction, "
+                    "effective_from/to. Optimistic Locking: expected_revision "
+                    "optional (Default: aktuelle Revision); bei 'conflict' "
+                    "mit finance_list_series neu laden und wiederholen. "
+                    "WANN VERWENDEN: 'Abo-Preis geändert', 'Rhythmus von "
+                    "quartal auf halbjährlich'."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "series_id": {
+                            "type": "integer",
+                            "description": "series_id aus finance_list_series",
+                        },
+                        "amount": {
+                            "type": "number",
+                            "description": "neuer Betrag pro Periode (> 0)",
+                        },
+                        "cadence": {
+                            "type": "string",
+                            "description": "monthly|n_months|weekly|n_weeks|yearly",
+                        },
+                        "period_n": {
+                            "type": "integer",
+                            "description": "Periode-Zahl für n_months/n_weeks",
+                        },
+                        "anchor_day": {"type": "integer", "description": "Ankertag 1-31"},
+                        "anchor_date": {
+                            "type": "string",
+                            "description": "Ankerdatum YYYY-MM-DD",
+                        },
+                        "counterparty": {"type": "string", "description": "neue Gegenpartei"},
+                        "title": {"type": "string", "description": "neuer Titel"},
+                        "currency": {"type": "string", "description": "neue Währung (z.B. EUR)"},
+                        "direction": {"type": "string", "description": "expense|income"},
+                        "effective_from": {"type": "string", "description": "YYYY-MM-DD (optional)"},
+                        "effective_to": {"type": "string", "description": "YYYY-MM-DD (optional)"},
+                        "expected_revision": {
+                            "type": "integer",
+                            "description": "Revision aus finance_list_series (Default: aktuell)",
+                        },
+                    },
+                    "required": ["series_id"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "finance_create_manual_series",
+                "description": (
+                    "Legt eine manuelle wiederkehrende Serie an (z.B. "
+                    "jährliche Hundesteuer, quartalsweise Raten). Es werden "
+                    "KEINE Buchungen erzeugt; die Serie fließt ab sofort "
+                    "bestätigt in die Prognose (upcoming_bills) ein. "
+                    "WANN VERWENDEN: 'Jahres-Kosten als Serie anlegen', "
+                    "wiederkehrende Zahlung, die nicht aus Buchungen erkannt "
+                    "wurde."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "iban": {"type": "string", "description": "Konto-IBAN"},
+                        "counterparty": {
+                            "type": "string",
+                            "description": "Gegenpartei/Name der Zahlung",
+                        },
+                        "amount": {
+                            "type": "number",
+                            "description": "Betrag pro Periode (> 0)",
+                        },
+                        "cadence": {
+                            "type": "string",
+                            "description": "monthly|n_months|weekly|n_weeks|yearly",
+                        },
+                        "anchor_date": {
+                            "type": "string",
+                            "description": "Erstes/Ankerdatum YYYY-MM-DD",
+                        },
+                        "period_n": {
+                            "type": "integer",
+                            "description": "Periode-Zahl für n_months/n_weeks (Default 1)",
+                        },
+                        "title": {"type": "string", "description": "Titel (optional)"},
+                        "currency": {
+                            "type": "string",
+                            "description": "Währung (optional, Default Kontowährung)",
+                        },
+                        "effective_from": {"type": "string", "description": "YYYY-MM-DD (optional)"},
+                        "effective_to": {"type": "string", "description": "YYYY-MM-DD (optional)"},
+                    },
+                    "required": ["iban", "amount", "cadence", "anchor_date"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
                 "name": "finance_skip_occurrence",
                 "description": (
                     "Springt ein einzelnes Vorkommen einer Serie über "
