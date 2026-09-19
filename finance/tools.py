@@ -1008,6 +1008,11 @@ class FinanceTools:
         )
 
     @staticmethod
+    def _normalized_counterparty(counterparty: Optional[str]) -> str:
+        """AP3: Key für Gegenparteien-Vergleich (Groß-/Leerzeichen-unabhängig)."""
+        return " ".join(str(counterparty or "").split()).casefold()
+
+    @staticmethod
     def _cadence_periods_per_year(cadence: str, period_n: int) -> float:
         """Zahlungen pro Jahr eines Rhythmus (F02-Aequivalente)."""
         if cadence == "monthly":
@@ -2231,7 +2236,7 @@ class FinanceTools:
         unberuehrt. Idempotent: erneuter Aufruf aktualisiert currency/reason
         und setzt die Zeile zurueck auf aktiv.
         """
-        iban = self._clean_iban_param(params.get("iban"))
+        iban = _normalize_iban(str(params.get("iban") or ""))
         if not iban:
             return {
                 "success": False,
@@ -2269,7 +2274,7 @@ class FinanceTools:
         Write-Tool. Die Zeile wird deaktiviert (active=0), NICHT geloescht;
         die Historie bleibt nachvollziehbar.
         """
-        iban = self._clean_iban_param(params.get("iban"))
+        iban = _normalize_iban(str(params.get("iban") or ""))
         if not iban:
             return {
                 "success": False,
@@ -2303,7 +2308,7 @@ class FinanceTools:
         zeigt auch bereits wieder aktivierte Zeilen.
         """
         iban_raw = params.get("iban")
-        iban = self._clean_iban_param(iban_raw) if iban_raw is not None else None
+        iban = _normalize_iban(str(iban_raw)) if iban_raw is not None else None
         include_inactive = bool(params.get("include_inactive", False))
         rows = self._db.list_forecast_suppressions(
             iban=_normalize_iban(iban) if iban else None,
