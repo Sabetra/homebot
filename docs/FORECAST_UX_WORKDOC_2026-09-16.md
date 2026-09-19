@@ -197,6 +197,8 @@ forecast_plan_journal   -- Undo via Gegenrevision; ueberlebt Item-Loeschung
 | 2026-09-17 | AP2 S1 (DAO): `tests/test_finance_series_dao.py` **55/55 PASS** — CRUD/Locking/Idempotenz/Kandidaten/Ausnahmen/Links/Journal+Undo + Engine↔DAO-Integration; DAO-Bug root-cause-fixt (`undo_series_change` Restore: `tuple + list` ⇒ `TypeError`, Fix + Regressions-Test) |
 | 2026-09-17 | AP2 S1 (DAO-Finale): `series_exceptions.note` (T11, Migration), `evidence_json` NOT-NULL, DAO-Root-Cause-Fixes; DAO-Suite **58/58 PASS**; Commit `543cfaf` (Pre-Commit-Gate 1628/1628) + Push |
 | 2026-09-17 | AP2 S1-Finale (Tools-API): 12 Tools in `finance/tools.py` (+4 Root-Cause-Fixes `_to_cents`/`note`), 12 Schemas, AgentToolkit-Dispatch +12, Profile +3 ANALYTICS/+9 WRITE; **47/47** Tools, **118/118** DAO+Engine, **136/136** Suite, **516/516** breit; Doku §21/§AC; Commit `20b15dd` (Pre-Commit-Gate: secret_guard sauber, **1675/1675** Tests, release gate grün) + Push |
+| 2026-09-19 | Stage 4 / AP3 (Forecast-only): geschätzte Cadence + `cadence_source` (3-Zustand) in `upcoming_bills`/`subscription_audit`; reversible Prognose-Unterdrückung (`forecast_suppressions`-Tabelle + 3 Tools, Bookings/Serien unberührt); `create_manual_series`/`update_manual_series` (Optimistic Locking, keine Buchungen); 5 Tools registriert (Toolkit/Schemas/Profiles); UI (Turnus/Quelle-Spalten, 🚫/↩️-Buttons, Suppressions-Sektion); 9 i18n-Keys DE/EN/BG; Doku §23/§AE |
+| 2026-09-19 | Stage 4 / AP3 ABGESCHLOSSEN: **39/39** `tests/test_finance_forecast_ux_stage4.py` (temporäre DBs, keine produktiven Daten), Regression Stage-2/3 + Series-Tools/DAO **151/151**, i18n-Konsistenz **9/9**; `py_compile` OK; Details S4 unten |
 
 ## AP2 — Serien, Erkennungen und Ist-Abgleich (Start 2026-09-17)
 
@@ -440,3 +442,35 @@ unverändert (die Monarch-Core-Suite pinnt dieselben Seeds als Referenz):
 
 **Commits (2026-09-18):** `16a4654` (S3-UI + i18n), `31e0af5`
 (Stage-3-Suite) — Push `origin/main` 2026-09-18.
+
+### S4 (Stage 4 / AP3: Schätzung + Suppression + manuelle Serien) — ABGESCHLOSSEN 2026-09-19
+
+**Auftrag (Forecast-only, reversible, keine Mutation):** geschätzte Cadence/
+nächste Fälligkeit für Gruppen ohne bestätigte Serie; reversible
+Unterdrückung von Ausgabengruppen in der Prognose (buchungsecht bleibt
+unberührt); manuelle Serien anlegen/aktualisieren.
+
+**Umsetzung:**
+
+| Bereich | Verhalten | Beleg |
+|---------|-----------|-------|
+| Geschätzte Cadence | `upcoming_bills` + `subscription_audit`: `estimated_cadence`/`period_n`/`anchor`/`next_due`/`monthly`/`annual`/`confidence` je Gruppe (Engine `estimate_cadence`); konservativ: < 2 Beobachtungen oder unbestimmbarer Rhythmus → `null` (kein "monthly"-Fallback, keine Phantom-Projektion) | `tests/test_finance_forecast_ux_stage4.py::TestEstimatedCadence` (konfident, unsicher, irregular) |
+| `cadence_source` | 3-Zustands-Signal je Zeile/Gruppe: `"series"` (bestätigte Serie, **hat Priorität** auch bei existierender Schätzung) · `"estimated"` · `null` | `::test_series_priority_over_estimate` |
+| Suppression | Tabelle `forecast_suppressions` (`UNIQUE (iban, counterparty)`, `active 0/1`); `suppress_forecast` (idempotent, Reaktivierung inaktiver Zeile), `restore_forecast` (`active=0`, Historie bleibt; `not_found` ohne Treffer), `list_forecast_suppressions` (`include_inactive`, IBAN-Filter); wirkt NUR in `upcoming_bills`/`subscription_audit` (norm. Gegenpartei + Währung); Bookings + bestätigte Serien unverändert | `::TestForecastSuppression` (Exclusion in beiden Tools, Buchungen unverändert, Idempotenz, Restore, Scope-Isolation Konten) |
+| Manuelle Serien | `create_manual_series` (amount>0, cadence, anchor_date; **keine Buchungen**; Projektion im Fenster sichtbar), `update_manual_series` (Optimistic Locking `expected_revision`, Stale → `conflict`; 13 Invalid-Param-Fälle) | `::TestCreateManualSeries`, `::TestUpdateManualSeries` |
+| Registrierung | `agent_toolkit.py` (+5 Mapping + Wrapper), `agent/tool_schemas.py` (+5 Schemas, „WANN VERWENDEN"), `agent/tool_profiles.py`: 4 Write in `FINANCE_WRITE_TOOLS`, `list_forecast_suppressions` in `FINANCE_ANALYTICS` | `test_tool_profile_gating.py` (besteht) |
+| UI | `finance/tab.py`: Spalten *Turnus* + *Quelle* (bestätigt/geschätzt) in „Kommende Fälligkeiten" + Audit-Tabelle; je Zeile „🚫 Aus Prognose"; Sektion „Aus der Prognose entfernt (reversibel)" mit „↩️ Wiederherstellen"; Helfer `_forecast_source_label`/`_suppress_action`/`_restore_action`/`_render_forecast_suppressed` (reine Funktionen) | Stage-3-Suite bleibt grün (192/192 inkl. Tab-Regression) |
+| i18n | 9 neue Keys `finance_ui.forecast.*` in DE/EN/BG (`bills_col_source`, `bills_source_series`, `bills_source_estimated`, `suppress_btn/help/ok`, `restore_btn/ok`, `suppressed_title`) | `tests/test_i18n_consistency.py` 9/9 |
+
+**Gate (2026-09-19, Projekt-venv `venv_bot_20260802`):**
+
+- `tests/test_finance_forecast_ux_stage4.py`: **39/39 PASS** (temporäre
+  SQLite-DBs, keine produktiven Daten)
+- Regression: Stage-2 + Stage-3 + Series-Tools + Series-DAO **151/151 PASS**
+- `tests/test_i18n_consistency.py`: **9/9 PASS**
+- `py_compile finance/tools.py` + Testdatei: OK · `de/en/bg.json` parsen: OK
+
+**Nicht in S4 (bewusst):** Original-AP3-Scope aus dem Implementations-Prompt
+("Belastbare Liquidität und statistischer Rest", F05/F06/F07) sowie AP4–AP6
+bleiben offen — S4 ist der Forecast-only-Slice (geschätzte Cadence,
+Suppression, manuelle Serien).
