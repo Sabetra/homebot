@@ -419,7 +419,18 @@
             "series_cadence_n_weeks": "Every {n} weeks",
             "series_cadence_yearly": "Yearly",
             "series_window": "Valid {from_date} – {to_date}",
-            "series_error": "Error: {error}"
+            "series_error": "Error: {error}",
+            "bills_col_cadence": "Cadence",
+            "bills_col_annual_est": "Annual (est.)",
+            "bills_col_source": "Source",
+            "bills_source_series": "confirmed",
+            "bills_source_estimated": "estimated",
+            "suppress_btn": "🚫 Remove from forecast",
+            "suppress_help": "Forecast only; bookings are kept.",
+            "suppress_ok": "\"{name}\" removed from the forecast (reversible).",
+            "restore_btn": "↩️ Restore",
+            "restore_ok": "\"{name}\" is back in the forecast.",
+            "suppressed_title": "#### Removed from the forecast (reversible)"
         },
         "categorization": {
             "subheader": "🏷️ Categorization",

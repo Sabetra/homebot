@@ -445,7 +445,18 @@
             "series_cadence_n_weeks": "Alle {n} Wochen",
             "series_cadence_yearly": "Jährlich",
             "series_window": "Gültig {from_date} – {to_date}",
-            "series_error": "Fehler: {error}"
+            "series_error": "Fehler: {error}",
+            "bills_col_cadence": "Turnus",
+            "bills_col_annual_est": "Jährlich (est.)",
+            "bills_col_source": "Quelle",
+            "bills_source_series": "bestätigt",
+            "bills_source_estimated": "geschätzt",
+            "suppress_btn": "🚫 Aus Prognose",
+            "suppress_help": "Nur die Prognose; Buchungen bleiben erhalten.",
+            "suppress_ok": "„{name}” aus der Prognose entfernt (reversibel).",
+            "restore_btn": "↩️ Wiederherstellen",
+            "restore_ok": "„{name}” wieder in der Prognose.",
+            "suppressed_title": "#### Aus der Prognose entfernt (reversibel)"
         },
         "categorization": {
             "subheader": "🏷️ Categorization",

@@ -419,7 +419,18 @@
             "series_cadence_n_weeks": "На всеки {n} седмици",
             "series_cadence_yearly": "Ежегодно",
             "series_window": "Валидна от {from_date} до {to_date}",
-            "series_error": "Грешка: {error}"
+            "series_error": "Грешка: {error}",
+            "bills_col_cadence": "Честота",
+            "bills_col_annual_est": "Годишно (оценк.)",
+            "bills_col_source": "Източник",
+            "bills_source_series": "потвърдена",
+            "bills_source_estimated": "прогнозирана",
+            "suppress_btn": "🚫 Премахни от прогнозата",
+            "suppress_help": "Само прогнозата; записите се запазват.",
+            "suppress_ok": "„{name}” е премахнат от прогнозата (обратимо).",
+            "restore_btn": "↩️ Възстанови",
+            "restore_ok": "„{name}” е отново в прогнозата.",
+            "suppressed_title": "#### Премахнати от прогнозата (обратимо)"
         },
         "categorization": {
             "subheader": "🏷️ Категоризация",
