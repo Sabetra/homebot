@@ -1299,7 +1299,7 @@ def _suppress_action(tools: Any, iban: Any, counterparty: Any) -> None:
     result = tools.suppress_forecast({"iban": iban, "counterparty": counterparty})
     if result.get("success"):
         _series_flash(
-            _tr("finance_ui.forecast.suppress_ok", "„{name}" aus der Prognose entfernt (reversibel).", name=counterparty)
+            _tr("finance_ui.forecast.suppress_ok", "„{name}” aus der Prognose entfernt (reversibel).", name=counterparty)
         )
         st.rerun()
     st.error(_tr("finance_ui.forecast.series_error", "Fehler: {error}", error=str(result.get("error") or "?")))
@@ -1310,7 +1310,7 @@ def _restore_action(tools: Any, iban: Any, counterparty: Any) -> None:
     result = tools.restore_forecast({"iban": iban, "counterparty": counterparty})
     if result.get("success"):
         _series_flash(
-            _tr("finance_ui.forecast.restore_ok", "„{name}" wieder in der Prognose.", name=counterparty)
+            _tr("finance_ui.forecast.restore_ok", "„{name}” wieder in der Prognose.", name=counterparty)
         )
         st.rerun()
     st.error(_tr("finance_ui.forecast.series_error", "Fehler: {error}", error=str(result.get("error") or "?")))
