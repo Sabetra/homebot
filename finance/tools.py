@@ -21,7 +21,7 @@ import re
 import sqlite3
 from datetime import date, timedelta
 from statistics import mean, median, pstdev
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
 from finance.db_schema import (
     FinanceDB,
@@ -37,6 +37,7 @@ from finance.series_engine import (
     SeriesException,
     SeriesSpec,
     detect_candidates,
+    estimate_cadence,
     expand_series,
     next_occurrences,
 )
