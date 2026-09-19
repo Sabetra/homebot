@@ -991,20 +991,18 @@ class FinanceTools:
             "estimated_confidence": str(confidence),
         }
 
-    @classmethod
-    def _suppressed_counterparties(cls, iban: Optional[str]) -> Set[str]:
+    def _suppressed_counterparties(self, iban: Optional[str]) -> Set[str]:
         """AP3: Aktive Prognose-Unterdrückungen im aktuellen IBAN-Scope.
 
         Mit ``iban`` (Tool-Filter) wirkt nur die Unterdrückung dieses
         Kontos; ohne Filter alle Konten. Normalisiert für den Vergleich.
         """
-        names = cls._db.active_forecast_suppressed_counterparties(iban)
-        return {cls._normalized_counterparty(name) for name in names if name}
+        names = self._db.active_forecast_suppressed_counterparties(iban)
+        return {self._normalized_counterparty(name) for name in names if name}
 
-    @classmethod
-    def _suppressed_rows(cls, iban: Optional[str]) -> List[Dict[str, Any]]:
+    def _suppressed_rows(self, iban: Optional[str]) -> List[Dict[str, Any]]:
         """AP3: Aktive Unterdrückungs-Zeilen im Scope (UI/Tool-Ausgabe)."""
-        return cls._db.list_forecast_suppressions(
+        return self._db.list_forecast_suppressions(
             iban=_normalize_iban(iban) if iban else None, active_only=True
         )
 
