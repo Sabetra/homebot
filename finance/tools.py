@@ -1172,6 +1172,7 @@ class FinanceTools:
             bills.append(
                 {
                     "counterparty": counterparty,
+                    "iban": group["iban"],
                     "category": category,
                     "currency": group["currency"],
                     "amount": group["average_expense"],
@@ -2786,6 +2787,7 @@ class FinanceTools:
             audits.append(
                 {
                     "counterparty": counterparty,
+                    "iban": group["iban"],
                     "category": category,
                     "currency": group["currency"],
                     "monthly_cost": monthly,

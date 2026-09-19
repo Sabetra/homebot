@@ -1278,12 +1278,79 @@ def _render_forecast_series_list(tools: Any, iban_filter: dict) -> None:
                 st.caption(_tr("finance_ui.forecast.series_ended_hint", "Beendet — keine Vorkommen mehr im Kalender."))
 
 
+def _forecast_cadence_label(cadence: Any, period_n: Any) -> str:
+    """AP3: Turnus-Label fuer geschätzte/bestatigte Cadences (i18n)."""
+    return _series_cadence_label(cadence, period_n)
+
+
+def _forecast_source_label(source: Any) -> str:
+    """AP3: cadence_source -> UI-Label (bestaetigt/geschätzt)."""
+    key = {
+        "series": "finance_ui.forecast.bills_source_series",
+        "estimated": "finance_ui.forecast.bills_source_estimated",
+    }.get(str(source or ""), None)
+    if key is None:
+        return ""
+    return _tr(key, "geschätzt" if source == "estimated" else "bestätigt")
+
+
+def _suppress_action(tools: Any, iban: Any, counterparty: Any) -> None:
+    """AP3: Prognose-Unterdrueckung anwenden (reversibel, Write-Tool)."""
+    result = tools.suppress_forecast({"iban": iban, "counterparty": counterparty})
+    if result.get("success"):
+        _series_flash(
+            _tr("finance_ui.forecast.suppress_ok", "„{name}" aus der Prognose entfernt (reversibel).", name=counterparty)
+        )
+        st.rerun()
+    st.error(_tr("finance_ui.forecast.series_error", "Fehler: {error}", error=str(result.get("error") or "?")))
+
+
+def _restore_action(tools: Any, iban: Any, counterparty: Any) -> None:
+    """AP3: Prognose-Unterdrueckung aufheben (reversibel, Write-Tool)."""
+    result = tools.restore_forecast({"iban": iban, "counterparty": counterparty})
+    if result.get("success"):
+        _series_flash(
+            _tr("finance_ui.forecast.restore_ok", "„{name}" wieder in der Prognose.", name=counterparty)
+        )
+        st.rerun()
+    st.error(_tr("finance_ui.forecast.series_error", "Fehler: {error}", error=str(result.get("error") or "?")))
+
+
+def _render_forecast_suppressed(tools: Any, iban_filter: dict) -> None:
+    """AP3: Aktive Prognose-Unterdrückungen mit Restore-Buttons."""
+    res = tools.list_forecast_suppressions(dict(iban_filter or {}))
+    if not res.get("success"):
+        return
+    rows = [r for r in res.get("suppressions") or [] if isinstance(r, dict)]
+    if not rows:
+        return
+    st.markdown(_tr("finance_ui.forecast.suppressed_title", "#### Aus der Prognose entfernt (reversibel)"))
+    for r in rows:
+        cp = str(r.get("counterparty") or "").strip()
+        iban = r.get("iban")
+        reason = str(r.get("reason") or "").strip()
+        label = cp or "—"
+        if reason:
+            label += f" · {reason}"
+        col_r, btn = st.columns([4, 1])
+        col_r.caption(label)
+        if btn.button(
+            _tr("finance_ui.forecast.restore_btn", "↩️ Wiederherstellen"),
+            key=f"finance_forecast_restore_{abs(hash((str(iban), cp)))}",
+        ):
+            _restore_action(tools, iban, cp)
+
+
 def _render_forecast_bills(tools: Any, iban_filter: dict) -> None:
     """Kommende Faelligkeiten: Projektion der wiederkehrenden Fälligkeiten."""
     st.markdown(_tr("finance_ui.forecast.bills_title", "### Kommende Fälligkeiten"))
     window_days = int(st.slider(_tr("finance_ui.forecast.bills_window", "Fenster (Tage)"), 7, 180, 30, 7, key="finance_forecast_bills_window"))
     bills = tools.upcoming_bills({"days_ahead": window_days, **iban_filter})
-    if not bills.get("success") or not bills.get("count"):
+    if not bills.get("success"):
+        st.error(_tr("finance_ui.forecast.series_error", "Fehler: {error}", error=str(bills.get("error") or "?")))
+        return
+    if not bills.get("count"):
+        _render_forecast_suppressed(tools, iban_filter)
         st.info(_tr("finance_ui.forecast.bills_empty", "Keine wiederkehrenden Zahlungen im gewählten Fenster."))
         return
     df = pd.DataFrame(
@@ -1295,6 +1362,9 @@ def _render_forecast_bills(tools: Any, iban_filter: dict) -> None:
                 _tr("finance_ui.forecast.col_amount", "Betrag"): _format_eur(b["amount"]),
                 _tr("finance_ui.forecast.col_currency", "Währung"): b["currency"],
                 _tr("finance_ui.forecast.col_category", "Kategorie"): b.get("category") or "—",
+                _tr("finance_ui.forecast.bills_col_cadence", "Turnus"): _forecast_cadence_label(b.get("estimated_cadence"), b.get("estimated_period_n")) if b.get("estimated_cadence") else "—",
+                _tr("finance_ui.forecast.bills_col_annual_est", "Jährlich (est.)"): _format_eur(b.get("estimated_annual")) if b.get("estimated_annual") is not None else "—",
+                _tr("finance_ui.forecast.bills_col_source", "Quelle"): _forecast_source_label(b.get("cadence_source")),
                 _tr("finance_ui.forecast.col_subscription", "Abo?"): "✅" if b.get("subscription_like") else "",
             }
             for b in bills["bills"]
@@ -1303,6 +1373,23 @@ def _render_forecast_bills(tools: Any, iban_filter: dict) -> None:
     st.dataframe(df, width='stretch', hide_index=True)
     if bills.get("total_in_window") is not None:
         st.metric(_tr("finance_ui.forecast.bills_total", "Summe im Fenster"), _format_eur(bills["total_in_window"]))
+    # AP3: je Zeile reversible Prognose-Unterdrueckung (Write-Tool).
+    for b in bills["bills"]:
+        cp = b["counterparty"]
+        iban = b.get("iban")
+        if not iban:
+            continue
+        col_info, btn = st.columns([4, 1])
+        col_info.caption(
+            f"{cp} · {b['next_due']} · {_format_eur(b['amount'])} {b['currency']}"
+        )
+        if btn.button(
+            _tr("finance_ui.forecast.suppress_btn", "🚫 Aus Prognose"),
+            key=f"finance_forecast_suppress_{abs(hash((str(iban), cp)))}",
+            help=_tr("finance_ui.forecast.suppress_help", "Nur die Prognose; Buchungen bleiben erhalten."),
+        ):
+            _suppress_action(tools, iban, cp)
+    _render_forecast_suppressed(tools, iban_filter)
 
 
 def _render_forecast_audit(tools: Any, iban_filter: dict) -> None:
@@ -1320,6 +1407,8 @@ def _render_forecast_audit(tools: Any, iban_filter: dict) -> None:
                 _tr("finance_ui.forecast.col_currency", "Währung"): g["currency"],
                 _tr("finance_ui.forecast.col_monthly", "Monatlich"): _format_eur(g["monthly_cost"]),
                 _tr("finance_ui.forecast.col_annual", "Jährlich"): _format_eur(g["annual_cost"]),
+                _tr("finance_ui.forecast.bills_col_cadence", "Turnus"): _forecast_cadence_label(g.get("cadence") or g.get("estimated_cadence"), g.get("period_n") or g.get("estimated_period_n")) if (g.get("cadence") or g.get("estimated_cadence")) else "—",
+                _tr("finance_ui.forecast.bills_col_source", "Quelle"): _forecast_source_label(g.get("cadence_source")),
                 _tr("finance_ui.forecast.col_last", "Letzte Zahlung"): g["last_seen"],
                 _tr("finance_ui.forecast.col_price_change", "Preisänderung"): _format_price_change(g.get("price_change")),
                 _tr("finance_ui.forecast.col_subscription", "Abo?"): "✅" if g.get("subscription_like") else "",
@@ -1332,6 +1421,21 @@ def _render_forecast_audit(tools: Any, iban_filter: dict) -> None:
         col_t1, col_t2 = st.columns(2)
         col_t1.metric(_tr("finance_ui.forecast.audit_total_monthly", "Monatsgesamt"), _format_eur(audit["total_monthly"]))
         col_t2.metric(_tr("finance_ui.forecast.audit_total_annual", "Jahresgesamt"), _format_eur(audit["total_annual"]))
+    # AP3: je Gruppe reversible Prognose-Unterdrueckung (Write-Tool).
+    for g in audit["groups"]:
+        cp = g["counterparty"]
+        iban = g.get("iban")
+        if not iban:
+            continue
+        col_info, btn = st.columns([4, 1])
+        col_info.caption(f"{cp} · {_format_eur(g['monthly_cost'])}/Monat {g['currency']}")
+        if btn.button(
+            _tr("finance_ui.forecast.suppress_btn", "🚫 Aus Prognose"),
+            key=f"finance_forecast_audit_suppress_{abs(hash((str(iban), cp)))}",
+            help=_tr("finance_ui.forecast.suppress_help", "Nur die Prognose; Buchungen bleiben erhalten."),
+        ):
+            _suppress_action(tools, iban, cp)
+    _render_forecast_suppressed(tools, iban_filter)
 
 
 # ---------------------------------------------------------------------------
