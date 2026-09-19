@@ -1736,3 +1736,30 @@ Finance-Regression 192/192; Voll-Suite `tests/` 1721/1721 PASS (Exit 0);
 `py_compile finance/tab.py` + Locale-JSON-Validierung OK;
 `scripts/check_licenses.py` OK. Details: `docs/03_FINANCE_MODULE.md` §22
 und Workdoc `docs/FORECAST_UX_WORKDOC_2026-09-16.md` (Abschnitt S3).
+
+## AE. Forecast-UX Stage 4 / AP3 — Schätzung, Suppression, manuelle Serien (2026-09-19)
+
+Forecast-only-Erweiterung der Serien-/Prognose-Features (aufbauend auf §AC/§AD):
+drei neue Kapazitäten, alles deterministisch, **ohne LLM**, ausschließlich
+über kanonische FinanceTools:
+
+| Baustein | Ort | Verhalten |
+|----------|-----|-----------|
+| Geschätzte Cadence | `finance/tools.py` (`_estimated_cadence_info`), Engine `estimate_cadence` (`finance/series_engine.py`) | `upcoming_bills()` + `subscription_audit()` tragen je Gruppe `estimated_cadence/period_n/anchor/next_due/monthly/annual/confidence`; konservativ: < 2 Beobachtungen oder unbestimmbarer Rhythmus → alle `null` (kein „monthly"-Fallback). Neue Spalten *Turnus* + *Quelle* in der UI |
+| `cadence_source` | `finance/tools.py` | Drei-Zustands-Signal je Zeile/Gruppe: `"series"` (bestätigte Serie, hat Priorität) · `"estimated"` (geschätzt) · `null` (kein Signal) |
+| Reversible Prognose-Unterdrückung | DAO-Tabelle `forecast_suppressions` (`db_schema.py`, `UNIQUE (iban, counterparty)`) + Tools `suppress_forecast` / `restore_forecast` / `list_forecast_suppressions` | Wirkt NUR auf `upcoming_bills()` + `subscription_audit()` (Filterung über normalisierte Gegenpartei + Währung); **Buchungen und bestätigte Serien bleiben unverändert**; Restore setzt `active=0` (keine Löschung); `suppress_forecast` idempotent; `list_forecast_suppressions` mit `include_inactive` + IBAN-Filter |
+| Manuelle Serien | Tools `create_manual_series` / `update_manual_series` | Bestätigte Serien ohne Buchungserzeugung anlegen (amount>0, cadence, anchor_date) und ändern (optimistic locking via `expected_revision`, Stale → `error_class="conflict"`); `cadence` ∈ {monthly, n_months, weekly, n_weeks, yearly} |
+| UI | `finance/tab.py` | „Kommende Fälligkeiten" + Audit-Tabelle: Spalten *Turnus*/*Quelle* (bestätigt/geschätzt), je Zeile „🚫 Aus Prognose"-Button; Sektion „Aus der Prognose entfernt (reversibel)" mit „↩️ Wiederherstellen"-Button; Helfer `_forecast_source_label`, `_suppress_action`, `_restore_action`, `_render_forecast_suppressed` |
+| i18n | `i18n/locales/{de,en,bg}.json` | 9 neue Keys `finance_ui.forecast.*` (`bills_col_source`, `bills_source_series`, `bills_source_estimated`, `suppress_btn/help/ok`, `restore_btn/ok`, `suppressed_title`) |
+| Agent | `agent_toolkit.py`, `agent/tool_schemas.py`, `agent/tool_profiles.py` | 5 neue Tools (`finance_suppress_forecast`, `finance_restore_forecast`, `finance_list_forecast_suppressions`, `finance_create_manual_series`, `finance_update_manual_series`); 4 Write-Tools in `FINANCE_WRITE_TOOLS`, List-Tool in `FINANCE_ANALYTICS` |
+| Tests | `tests/test_finance_forecast_ux_stage4.py` | 39 Tests: Schätzung (konfident/unsicher/irregular, Series-Priority), Suppression (Exclusion in beiden Forecast-Tools, Buchungen unverändert, Idempotenz, Restore, Scope-Isolation, Serien unangetastet), manuelle Serien (Create/Update, Revision-Konflikte, 13 Invalid-Param-Fälle) — temporäre SQLite-DBs, keine produktiven Daten |
+
+Design-Prinzipien (unverändert aus §AD): UI schreibt NIE direkt in die DAO;
+Fehlerpfade → `st.error` mit `{error}` statt Crash; Kandidaten/Schätzungen
+bleiben Vorschläge — nur `create_manual_series`/`confirm_candidate` erzeugen
+bestätigte Serien; Suppression ist bewusst forecast-only und reversibel.
+
+Verifiziert (Projekt-venv `venv_bot_20260802`): Stage-4-Suite 39/39;
+Regression Stage-2/3 + Series-Tools + Series-DAO 151/151; i18n-Konsistenz
+9/9; `py_compile` OK; alle i18n-Keys in DE/EN/BG vorhanden. Details:
+`docs/03_FINANCE_MODULE.md` §23.

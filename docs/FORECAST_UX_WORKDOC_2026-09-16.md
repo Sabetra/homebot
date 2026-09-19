@@ -1,8 +1,8 @@
-<!-- last-verified: 2026-09-18 -->
+<!-- last-verified: 2026-09-19 -->
 # WORKDOC — Forecast UX (Plan-Items), 2026-09-16
 
 Aufgabe: `docs_archive/FORECAST_UX_QWEN_IMPLEMENTATION_PROMPT_2026-09-16.md`
-Status: AP1 (UI + Core) ABGESCHLOSSEN (2026-09-16, alle DoD-Punkte ✅, 222/222 Tests grün). AP2 Stage 1 (Engine + DAO + Tools-API) ABGESCHLOSSEN (2026-09-17, breite Suite 516/516 grün). AP2 Stage 2 (F01/F02/F08) ABGESCHLOSSEN (2026-09-18, 16/16 Stage-2-Tests + 1691/1691 Voll-Suite grün). AP2 Stage 3 (UI + i18n + Tests) ABGESCHLOSSEN (2026-09-18, 30/30 Stage-3-Tests + 1721/1721 Voll-Suite grün). **Alle AP2-Stage abgeschlossen.**
+Status: AP1 (UI + Core) ABGESCHLOSSEN (2026-09-16, alle DoD-Punkte ✅, 222/222 Tests grün). AP2 Stage 1 (Engine + DAO + Tools-API) ABGESCHLOSSEN (2026-09-17, breite Suite 516/516 grün). AP2 Stage 2 (F01/F02/F08) ABGESCHLOSSEN (2026-09-18, 16/16 Stage-2-Tests + 1691/1691 Voll-Suite grün). AP2 Stage 3 (UI + i18n + Tests) ABGESCHLOSSEN (2026-09-18, 30/30 Stage-3-Tests + 1721/1721 Voll-Suite grün). **Alle AP2-Stage abgeschlossen.** Stage 4 / AP3 (Forecast-only: geschätzte Cadence, reversible Prognose-Unterdrückung, manuelle Serien) ABGESCHLOSSEN (2026-09-19, 39/39 Stage-4-Tests + 151/151 Regression + i18n 9/9 grün; `docs/03_FINANCE_MODULE.md` §23, `funktionen.md` §AE).
 
 ---
 
