@@ -2197,6 +2197,34 @@ class FinanceDB:
                 for r in rows
             ]
 
+    def primary_account_for_counterparty(self, counterparty: str) -> Optional[int]:
+        """Konto-ID mit den meisten Buchungen einer Gegenseite.
+
+        Fuer die (reversiblen) Prognose-Unterdrueckungen bei
+        Mehr-Konto-Ansicht: deterministische Zuordnung der
+        (Waehrung, Gegenseite)-Gruppe auf ein Konto (hoehste Anzahl,
+        Tiebreak kleinste Konto-ID). Transfers bleiben ausgeschlossen.
+        Gibt None zurueck, wenn es keine Buchungen der Gegenseite gibt.
+        """
+        cp = self._clean_text(counterparty)
+        if not cp:
+            return None
+        with self._lock, self._connect() as conn:
+            row = conn.execute(
+                f"""
+                SELECT t.account_id AS account_id, COUNT(*) AS n
+                FROM transactions t
+                WHERE t.counterparty = ? AND {self._non_transfer_clause("t")}
+                GROUP BY t.account_id
+                ORDER BY n DESC, t.account_id ASC
+                LIMIT 1
+                """,
+                (cp,),
+            ).fetchone()
+        if row is None:
+            return None
+        return int(row["account_id"])
+
     def query_transactions(
         self,
         *,

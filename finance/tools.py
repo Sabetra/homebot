@@ -4280,6 +4280,26 @@ class FinanceTools:
                 return a.currency
         return DEFAULT_CURRENCY
 
+    def _iban_for_counterparty(self, iban_param: Optional[str], counterparty: str) -> Optional[str]:
+        """AP3: Konten-IBAN fuer Prognose-Unterdrueckung einer Gruppe.
+
+        Ausgewaehltes Einzelkonto bleibt unveraendert; in der
+        Mehr-Konto-Ansicht wird die (Waehrung, Gegenseite)-Gruppe
+        deterministisch auf das Konto mit den meisten Buchungen der
+        Gegenseite zugeordnet (DAO: primary_account_for_counterparty).
+        None => Gruppe laesst sich keinem Konto zuordnen.
+        """
+        if iban_param:
+            target = _normalize_iban(iban_param)
+            return target or None
+        account_id = self._db.primary_account_for_counterparty(counterparty)
+        if account_id is None:
+            return None
+        for a in self._db.list_accounts():
+            if a.id == account_id:
+                return a.iban
+        return None
+
     def _analysis_facts(
         self, params: Dict[str, Any]
     ) -> Tuple[List[Dict[str, Any]], Optional[Dict[str, Any]]]:
