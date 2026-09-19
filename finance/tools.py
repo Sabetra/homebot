@@ -892,6 +892,122 @@ class FinanceTools:
         )
 
     @staticmethod
+    def _estimated_cadence_info(
+        facts: List[Dict[str, Any]],
+        *,
+        counterparty: str,
+        currency: Optional[str],
+        reference: date,
+        amount: Optional[float],
+    ) -> Dict[str, Any]:
+        """AP3: Konservative Kadenz-Schaetzung fuer eine Ausgabengruppe.
+
+        Nutzt die deterministische ``estimate_cadence``-Engine (>= 2
+        Beobachtungen, eindeutiger Rhythmus, sonst None) und leitet die
+        naechste geschätzte Faelligkeit korrekt ab (monatliches Gitter
+        fuer monthly/n_months/yearly, Wochen-Schritt sonst). Alle
+        Werte bleiben ``None``, wenn die Schätzung nicht gelingt --
+        KEIN Fallback auf 'monthly', KEINE Phantom-Projektion.
+        """
+        empty: Dict[str, Any] = {
+            "estimated_cadence": None,
+            "estimated_period_n": None,
+            "estimated_anchor": None,
+            "estimated_next_due": None,
+            "estimated_monthly": None,
+            "estimated_annual": None,
+            "estimated_confidence": None,
+        }
+        if not counterparty or currency is None:
+            return empty
+        observations = sorted(
+            {
+                str(fact["booking_date"])
+                for fact in facts
+                if (
+                    fact.get("counterparty") == counterparty
+                    and fact.get("currency") == currency
+                    and int(fact.get("amount_cents") or 0) < 0
+                    and fact.get("booking_date")
+                )
+            }
+        )
+        if len(observations) < 2:
+            return empty
+        try:
+            estimate = estimate_cadence(observations)
+        except (ValueError, TypeError):
+            return empty
+        if estimate is None:
+            return empty
+        cadence, period_n, _anchor_day, confidence = estimate
+        cadence = str(cadence)
+        period_n = int(period_n)
+        try:
+            anchor = date.fromisoformat(observations[0])
+        except ValueError:
+            anchor = reference
+        next_due: Optional[date] = None
+        if cadence in ("monthly", "n_months", "yearly"):
+            step = 12 if cadence == "yearly" else max(1, period_n)
+
+            def _add_months(d: date, months: int) -> date:
+                total = d.month - 1 + months
+                year = d.year + total // 12
+                month = total % 12 + 1
+                day = min(d.day, calendar.monthrange(year, month)[1])
+                return date(year, month, day)
+
+            if anchor >= reference:
+                next_due = anchor
+            else:
+                mdiff = (reference.year - anchor.year) * 12 + (
+                    reference.month - anchor.month
+                )
+                k = max(1, (mdiff + step - 1) // step)
+                candidate = _add_months(anchor, k * step)
+                while candidate < reference:
+                    k += 1
+                    candidate = _add_months(anchor, k * step)
+                next_due = candidate
+        elif cadence in ("weekly", "n_weeks"):
+            next_due = reference + timedelta(weeks=max(1, period_n))
+        if next_due is None:
+            return empty
+        monthly: Optional[float] = None
+        annual: Optional[float] = None
+        if amount is not None:
+            monthly, annual = FinanceTools._cadence_equivalents(
+                cadence, period_n, round(float(amount), 2)
+            )
+        return {
+            "estimated_cadence": cadence,
+            "estimated_period_n": period_n if cadence in ("n_months", "n_weeks") else None,
+            "estimated_anchor": anchor.isoformat(),
+            "estimated_next_due": next_due.isoformat(),
+            "estimated_monthly": monthly,
+            "estimated_annual": annual,
+            "estimated_confidence": str(confidence),
+        }
+
+    @classmethod
+    def _suppressed_counterparties(cls, iban: Optional[str]) -> Set[str]:
+        """AP3: Aktive Prognose-Unterdrückungen im aktuellen IBAN-Scope.
+
+        Mit ``iban`` (Tool-Filter) wirkt nur die Unterdrückung dieses
+        Kontos; ohne Filter alle Konten. Normalisiert für den Vergleich.
+        """
+        names = cls._db.active_forecast_suppressed_counterparties(iban)
+        return {cls._normalized_counterparty(name) for name in names if name}
+
+    @classmethod
+    def _suppressed_rows(cls, iban: Optional[str]) -> List[Dict[str, Any]]:
+        """AP3: Aktive Unterdrückungs-Zeilen im Scope (UI/Tool-Ausgabe)."""
+        return cls._db.list_forecast_suppressions(
+            iban=_normalize_iban(iban) if iban else None, active_only=True
+        )
+
+    @staticmethod
     def _cadence_periods_per_year(cadence: str, period_n: int) -> float:
         """Zahlungen pro Jahr eines Rhythmus (F02-Aequivalente)."""
         if cadence == "monthly":
@@ -972,6 +1088,15 @@ class FinanceTools:
             for group in self._recurring_groups(facts, min_occurrences=2)
             if (group["currency"], group["counterparty"]) in expense_pairs
         ]
+        # AP3: reversible forecast suppressions (suppress_forecast).
+        # Affect only this forecast output; bookings/series stay untouched.
+        suppressed_cps = self._suppressed_counterparties(iban)
+        if suppressed_cps:
+            groups = [
+                group
+                for group in groups
+                if self._normalized_counterparty(group["counterparty"]) not in suppressed_cps
+            ]
 
         window_end = reference + timedelta(days=days_ahead)
         bills = []
@@ -1002,6 +1127,12 @@ class FinanceTools:
                         "exception": occ.exception,
                     }
                 )
+        if suppressed_cps:
+            series_occurrences = [
+                occ
+                for occ in series_occurrences
+                if self._normalized_counterparty(occ["counterparty"]) not in suppressed_cps
+            ]
         heuristic_occurrences: List[Dict[str, Any]] = []
         for group in groups:
             counterparty = group["counterparty"]
@@ -1049,6 +1180,22 @@ class FinanceTools:
                 }
             )
         bills.sort(key=lambda bill: (bill["next_due"], bill["counterparty"]))
+        # AP3: conservative cadence estimate per unconfirmed group.
+        # estimated_* stay None when no estimate is derivable; the legacy
+        # anchor-day heuristic (next_due/next_occurrences) is unchanged.
+        for bill in bills:
+            bill.update(
+                self._estimated_cadence_info(
+                    facts,
+                    counterparty=bill["counterparty"],
+                    currency=bill["currency"],
+                    reference=reference,
+                    amount=bill["amount"],
+                )
+            )
+            bill["cadence_source"] = (
+                "estimated" if bill["estimated_cadence"] is not None else None
+            )
         currencies = {bill["currency"] for bill in bills}
         single_currency = currencies.pop() if len(currencies) == 1 else None
         window_occurrences = series_occurrences + heuristic_occurrences
@@ -1079,6 +1226,7 @@ class FinanceTools:
                 if single_occurrence_currency
                 else None
             ),
+            "suppressed": self._suppressed_rows(iban),
         }
 
     def cash_flow_forecast(self, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -2075,6 +2223,98 @@ class FinanceTools:
             return {"success": False, "error": str(exc), "error_class": self._series_error_class(exc)}
         return {"success": True, "candidate": self._candidate_to_dict(candidate)}
 
+    def suppress_forecast(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """AP3: Wiederkehrende Ausgabe aus der Prognose unterdruecken (reversibel).
+
+        Write-Tool. Die Unterdrueckung wirkt NUR auf upcoming_bills /
+        subscription_audit: Buchungen und bestaetigte Serien bleiben
+        unberuehrt. Idempotent: erneuter Aufruf aktualisiert currency/reason
+        und setzt die Zeile zurueck auf aktiv.
+        """
+        iban = self._clean_iban_param(params.get("iban"))
+        if not iban:
+            return {
+                "success": False,
+                "error": "iban ist erforderlich (gültige IBAN-String)",
+                "error_class": "invalid_param",
+            }
+        counterparty = str(params.get("counterparty") or "").strip()
+        if not counterparty:
+            return {
+                "success": False,
+                "error": "counterparty ist erforderlich (z.B. der Name aus upcoming_bills)",
+                "error_class": "invalid_param",
+            }
+        currency = params.get("currency")
+        if currency is not None:
+            currency = str(currency).strip().upper() or None
+        reason = params.get("reason")
+        if reason is not None:
+            reason = str(reason).strip() or None
+        try:
+            row = self._db.add_forecast_suppression(
+                iban, counterparty, currency=currency, reason=reason
+            )
+        except ValueError as exc:
+            return {"success": False, "error": str(exc), "error_class": "invalid_param"}
+        return {
+            "success": True,
+            "suppression": row,
+            "note": "Wirkt nur auf die Prognose; bestaetigte Serien und Buchungen bleiben aktiv. Wiederherstellung: restore_forecast.",
+        }
+
+    def restore_forecast(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """AP3: Unterdrueckte Prognose wieder aktivieren (reversibel).
+
+        Write-Tool. Die Zeile wird deaktiviert (active=0), NICHT geloescht;
+        die Historie bleibt nachvollziehbar.
+        """
+        iban = self._clean_iban_param(params.get("iban"))
+        if not iban:
+            return {
+                "success": False,
+                "error": "iban ist erforderlich (gültige IBAN-String)",
+                "error_class": "invalid_param",
+            }
+        counterparty = str(params.get("counterparty") or "").strip()
+        if not counterparty:
+            return {
+                "success": False,
+                "error": "counterparty ist erforderlich",
+                "error_class": "invalid_param",
+            }
+        row = self._db.restore_forecast_suppression(iban, counterparty)
+        if row is None:
+            return {
+                "success": False,
+                "error": "keine Unterdrückung für dieses Konto/Gegenpartei gefunden",
+                "error_class": "not_found",
+            }
+        return {
+            "success": True,
+            "suppression": row,
+            "note": "Die Prognose erscheint ab sofort wieder in upcoming_bills / subscription_audit.",
+        }
+
+    def list_forecast_suppressions(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """AP3: Aktive (optional auch inaktive) Prognose-Unterdrückungen auflisten.
+
+        Read-Tool. Optional nach IBAN gefiltert; ``include_inactive=true``
+        zeigt auch bereits wieder aktivierte Zeilen.
+        """
+        iban_raw = params.get("iban")
+        iban = self._clean_iban_param(iban_raw) if iban_raw is not None else None
+        include_inactive = bool(params.get("include_inactive", False))
+        rows = self._db.list_forecast_suppressions(
+            iban=_normalize_iban(iban) if iban else None,
+            active_only=not include_inactive,
+        )
+        return {
+            "success": True,
+            "count": len(rows),
+            "suppressions": rows,
+        }
+
     def _set_series_status(
         self, params: Dict[str, Any], target_status: str
     ) -> Dict[str, Any]:
@@ -2341,11 +2581,16 @@ class FinanceTools:
 
         groups = self._recurring_groups(facts, min_occurrences=2)
         expense_pairs = self._expense_recurring_pairs(facts, min_occurrences=2)
+        # AP3: reversible forecast suppressions (affect only this output;
+        # confirmed series and bookings are untouched).
+        suppressed_cps = self._suppressed_counterparties(iban)
         audits = []
         for group in groups:
             if (group["currency"], group["counterparty"]) not in expense_pairs:
                 continue
             counterparty = group["counterparty"]
+            if self._normalized_counterparty(counterparty) in suppressed_cps:
+                continue
             expenses = sorted(
                 (
                     fact
@@ -2451,6 +2696,29 @@ class FinanceTools:
             audit["series_ids"] = sorted(series_ids)
             series_monthly_total += audit["monthly_equivalent"]
             series_annual_total += audit["annual_equivalent"]
+        # AP3: estimated cadence/spec per entry + source marker.
+        # Confirmed series stay authoritative (cadence_source='series');
+        # unconfirmed groups get history-based estimates (None-safe).
+        for audit in audits:
+            estimate = self._estimated_cadence_info(
+                facts,
+                counterparty=audit["counterparty"],
+                currency=audit["currency"],
+                reference=reference,
+                amount=(
+                    audit["payment_per_period"]
+                    if audit["payment_per_period"] is not None
+                    else audit["monthly_cost"]
+                ),
+            )
+            audit.update(estimate)
+            pair_key = self._series_pair_key(audit["currency"], audit["counterparty"])
+            if series_by_pair.get(pair_key) is not None:
+                audit["cadence_source"] = "series"
+            else:
+                audit["cadence_source"] = (
+                    "estimated" if estimate["estimated_cadence"] is not None else None
+                )
         audits.sort(key=lambda item: (-item["monthly_cost"], item["counterparty"]))
         single_currency = next(
             (item["currency"] for item in audits if len({a["currency"] for a in audits}) == 1),
@@ -2475,6 +2743,7 @@ class FinanceTools:
             "series_annual_equivalent": (
                 round(series_annual_total, 2) if single_currency else None
             ),
+            "suppressed": self._suppressed_rows(iban),
         }
 
     def set_goal_status(self, params: Dict[str, Any]) -> Dict[str, Any]:
