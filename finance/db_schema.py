@@ -837,6 +837,24 @@ _SCHEMA_STATEMENTS: Tuple[str, ...] = (
     )
     """,
     "CREATE INDEX IF NOT EXISTS sj_series ON series_journal (series_id, id)",
+    # Forecast-UX AP3 (2026-09-19): Reversible Unterdrueckung von
+    # wiederkehrenden Ausgabengruppen in der PROGNOSE (upcoming_bills /
+    # subscription_audit). Eine Zeile pro (iban, counterparty); `active`
+    # ist umschaltbar => Wiederherstellung loescht nichts. Die
+    # Unterdrueckung beruehrt weder Buchungen noch bestaetigte Serien.
+    "CREATE TABLE IF NOT EXISTS forecast_suppressions ("
+    " id INTEGER PRIMARY KEY AUTOINCREMENT,"
+    " iban TEXT NOT NULL,"
+    " counterparty TEXT NOT NULL,"
+    " currency TEXT NOT NULL DEFAULT '',"
+    " reason TEXT,"
+    " active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),"
+    " created_at TEXT NOT NULL DEFAULT (datetime('now')),"
+    " updated_at TEXT NOT NULL DEFAULT (datetime('now')),"
+    " UNIQUE (iban, counterparty)"
+    ");",
+    "CREATE INDEX IF NOT EXISTS idx_forecast_suppressions_active "
+    "ON forecast_suppressions(active, iban)",
 )
 
 _FINANCE_SCHEMA_CATALOG_KEY = "schema_context_v1"
@@ -5525,6 +5543,135 @@ class FinanceDB:
                 ),
             )
         return self._series_from_row(restored)
+
+    # -- forecast suppressions (Forecast-UX AP3) -------------------------
+
+    @staticmethod
+    def _suppression_from_row(row: sqlite3.Row) -> Dict[str, Any]:
+        """forecast_suppressions-Row -> stabiles Dict."""
+        return {
+            "id": int(row["id"]),
+            "iban": row["iban"],
+            "counterparty": row["counterparty"],
+            "currency": row["currency"] or "",
+            "reason": row["reason"],
+            "active": bool(row["active"]),
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"],
+        }
+
+    def add_forecast_suppression(
+        self,
+        iban: str,
+        counterparty: str,
+        *,
+        currency: Optional[str] = None,
+        reason: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """(Re-)aktiviert eine Prognose-Unterdrueckung fuer (iban, counterparty).
+
+        Idempotent: eine bestehende Zeile (auch inaktiv) wird zurueckgesetzt
+        und mit aktuellen Metadaten aktualisiert. Die Unterdrueckung wirkt
+        NUR auf die Prognose (upcoming_bills / subscription_audit) --
+        Buchungen und bestaetigte Serien bleiben unberuehrt.
+        """
+        norm_iban = _normalize_iban(iban)
+        if not norm_iban:
+            raise ValueError("iban muss eine nicht-leere Zeichenfolge sein")
+        cp = self._clean_text(counterparty)
+        if not cp:
+            raise ValueError("counterparty muss eine nicht-leere Zeichenfolge sein")
+        cur = ""
+        if currency is not None:
+            cur = str(currency).strip().upper()
+            if not (3 <= len(cur) <= 8) or not cur.isalpha():
+                raise ValueError(f"currency muss ein 3-8 Zeichen Code sein, nicht {currency!r}")
+        reason_text = self._clean_text(reason) if reason is not None else None
+        with self._lock, self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO forecast_suppressions
+                    (iban, counterparty, currency, reason, active, updated_at)
+                VALUES (?, ?, ?, ?, 1, datetime('now'))
+                ON CONFLICT(iban, counterparty) DO UPDATE SET
+                    currency = excluded.currency,
+                    reason = excluded.reason,
+                    active = 1,
+                    updated_at = datetime('now')
+                """,
+                (norm_iban, cp, cur, reason_text),
+            )
+            row = conn.execute(
+                "SELECT * FROM forecast_suppressions WHERE iban = ? AND counterparty = ?",
+                (norm_iban, cp),
+            ).fetchone()
+        return self._suppression_from_row(row)
+
+    def restore_forecast_suppression(self, iban: str, counterparty: str) -> Optional[Dict[str, Any]]:
+        """Deaktiviert (loescht NICHT) die Unterdrueckung => reversibel.
+
+        Gibt die Zeile zurueck (``active`` = False) oder None, falls es
+        fuer (iban, counterparty) keine Unterdrueckung gibt.
+        """
+        norm_iban = _normalize_iban(iban)
+        cp = self._clean_text(counterparty)
+        if not norm_iban or not cp:
+            raise ValueError("iban und counterparty muessen nicht-leere Zeichenfolgen sein")
+        with self._lock, self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM forecast_suppressions WHERE iban = ? AND counterparty = ?",
+                (norm_iban, cp),
+            ).fetchone()
+            if row is None:
+                return None
+            conn.execute(
+                "UPDATE forecast_suppressions SET active = 0, updated_at = datetime('now') WHERE id = ?",
+                (int(row["id"]),),
+            )
+            row = conn.execute(
+                "SELECT * FROM forecast_suppressions WHERE iban = ? AND counterparty = ?",
+                (norm_iban, cp),
+            ).fetchone()
+        return self._suppression_from_row(row)
+
+    def list_forecast_suppressions(
+        self,
+        iban: Optional[str] = None,
+        active_only: bool = True,
+    ) -> List[Dict[str, Any]]:
+        """Alle (optional nur aktiven) Unterdrueckungen, IBAN-Filter optional."""
+        clauses: List[str] = []
+        args: List[Any] = []
+        if active_only:
+            clauses.append("active = 1")
+        if iban is not None:
+            clauses.append("iban = ?")
+            args.append(_normalize_iban(iban))
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        with self._lock, self._connect() as conn:
+            rows = conn.execute(
+                f"SELECT * FROM forecast_suppressions {where} ORDER BY iban, counterparty",
+                args,
+            ).fetchall()
+        return [self._suppression_from_row(row) for row in rows]
+
+    def active_forecast_suppressed_counterparties(self, iban: Optional[str] = None) -> List[str]:
+        """Aktive Counterparty-Namen (normalisiert) einer IBAN (oder aller).
+
+        Fuer die Prognose-Filterung in upcoming_bills / subscription_audit;
+        der Vergleich erfolgt case-insensitiv beim Konsumenten.
+        """
+        args: List[Any] = []
+        where = "WHERE active = 1"
+        if iban is not None:
+            where += " AND iban = ?"
+            args.append(_normalize_iban(iban))
+        with self._lock, self._connect() as conn:
+            rows = conn.execute(
+                f"SELECT counterparty FROM forecast_suppressions {where}",
+                args,
+            ).fetchall()
+        return [row["counterparty"] for row in rows]
 
     # -- monthly report ----------------------------------------------
 
