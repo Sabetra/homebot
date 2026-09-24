@@ -189,6 +189,9 @@ class AgentOrchestrator:
                  ):
         self.model_loader = model_loader
         self.local_only_mode: bool = parse_bool_env("APP_LOCAL_ONLY", "0")
+        # Output-PII-Gate (2026-09-24): Regex-Masking (E-Mail/Telefon/IBAN/Karte)
+        # in der finalen Antwort. ~0 ms Kosten. Default AN.
+        self.output_pii_masking_enabled: bool = parse_bool_env("APP_ENABLE_OUTPUT_PII_MASKING", "1")
         self.ctx = ContextManager(n_ctx=n_ctx, reserve=reserve)
         self.ctx.set_model_loader(model_loader)  # SOTA: Echter Tokenizer statt chars/4
         
@@ -1307,6 +1310,22 @@ IMPORTANT:
             include_citations=self.citation_inline_details if include_citations is None else include_citations,
             append_sources=self.append_sources_block if append_sources is None else append_sources,
         )
+
+        # Output-PII-Gate (2026-09-24): maskiert E-Mail/Telefon/IBAN/Kreditkarte
+        # in Antworttext + Follow-ups. Regex-basiert (SecurityManager.validate_output,
+        # keine LLM-Abhängigkeit). Fail-Open bei Gate-Fehler (Verfügbarkeit > Block),
+        # mit Warn-Log. Flag: APP_ENABLE_OUTPUT_PII_MASKING (Default an).
+        if self.output_pii_masking_enabled:
+            sm = getattr(self, "security_manager", None)
+            if sm is not None and hasattr(sm, "validate_output"):
+                try:
+                    formatted_answer, detected = sm.validate_output(formatted_answer, mask_pii=True)
+                    if detected:
+                        logger.info(f"🔒 Output-PII-Gate: {len(detected)} PII-Typ(en) maskiert: {detected}")
+                    followups = [sm.validate_output(f, mask_pii=True)[0] for f in followups]
+                except Exception as e:
+                    logger.warning(f"⚠️ Output-PII-Gate übersprungen (Fail-Open): {e}")
+
         return formatted_answer, followups
 
     def _generate_answer_from_sources(

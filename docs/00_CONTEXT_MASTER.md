@@ -98,7 +98,7 @@ User Input -> Semantic Router -> [SIMPLE | PLAN_EXECUTE | REACT]
 - Native llama.cpp text deltas for SIMPLE; structured progress with post-gate final text for agent routes
 - Request-scoped cancellation, iterator cleanup and internal-history rollback
 - Assistant history/SQLite commit only after canonical `RunCompleted`
-- No raw chain of thought; REACT output follows citation, verification; PII-Input-Validierung aktiv (Output-PII-Gate noch nicht verdrahtet, 2026-09-24)
+- No raw chain of thought; REACT output follows citation, verification; PII-Input-Validierung + PII-Output-Masking aktiv (Gate im `_finalize_answer`, 2026-09-24)
 - Details: `15_STREAMING_ARCHITECTURE.md`
 
 ---
@@ -149,7 +149,7 @@ User Input -> Semantic Router -> [SIMPLE | PLAN_EXECUTE | REACT]
 | Performance | ⭐⭐⭐⭐⭐⭐ (6/7) | RTX4090 fully utilized, 400MB/s embedding |
 | Reliability | ⭐⭐⭐⭐⭐⭐ (6/7) | 4-tier fail-safe, no silent errors |
 | Maintainability | ⭐⭐⭐⭐ (4/7) | Good modularity, test coverage ~40% |
-| Security | ⭐⭐⭐⭐ (4/7) | PII-Input-Filter aktiv. Missing: Output-PII-Gate (nicht verdrahtet), RBAC (im Code nicht vorhanden), KG encryption-at-rest |
+| Security | ⭐⭐⭐⭐½ (4,5/7) | PII-Input-Filter + PII-Output-Masking aktiv (2026-09-24). Missing: RBAC (im Code nicht vorhanden), KG encryption-at-rest |
 | **Overall** | **4.7/7** | SOTA-adjacent (KG ist Haupt-Hebel). Security 5→4 am 2026-09-24 (Output-PII-Gate + RBAC fehlen im Code). |
 
 ### 4.2 Remaining Items
