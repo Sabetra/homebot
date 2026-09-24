@@ -42,9 +42,9 @@ User Input
 
 | Code | Language | Status | Completeness |
 |------|----------|--------|--------------|
-| de | German | ✅ Production | ~95% |
-| en | English | ✅ Production | ~100% |
-| bg | Bulgarian | ✅ Production | ~90% |
+| de | German | ✅ Production | 100% (808/808) |
+| en | English | ✅ Production | 100% (808/808) |
+| bg | Bulgarian | ✅ Production | 100% (808/808) |
 
 ---
 
