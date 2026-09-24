@@ -46,10 +46,11 @@ def server():
 
 
 def _call(server_mod, name: str, args: dict) -> str:
-    """call_tool ausführen und den Text des ersten Contents zurückgeben."""
-    res = asyncio.run(server_mod.call_tool(name, args))
-    assert len(res) == 1
-    return res[0].text
+    """call_tool (FastMCP-Instanz) ausführen und den Text des ersten Contents zurückgeben."""
+    res = asyncio.run(server_mod.mcp.call_tool(name, args))
+    contents = res[0] if isinstance(res, tuple) else res
+    assert len(contents) == 1
+    return contents[0].text
 
 
 # --- Tool-Definitionen --------------------------------------------------------
