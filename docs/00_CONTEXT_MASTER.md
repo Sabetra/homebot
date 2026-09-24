@@ -150,7 +150,7 @@ User Input -> Semantic Router -> [SIMPLE | PLAN_EXECUTE | REACT]
 | Reliability | ⭐⭐⭐⭐⭐⭐ (6/7) | 4-tier fail-safe, no silent errors |
 | Maintainability | ⭐⭐⭐⭐ (4/7) | Good modularity, test coverage ~40% |
 | Security | ⭐⭐⭐⭐ (4/7) | PII-Input-Filter aktiv. Missing: Output-PII-Gate (nicht verdrahtet), RBAC (im Code nicht vorhanden), KG encryption-at-rest |
-| **Overall** | **4.8/7** | SOTA-adjacent (KG ist Haupt-Hebel) |
+| **Overall** | **4.7/7** | SOTA-adjacent (KG ist Haupt-Hebel). Security 5→4 am 2026-09-24 (Output-PII-Gate + RBAC fehlen im Code). |
 
 ### 4.2 Remaining Items
 - **P2-1:** Config Manager hot-reload + feature flags
