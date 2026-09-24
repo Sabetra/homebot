@@ -38,13 +38,18 @@ from ui_tabs.performance_tab import render_performance_tab
 from ui_tabs.wellbeing_tab import render_wellbeing_tab
 from ui_tabs.rag_documents_tab import render_rag_documents_tab
 from ui_tabs.settings_tab import render_settings_tab
-from utils.runtime_policy import parse_bool_env
+from utils.runtime_policy import parse_bool_env, apply_network_guards
 from utils.tab_runtime_health import collect_tab_health_snapshot, TabHealthError
 from i18n import t as i18n_t, set_language as i18n_set_language, LocaleNegotiator
 
 # Finance tab policy is explicit and deployment-controlled.
 _FINANCE_POLICY_DEFAULT = os.getenv("SHOW_FINANCE_TAB", "1")
 FINANCE_TAB_ENABLED_BY_POLICY = parse_bool_env("APP_ENABLE_FINANCE_TAB", _FINANCE_POLICY_DEFAULT)
+
+# Process-level Egress-Guard (2026-09-24): APP_LOCAL_ONLY=1 blockt jeglichen
+# outbound Netzwerk-Traffic (requests/httpx/aiohttp/urllib/socket) auf
+# Prozess-Ebene, ausgenommen Loopback. Idempotent, ~0 ms.
+apply_network_guards()
 
 # Finance tab is optional -- bot still works if the finance stack is missing.
 if FINANCE_TAB_ENABLED_BY_POLICY:
