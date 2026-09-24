@@ -148,16 +148,6 @@ try:
 except ImportError as e:
     logger.warning(f"⚠️ Intent Detection nicht verfügbar - fallback zu keyword-basiert: {e}")
 
-# Enhanced Privacy Handler (deutsche Spracherkennung, keine Fachbegriffe als Namen)
-ChainOfThoughtPrivacyHandler = None
-COT_PRIVACY_AVAILABLE = False
-try:
-    from agent.privacy_handler_enhanced import EnhancedPrivacyHandler as ChainOfThoughtPrivacyHandler  # type: ignore[assignment]
-    COT_PRIVACY_AVAILABLE = True
-    logger.info("✅ Enhanced Privacy Handler geladen")
-except ImportError as e:
-    logger.warning(f"⚠️ Privacy Handler nicht verfügbar: {e}")
-
 # Adaptive Planning Components (Feature-Flag based)
 ADAPTIVE_PLANNING_AVAILABLE = False
 if TYPE_CHECKING:
@@ -468,16 +458,6 @@ class AgentOrchestrator:
         else:
             logger.info("Adaptive Planning nicht verfügbar (Module nicht geladen)")
 
-        
-        # CoT Privacy Protection - LAZY INIT (wird erst geladen wenn model_loader verfügbar)
-        # NOTE: This will be REPLACED by SecurityManager in Phase 4B
-        self._cot_privacy_handler = None
-        self._privacy_handler_llm_client = None
-        if COT_PRIVACY_AVAILABLE:
-            logger.info("CoT Privacy Protection verfügbar - wird bei set_model_loader initialisiert")
-        else:
-            self._cot_privacy_handler = None
-
         # -----------------------------------------------------------------------
         # SOTA Pipeline Components (ANALYSE_OFFENE_PUNKTE 1a-1f)
         # ChangeDetector | DoclingParallel | MultimodalRAG | StrixKATEval | SOTAPipeline
@@ -615,9 +595,6 @@ class AgentOrchestrator:
     def strixkat_eval(self):
         return self._strixkat_eval
 
-    @property
-    def strixkat_evaluator(self):
-        return self._strixkat_eval
 
     @property
     def sota_pipeline(self):
@@ -805,15 +782,6 @@ class AgentOrchestrator:
             except Exception as e:
                 logger.error(f"Unerwarteter Fehler beim Setzen von Multi-Query-K: {type(e).__name__}: {e}")
 
-    def set_adaptive_rag_config(self, *, enabled: Optional[bool] = None) -> None:
-        """Enable/disable Adaptive-RAG routing (query-complexity-based) at runtime.
-
-        When enabled, the AdaptiveRAGRouter evaluates each query's complexity
-        and routes to shallow (direct FAISS) or deep (MultiHop) retrieval.
-        """
-        if enabled is not None:
-            self.adaptive_strategy = bool(enabled)
-            logger.info(f"Adaptive-RAG-Routing: {'aktiviert' if enabled else 'deaktiviert'}")
 
     # ==================== Dynamic Context Window ====================
 
@@ -872,44 +840,6 @@ class AgentOrchestrator:
         
         return effective_k, strategy_result
             
-    def set_llm_evidence_selection(self, enabled: bool) -> None:
-        """Enable/disable LLM-based evidence selection at runtime."""
-        self.use_llm_evidence_selection = bool(enabled)
-        logger.info(f"LLM Evidence Selection: {'aktiviert' if enabled else 'deaktiviert'}")
-
-    def set_evidence_config(self, *,
-                            max_candidates: Optional[int] = None,
-                            shortlist_m: Optional[int] = None,
-                            diversity_lambda: Optional[float] = None,
-                            news_min_k: Optional[int] = None,
-                            news_max_k: Optional[int] = None) -> None:
-        """Adjust evidence selection parameters at runtime."""
-        if max_candidates is not None:
-            try:
-                self.evidence_max_candidates = max(1, int(max_candidates))
-            except (ValueError, TypeError) as e:
-                logger.warning(f"Ungültiger Evidence-Max-Candidates Wert: {e}, behalte aktuellen Wert ({self.evidence_max_candidates})")
-        if shortlist_m is not None:
-            try:
-                self.evidence_shortlist_m = max(1, int(shortlist_m))
-            except (ValueError, TypeError) as e:
-                logger.warning(f"Ungültiger Evidence-Shortlist-M Wert: {e}, behalte aktuellen Wert ({self.evidence_shortlist_m})")
-        if diversity_lambda is not None:
-            try:
-                self.evidence_diversity_lambda = min(1.0, max(0.0, float(diversity_lambda)))
-            except (ValueError, TypeError) as e:
-                logger.warning(f"Ungültiger Evidence-Diversity-Lambda Wert: {e}, behalte aktuellen Wert ({self.evidence_diversity_lambda})")
-        if news_min_k is not None:
-            try:
-                self.news_min_k = max(1, int(news_min_k))
-            except (ValueError, TypeError) as e:
-                logger.warning(f"Ungültiger News-Min-K Wert: {e}, behalte aktuellen Wert ({self.news_min_k})")
-        if news_max_k is not None:
-            try:
-                nm = max(1, int(news_max_k))
-                self.news_max_k = max(self.news_min_k, nm)
-            except (ValueError, TypeError) as e:
-                logger.warning(f"Ungültiger News-Max-K Wert: {e}, behalte aktuellen Wert ({self.news_max_k})")
 
     def set_generation_limits(self, *, planner_max_tokens: Optional[int] = None, summarizer_max_tokens: Optional[int] = None, verifier_max_tokens: Optional[int] = None) -> None:
         """Adjust max token limits for planner, summarizer and verifier at runtime."""
@@ -928,37 +858,6 @@ class AgentOrchestrator:
                 self.verifier_max_tokens = max(128, int(verifier_max_tokens))
             except (ValueError, TypeError) as e:
                 logger.warning(f"Ungültiger Verifier-Max-Tokens Wert: {e}, behalte aktuellen Wert ({self.verifier_max_tokens})")
-
-    def initialize_privacy_handler(self) -> None:
-        """Initialize CoT privacy handler with the model_loader's LLM client.
-        
-        This should be called after the model_loader has loaded the LLM model.
-        """
-        if not COT_PRIVACY_AVAILABLE:
-            logger.warning("CoT Privacy Protection nicht verfügbar - überspringe Initialisierung")
-            return
-            
-        if self._cot_privacy_handler is not None:
-            logger.info("CoT Privacy Handler bereits initialisiert - überspringe")  # type: ignore[unreachable]
-            return
-            
-        if not self.model_loader:
-            logger.warning("Model Loader nicht verfügbar - Privacy Handler kann nicht initialisiert werden")
-            return
-        
-        if not ChainOfThoughtPrivacyHandler:
-            logger.warning("Enhanced Privacy Handler nicht verfügbar - Import fehlgeschlagen")
-            return
-            
-        try:  # type: ignore[unreachable]
-            # Erstelle Privacy Handler DIREKT mit LLM-Client (verhindert doppeltes Model-Loading!)
-            self._cot_privacy_handler = ChainOfThoughtPrivacyHandler(llm_client=self.model_loader)
-            
-            logger.info("✅ CoT Privacy Handler erfolgreich initialisiert mit LLM-Client")
-            
-        except Exception as e:
-            logger.error(f"❌ Fehler beim Initialisieren des CoT Privacy Handlers: {e}")
-            self._cot_privacy_handler = None
 
     def _get_current_tab_mode(self) -> str:
         """Returns the current tab mode for tool profile filtering.
@@ -3366,332 +3265,6 @@ INSUFFICIENT
         final_answer.files = self._collect_files(results)
         return final_answer
 
-    def run_no_tools_and_summarize(self, query: str, history: List[Dict[str, Any]]) -> FinalAnswer:
-        """
-        Run summarizer + verifier without tools; still considers RAG evidence (incl. Multi-Query if enabled).
-        
-        ADAPTIVE PLANNING INTEGRATION (2025):
-        - Reflection 1: Daten-Qualität bewerten (RAG-Ergebnisse)
-        - Optional: Zusätzliche RAG-Suchen bei niedrigen Confidence-Scores
-        - Feature-Flag: self.adaptive_planning_enabled
-        
-        Architektur:
-        1. RAG Execution (QueryStrategyManager + RAGManager)
-        2. ADAPTIVE: Optional Reflection 1 (Daten-Qualität)
-        3. Evidence Selection (EvidenceManager mit Validation)
-        4. Hybrid Reasoning (EvidenceProcessor Reranking)
-        5. Summarize + Verify (ResponseBuilder)
-        6. Citation & Sources Formatting
-        """
-        trace = AgentTrace()
-        trace.planned_tools = []
-        trace.ran_tools = []
-        
-        # Snapshot RAG/MQ config
-        trace.rag_enabled = bool(self.rag_enabled)
-        trace.rag_k = int(self.rag_k)
-        trace.rag_min_score = float(self.rag_min_score)
-        trace.multiquery_enabled = bool(self.multiquery_enabled)
-        trace.mq_n = int(self.mq_n)
-        trace.mq_k = int(self.mq_k)
-        
-        # ===================================================================
-        # PHASE 1: RAG EXECUTION via RAGManager (RAG-only mode)
-        # ===================================================================
-        results: List[ToolResult] = []
-        t_tools0 = time.perf_counter()
-        
-        if self.rag_enabled:
-            # Dynamic Context Window: compute effective k + get strategy
-            effective_k, strategy_result = self._compute_effective_k_with_strategy(query)
-            
-            # Generate sub-queries via central DecompositionEngine.
-            subqs = self._generate_subqueries(query) if self.multiquery_enabled else []
-
-            if self.multiquery_enabled:
-                logger.info(f"✅ DecompositionEngine produced {len(subqs)} sub-queries (RAG-only mode)")
-                try:
-                    trace.subqueries = list(subqs or [])
-                except AttributeError as e:
-                    logger.debug(f"Trace-Subqueries-Attributfehler: {e}")
-                except Exception as e:
-                    logger.warning(f"Unerwarteter Fehler beim Setzen der Trace-Subqueries: {type(e).__name__}: {e}")
-            
-            # Execute RAG via RAGManager with Dynamic-K
-            logger.info(f"🎯 RAG-only with Dynamic-K: effective_k={effective_k} (gui_max={self.rag_k})")
-            results = self.rag_manager.execute_rag_with_multiquery(
-                query=query,
-                k=effective_k,
-                min_score=self.rag_min_score,
-                multiquery_enabled=self.multiquery_enabled,
-                mq_n=self.mq_n,
-                mq_k=self.mq_k,
-                sub_queries=subqs if subqs else None,
-                is_time_critical=False,  # RAG-only mode, no web results
-                web_results_available=False
-            )
-        else:
-            logger.info("RAG deaktiviert - keine lokale Suche in rag_only-Modus")
-        
-        trace.tools_ms = int((time.perf_counter() - t_tools0) * 1000)
-        try:
-            trace.ran_tools = [r.tool for r in results]
-        except AttributeError as e:
-            logger.debug(f"Trace-Ran-Tools-Attributfehler (rag_only): {e}")
-            trace.ran_tools = []
-        except Exception as e:
-            logger.warning(f"Unerwarteter Fehler beim Tool-Recording (rag_only): {type(e).__name__}: {e}")
-            trace.ran_tools = []
-        
-        # ===================================================================
-        # PHASE 2: ADAPTIVE PLANNING (Reflection 1 - Daten-Qualität)
-        # ===================================================================
-        if self.adaptive_planning_enabled and self.adaptive_planner is not None:
-            logger.info("🔄 Adaptive Planning aktiviert - starte Reflection 1 (Daten-Qualität)...")
-            
-            try:
-                # Type guard: adaptive_planner is not None at this point
-                planner = self.adaptive_planner
-                
-                # Reflection 1: Bewerte RAG-Daten-Qualität
-                reflection_result = planner._reflect_data_quality(
-                    query=query,
-                    current_results=results,
-                    iteration=1
-                )
-                
-                # Store reflection in trace
-                trace.adaptive_reflections = [reflection_result]
-                trace.adaptive_planning_triggered = True
-                
-                confidence_done = reflection_result.get("confidence_done", 0)
-                confidence_more_tools = reflection_result.get("confidence_more_tools", 0)
-                
-                logger.info(
-                    f"📊 Reflection 1: confidence_done={confidence_done:.2f}, "
-                    f"confidence_more_tools={confidence_more_tools:.2f}"
-                )
-                
-                # Early Exit Check
-                if confidence_done > planner.confidence_done_threshold:
-                    logger.info(f"✅ Early Exit: Daten-Qualität ausreichend (threshold={planner.confidence_done_threshold:.2f})")
-                
-                # Check if more RAG searches needed
-                elif confidence_more_tools > planner.confidence_tools_threshold:
-                    logger.info(f"🔧 Adaptive Planner schlägt zusätzliche Tools vor...")
-                    
-                    # Get additional tools from reflection
-                    additional_calls = reflection_result.get("additional_tools", [])
-                    
-                    # Filter nur rag_search tools (no web_search in RAG-only mode)
-                    rag_calls = [call for call in additional_calls if call.tool == "rag_search"]
-                    
-                    if rag_calls:
-                        logger.info(f"🔧 Führe {len(rag_calls)} zusätzliche RAG-Suchen aus...")
-                        
-                        # Execute additional RAG searches
-                        additional_results = self.tools.run(rag_calls)
-                        
-                        # Merge results
-                        results.extend(additional_results)
-                        
-                        # Update trace
-                        trace.adaptive_additional_tools = len(rag_calls)
-                        trace.ran_tools.extend([r.tool for r in additional_results])
-                        
-                        logger.info(f"✅ {len(additional_results)} zusätzliche Ergebnisse gesammelt")
-                    else:
-                        logger.info("ℹ️ Keine RAG-Suchen geplant (nur web_search vorgeschlagen, wird übersprungen)")
-                
-                else:
-                    logger.info(f"⏭️ Keine zusätzlichen Suchen nötig (confidence_more_tools={confidence_more_tools:.2f} < threshold)")
-            
-            except Exception as e:
-                logger.error(f"❌ Adaptive Planning Fehler in RAG-only mode: {type(e).__name__}: {e}")
-                import traceback
-                logger.debug(f"Adaptive Planning Traceback:\n{traceback.format_exc()}")
-                trace.adaptive_planning_error = str(e)
-        
-        else:
-            logger.debug("Adaptive Planning deaktiviert oder nicht verfügbar")
-            trace.adaptive_planning_triggered = False
-        
-        # ===================================================================
-        # PHASE 3: EVIDENCE SELECTION via EvidenceManager
-        # ===================================================================
-        t_evidence0 = time.perf_counter()
-        
-        evidence_result = self.evidence_manager.select_evidence_from_tool_results(
-            query=query,
-            tool_results=results,
-            evidence_max_candidates=self.evidence_max_candidates,
-            evidence_shortlist_m=self.evidence_shortlist_m,
-            evidence_diversity_lambda=self.evidence_diversity_lambda,
-            is_news_query=self._is_news_query(query),
-            news_min_k=self.news_min_k,
-            news_max_k=self.news_max_k,
-            model_loader=self.model_loader,
-            use_llm_evidence_selection=self.use_llm_evidence_selection,
-            validation_enabled=True,
-            validation_max_iterations=1,  # Reduced for RAG-only
-            validation_min_sources=2  # Reduced for RAG-only
-        )
-        
-        # Extract selected sources from result
-        sources: List[Source] = evidence_result.sources
-        
-        # Store validation stats in trace for observability
-        try:
-            trace.source_validation = evidence_result.validation_stats
-        except AttributeError as e:
-            logger.debug(f"Trace-Source-Validation-Attributfehler (RAG-only): {e}")
-        except Exception as e:
-            logger.warning(f"Fehler beim Setzen der Source-Validation-Stats (RAG-only): {type(e).__name__}: {e}")
-        
-        logger.info(f"RAG-only evidence selection: {evidence_result.candidates_count} → {evidence_result.final_count} sources")
-        
-        # Tool summaries for trace
-        tool_summaries: List[str] = []
-        for r in results:
-            if r.tool == "rag_search":
-                cnt = len(r.results or [])
-                err = f"; Fehler: {r.error}" if r.error else ""
-                tool_summaries.append(f"rag_search: {cnt} Treffer{err}")
-        
-        try:
-            if self.multiquery_enabled:
-                subquery_count = len(trace.subqueries or [])
-                tool_summaries.append(f"multiquery: {subquery_count} Teilfragen")
-        except AttributeError as e:
-            logger.debug(f"Trace-Subqueries-Attributfehler beim RAG-only-Summary: {e}")
-        except Exception as e:
-            logger.warning(f"Unerwarteter Fehler beim RAG-only-Multiquery-Summary: {type(e).__name__}: {e}")
-            if self.multiquery_enabled:
-                tool_summaries.append("multiquery: Fehler beim Zählen der Teilfragen")
-        
-        trace.tool_summaries = tool_summaries
-        
-        # ===================================================================
-        # COLLECT DETAILED TOOL RESULTS (for debugging)
-        # ===================================================================
-        try:
-            tool_results = {}
-            subquery_counter = 0
-            for r in results:
-                if r.tool == "rag_search":
-                    # Determine the actual query used for this result
-                    actual_query = query  # Default to main query
-                    tool_suffix = ""
-                    
-                    # For RAG with multiquery, try to match to specific subquery
-                    if self.multiquery_enabled and hasattr(trace, 'subqueries'):
-                        subqueries = getattr(trace, 'subqueries', [])
-                        if subquery_counter == 0:
-                            # First RAG result is the original query
-                            actual_query = query
-                            tool_suffix = "_original"
-                        elif subquery_counter <= len(subqueries):
-                            # Subsequent results are subqueries
-                            actual_query = subqueries[subquery_counter - 1]
-                            tool_suffix = f"_subquery_{subquery_counter}"
-                        subquery_counter += 1
-                    
-                    # Store detailed results for rag_search
-                    tool_data: Dict[str, Any] = {
-                        "tool": r.tool,
-                        "query": actual_query,
-                        "results_count": len(r.results or []),
-                        "error": r.error,
-                        "results": []
-                    }
-                    # Store top results (limit to avoid too much data)
-                    if r.results:
-                        for result in r.results[:10]:  # Max 10 results
-                            if hasattr(result, 'content'):
-                                # RAG search result
-                                content = getattr(result, 'content', '') or ''
-                                tool_data["results"].append({
-                                    "source": getattr(result, 'source', '') or '',
-                                    "content": content[:300],  # Limit content length
-                                    "score": getattr(result, 'score', 0.0)
-                                })
-                            else:
-                                # Generic result (fallback)
-                                tool_data["results"].append({
-                                    "data": str(result)[:200]
-                                })
-                    
-                    # Use tool name with counter if multiple of same type
-                    key = f"{r.tool}{tool_suffix}"
-                    counter = 1
-                    while key in tool_results:
-                        counter += 1
-                        key = f"{r.tool}{tool_suffix}_{counter}"
-                    tool_results[key] = tool_data
-            
-            trace.tool_results = tool_results
-            
-        except AttributeError as e:
-            logger.debug(f"Trace-Tool-Results-Attributfehler (RAG-only): {e}")
-            trace.tool_results = {}
-        except Exception as e:
-            logger.warning(f"Fehler beim Sammeln der Tool-Ergebnisse (RAG-only): {type(e).__name__}: {e}")
-            import traceback
-            logger.debug(f"RAG-only-Tool-Results-Collection-Fehler Traceback:\n{traceback.format_exc()}")
-            trace.tool_results = {}
-        
-        # No extras in no-tools path
-        extras: List[str] = []
-        trace.extras_count = 0
-        self._populate_source_observability(sources=sources, trace=trace)
-        sources = self._apply_no_tools_hybrid_reranking(query=query, sources=sources)
-        
-        # ===================================================================
-        # PHASE 5: SUMMARIZE + VERIFY
-        # ===================================================================
-        # Fallback if no evidence
-        use_fallback = len(sources) == 0
-        if use_fallback:
-            trace.heuristic_triggered = True
-            trace.heuristic_reason = "Keine Tools/Evidenz – nutze internes Wissen/Logik."
-        
-        final_text, verification_result, sources, results, extracted_followups, sum_metrics = self._generate_answer_from_sources(
-            query=query,
-            history=history,
-            sources=sources,
-            extras=extras,
-            fallback=use_fallback,
-            trace=trace,
-            results=results,
-        )
-        
-        try:
-            logger.debug(
-                "orchestrate_no_tools_done | cand=%d shortlist=%d K=%d sources=%d domains=%s sum_ms=%d",
-                evidence_result.candidates_count,
-                evidence_result.shortlist_count,
-                evidence_result.final_count,
-                len(sources),
-                trace.evidence_domains,
-                trace.summarize_ms,
-            )
-        except AttributeError as e:
-            logger.debug(f"Debug-Logging-Attributfehler in run_no_tools: {e}")
-        except (TypeError, ValueError) as e:
-            logger.debug(f"Debug-Logging-Wertfehler in run_no_tools: {e}")
-        except Exception as e:
-            logger.warning(f"Unerwarteter Fehler beim Debug-Logging in run_no_tools: {type(e).__name__}: {e}")
-        
-        # ===================================================================
-        # PHASE 6: CITATION & SOURCES FORMATTING via ResponseBuilder
-        # ===================================================================
-        return self._finalize_and_build_answer(
-            query=query,
-            final_text=final_text,
-            sources=sources,
-            trace=trace,
-            extracted_followups=extracted_followups,
-        )
 
     # --- Verifier ---
     def verify_step(
@@ -4716,34 +4289,9 @@ LÜCKEN: Was noch fehlt"""
     # _format_source_entry, _filter_actually_used_sources
     # All functionality now in response_builder.py
 
-    def _is_answer_based_on_general_knowledge(self, text: str) -> bool:
-        """Check if the answer is based on general knowledge rather than provided sources."""
-        if not text:
-            return False
-            
-        # Indicators that answer is from general knowledge
-        general_knowledge_indicators = [
-            "aus allgemeinem wissen",
-            "allgemein bekannt",
-            "basiert auf allgemeinem wissen",
-            "ohne spezifische quellen",
-            "allgemeine information",
-            "bekanntermaßen",
-            "es ist bekannt",
-            "historisch gesehen",
-            "allgemeine fakten",
-            "allgemein anerkannt"
-        ]
-        
-        text_lower = text.lower()
-        return any(indicator in text_lower for indicator in general_knowledge_indicators)
 
     # PHASE 4: _generate_subqueries removed - now using QueryStrategyManager
 
-    def set_user_system_prompt(self, prompt: str):
-        """Setze User-System-Prompt aus GUI"""
-        self.user_system_prompt = prompt or ""
-        logger.debug(f"User system prompt set: {self.user_system_prompt[:100]}...")
 
     def _create_enhanced_system_prompt(self, base_prompt: str) -> str:
         """Kombiniere User System-Prompt mit Base-Prompt"""

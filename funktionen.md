@@ -177,17 +177,15 @@
 |--------|--------|
 | **Input** | `query`, `history`, optional `time_context` |
 | **Output** | `(planned_calls, reasoning, critique, planner_ms, planner_raw, normalized_query)` |
-| **Folgepfad** | Toolplaene gehen an `run_tools_and_summarize()`; ohne Toolplan wird `run_no_tools_and_summarize()` verwendet |
+| **Folgepfad** | Toolplaene gehen an `run_tools_and_summarize()`; ohne Toolplan geht es ebenfalls an `run_tools_and_summarize(planned_calls=[])` (Code: `agent_chatbot_logic.py:2680`) |
 
-### 1.3 `run_no_tools_and_summarize()`
-**Antwortpfad ohne explizite Tools, weiterhin mit optionaler RAG-Evidenz.**
+### 1.3 `run_no_tools_and_summarize()` — ENTFERNT (2026-09-24)
+**Historie:** separater Antwortpfad ohne explizite Tools.
 
 | Aspekt | Detail |
 |--------|--------|
-| **Zweck** | Fuehrt RAG, Evidence-Auswahl, optionales Reranking, Synthese, Verifikation und Finalisierung aus |
-| **Input** | `query`, `history` |
-| **Output** | `FinalAnswer` |
-| **Gemeinsamer Abschluss** | Nutzt wie der Toolpfad `_finalize_and_build_answer()` |
+| **Status** | Tot (0 Aufrufe im Live-Pfad, 2026-09-24 verifiziert) — entfernt |
+| **Ersatz** | No-tools-Fälle laufen durch `run_tools_and_summarize(planned_calls=[])` |
 
 ---
 

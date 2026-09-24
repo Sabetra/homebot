@@ -264,10 +264,9 @@ class AgentChatbotLogic(ChatbotLogic):
             print(f"   RAG enabled: {self.orchestrator.rag_enabled}")
             print(f"   Multiquery N: {self.orchestrator.mq_n}, K: {self.orchestrator.mq_k}")
             
-            # NEU: Initialisiere Privacy Handler mit LLM-Client
-            if model_loader:
-                self.orchestrator.initialize_privacy_handler()
-                print("✅ Privacy Handler im Orchestrator initialisiert")
+            # (CoT-Privacy-Handler entfernt 2026-09-24: funktional inaktiv —
+            #  nur gesetzt, nie gelesen; PII-Schutz läuft über SecurityManager +
+            #  Output-Masking im _finalize_answer)
         except Exception as e:
             print(f"❌ Fehler beim Erstellen des AgentOrchestrator: {e}")
             self.orchestrator = None  # type: ignore[assignment]

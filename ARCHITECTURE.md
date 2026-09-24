@@ -147,7 +147,7 @@ Verified against current imports and runtime wiring on **2026-06-23**.
 
 | Contract Aspect | Code-verified Definition |
 |---|---|
-| Entrypoint | `AgentOrchestrator.run_tools_and_summarize(...)`, `run_no_tools_and_summarize(...)`, `planner_step(...)`, `summarize(...)` |
+| Entrypoint | `AgentOrchestrator.run_tools_and_summarize(...)` (auch für no-tools via `planned_calls=[]`), `planner_step(...)`, `summarize(...)` |
 | Consumes | `ToolManager`, `ContextManager`, `SecurityManager`, `QueryStrategyManager`, `EvidenceManager`, `RAGManager`, `ResponseBuilder`, `VerificationManager` |
 | Produces | `FinalAnswer` + `AgentTrace`-oriented data path via planner/summarizer/verification stages |
 | Side Effects | tool execution, optional web->RAG persistence, runtime/env-driven mode switches, trace/log emission |
