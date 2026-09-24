@@ -57,13 +57,14 @@ def _call(server_mod, name: str, args: dict) -> str:
 
 
 def test_tool_definitions(server):
-    names = [t.name for t in server.TOOL_DEFINITIONS]
+    tools = asyncio.run(server.mcp.list_tools())
+    names = [t.name for t in tools]
     assert names == ["video_search", "video_info", "video_ingest"]
-    for t in server.TOOL_DEFINITIONS:
+    for t in tools:
         assert t.inputSchema.get("type") == "object"
         assert t.inputSchema.get("required")
     # video_ingest: URL Pflicht, Rest Default
-    ing = server.TOOL_DEFINITIONS[2]
+    ing = tools[2]
     assert ing.inputSchema["required"] == ["url"]
     props = ing.inputSchema["properties"]
     assert props["max_frames"]["default"] == 8
@@ -147,8 +148,9 @@ def test_video_search_failclosed_on_network_error(server, monkeypatch):
 
 
 def test_video_search_requires_query(server):
-    text = _call(server, "video_search", {})
-    assert "'query' parameter is required" in text
+    from mcp.server.fastmcp.exceptions import ToolError
+    with pytest.raises(ToolError, match="query"):
+        _call(server, "video_search", {})
 
 
 def test_video_search_clamps_max_results(server, monkeypatch):
@@ -206,8 +208,9 @@ def test_video_info_success(server, monkeypatch):
 
 
 def test_video_info_requires_url(server):
-    text = _call(server, "video_info", {})
-    assert "'url' parameter is required" in text
+    from mcp.server.fastmcp.exceptions import ToolError
+    with pytest.raises(ToolError, match="url"):
+        _call(server, "video_info", {})
 
 # --- video_ingest (Pipeline gemockt) ---------------------------------------------
 
@@ -277,16 +280,18 @@ def test_video_ingest_param_bounds(server, monkeypatch, tmp_path):
 
 
 def test_video_ingest_requires_url(server):
-    text = _call(server, "video_ingest", {})
-    assert "'url' parameter is required" in text
+    from mcp.server.fastmcp.exceptions import ToolError
+    with pytest.raises(ToolError, match="url"):
+        _call(server, "video_ingest", {})
 
 
 # --- Sonstiges --------------------------------------------------------------------
 
 
 def test_unknown_tool(server):
-    text = _call(server, "kein_tool", {})
-    assert "Unknown tool" in text
+    from mcp.server.fastmcp.exceptions import ToolError
+    with pytest.raises(ToolError, match="Unknown tool"):
+        _call(server, "kein_tool", {})
 
 
 def test_allowlist_load(server):
