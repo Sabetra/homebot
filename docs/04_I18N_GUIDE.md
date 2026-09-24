@@ -1,4 +1,4 @@
-<!-- last-verified: 2026-08-20 -->
+<!-- last-verified: 2026-09-24 -->
 # 04 – Internationalization (i18n) Guide
 
 > **Stand:** 2026-07-13 | **Consolidation Release 1.0**

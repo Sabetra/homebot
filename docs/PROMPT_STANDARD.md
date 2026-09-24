@@ -40,7 +40,7 @@ Vorgehen:
    Kopiere keine ganzen Quelldateien oder Dokumentationen hinein.
    Nutze und aktualisiere es regelmässig, um den Fokus nicht zu verlieren und Redundanzen in der Arbeit zu vermeiden.
    Nicht-anwendbare Sektionen entfernen (nicht auskommentieren).
-5. Erstelle vor Änderungen Backups gemäß AGENTS.md unter backups/.
+5. Erstelle vor Änderungen Backups gemäß AGENTS.md unter ~\homebot_backups\.
    Verändere keine fremden oder taskfremden Änderungen.
 6. Behebe die nachgewiesene Ursache mit der kleinsten konsistenten Änderung.
    Keine stillen Fallbacks, keine pauschalen Exception-Handler und keine
