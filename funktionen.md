@@ -327,7 +327,7 @@ Flow: Quelle geändert (ChangeDetector) → PDF-Extraktion (Docling-Parallel) �
 | **Input** | Frage, Schema-Kontext, Tool-Trace, letzte Tool-Ausgaben, verfuegbare Tools, optional Konversationskontext |
 | **Output** | `FinanceContinuationDecision` mit `action="done"` oder `action="continue"` |
 
-### 7.4 `finance/extractor.py` – `extract_statement()` (~1545 Zeilen)
+### 7.4 `finance/extractor.py` – `import_pdf()` / `import_pdfs_batch()` (Datei: 1664 Zeilen)
 **PDF-Kontoauszug-Extraktor mit Docling + LLM Pipeline.**
 
 | Aspekt | Detail |
