@@ -1,4 +1,4 @@
-<!-- last-verified: 2026-09-16 -->
+<!-- last-verified: 2026-09-24 -->
 # 03 - Finance Module Documentation
 
 > **Stand:** 2026-07-27 | **Code- und Gemma4-Canary-verifiziert**
@@ -36,7 +36,7 @@ Natural-Language Query
 | Query Planner | `finance/query_planner.py` | NL zu typisiertem Finance-Toolplan | Verifiziert |
 | Grammar Compiler | `finance/grammar_compiler.py` | Pydantic-v2-Schema zu BNF | Verifiziert |
 | Query Reflector | `finance/query_reflector.py` | Ergebnisbewertung und Fortsetzungsentscheidung | Verifiziert |
-| Tools | `finance/tools.py` | SQLite-Abfragen und deterministische Analysen | 37 exponierte Tools implementiert |
+| Tools | `finance/tools.py` | SQLite-Abfragen und deterministische Analysen | 64 exponierte Tools implementiert (FINANCE_ALL; Partitions-SSoT: `agent/tool_profiles.py`) |
 | Tab UI | `finance/tab.py` | Streamlit-Dashboard und Finance-Chat | Verifiziert |
 | Chat | `finance/chat.py` | Lokale Finance-Toolschleife und Endsynthese | Python-Executor produktiv gesperrt |
 | Extractor | `finance/extractor.py` | PDF zu Transaktionen | Aktiv |

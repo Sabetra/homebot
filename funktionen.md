@@ -360,7 +360,7 @@ Flow: Quelle geändert (ChangeDetector) → PDF-Extraktion (Docling-Parallel) �
 
 | Aspekt | Detail |
 |--------|--------|
-| **Zweck** | Fuehrt lesende SQLite-Abfragen sowie 47 exponierte Finance-Tools aus (inkl. 10 Goals-Tools seit Phase 2, 2026-09-15) |
+| **Zweck** | Fuehrt lesende SQLite-Abfragen sowie 64 exponierte Finance-Tools aus (inkl. 10 Goals-Tools seit Phase 2, 2026-09-15; 12 Serien-Tools seit 2026-09-18) |
 | **Analysepfade** | Kategorie-/Gegenparteikosten, Kostenstruktur, wiederkehrende Ausgaben, Forecast, Anomalien, Budget-vs-Ist, Sparpotenzial, Trendbruch, Sparziele (Goals: Fortschritt, Projektion, Kandidaten) |
 | **Invarianten** | Signed integer cents intern; positive Ausgabenpraesentation; Transfers standardmaessig aus; Waehrungen getrennt |
 

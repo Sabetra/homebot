@@ -89,7 +89,7 @@ User Input -> Semantic Router -> [SIMPLE | PLAN_EXECUTE | REACT]
 - Toolargumente werden kompakt aus den kanonischen OpenAI-Toolschemas in den Planner-Prompt abgeleitet
 - `GrammarCompiler.compile_for_schema()` kompiliert Pydantic-v2-Schemas zu Decoding-Grammatiken
 - `FinanceQueryReflector.decide()` entscheidet anhand des Tool-Traces ueber Fortsetzung oder Abschluss
-- 47 exponierte Finance-Tools sind implementiert; Analysepfade decken Kostenstruktur, Recurrence, SOTA-Prognosen (Schedule-first-Hybrid: Faelligkeiten, Cashflow-/Guthaben-Prognose mit KI, Abo-Audit — Phase 1 „Monarch-Core“, 2026-09-12, siehe 03_FINANCE_MODULE.md §18), Sparziele/Sinking Funds (10 Goal-Tools + UI-Tab „🎯 Sparziele“ — Phase 2, 2026-09-15, siehe 03_FINANCE_MODULE.md §19 und funktionen.md), Anomalien, Budget, Sparpotenzial und Trendbrueche ab
+- 64 exponierte Finance-Tools sind implementiert (Stand 2026-09-24, FINANCE_ALL in `agent/tool_profiles.py`; Zählhistorie: 37 → 47 Phase 2 → 64 Serien-Phase, 2026-09-18); Analysepfade decken Kostenstruktur, Recurrence, SOTA-Prognosen (Schedule-first-Hybrid: Faelligkeiten, Cashflow-/Guthaben-Prognose mit KI, Abo-Audit — Phase 1 „Monarch-Core“, 2026-09-12, siehe 03_FINANCE_MODULE.md §18), Sparziele/Sinking Funds (10 Goal-Tools + UI-Tab „🎯 Sparziele“ — Phase 2, 2026-09-15, siehe 03_FINANCE_MODULE.md §19 und funktionen.md), Serien (12 Serien-Tools, 2026-09-18, siehe 03_FINANCE_MODULE.md §21–22), Anomalien, Budget, Sparpotenzial und Trendbrueche ab
 - Produktiver Finance-Chat erlaubt nur lokale `finance_*`-Tools und keinen Python-Executor
 - Strikter synthetischer Gemma4-Canary: `scripts/run_finance_canary.py`
 
